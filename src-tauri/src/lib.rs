@@ -1,5 +1,6 @@
 mod commands;
 mod log;
+mod pty;
 mod state;
 mod storage;
 
