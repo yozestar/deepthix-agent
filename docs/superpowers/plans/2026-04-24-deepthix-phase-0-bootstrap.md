@@ -58,9 +58,9 @@ rsync -av \
   --exclude='.git' \
   --exclude='node_modules' \
   --exclude='dist' \
-  --exclude='src/' \
-  --exclude='e2e/' \
-  --exclude='.vscode/' \
+  --exclude='/src/' \
+  --exclude='/e2e/' \
+  --exclude='/.vscode/' \
   --exclude='.vscodeignore' \
   --exclude='.vsixmanifest' \
   --exclude='*.vsix' \
@@ -69,7 +69,7 @@ rsync -av \
   /Users/rubenperez/Sites/localhost/deepthix-agent/
 ```
 
-Expected: many files transferred. The trailing slashes on both paths matter.
+Expected: many files transferred. The trailing slashes on both paths matter. **Note the leading `/` on `/src/`, `/e2e/`, `/.vscode/`** — these anchor the patterns to the source root so they do NOT match `webview-ui/src/`, `server/src/`, or any nested `e2e`/`.vscode` dirs.
 
 - [ ] **Step 1.2: Verify the copy**
 
@@ -232,7 +232,9 @@ cd ..
 
 ---
 
-## Task 4: Verify server/ builds standalone
+## Task 4: Verify server/ installs and tests run
+
+In pixel-agents, the server was bundled by the root `esbuild.js` (now removed). The standalone `server/package.json` only defines `test` and `test:watch`. Phase 0 only needs the package to install and the test suite to be runnable; bundling for the Tauri sidecar lands in Phase 5.
 
 - [ ] **Step 4.1: Install server deps**
 
@@ -241,23 +243,15 @@ cd server
 npm install
 ```
 
-- [ ] **Step 4.2: Build server**
-
-```bash
-npm run build
-```
-
-Expected: `dist/server.js` (or similar) is produced.
-
-- [ ] **Step 4.3: Run server tests**
+- [ ] **Step 4.2: Run server tests**
 
 ```bash
 npm test
 ```
 
-Expected: vitest runs the existing pixel-agents server tests; they should pass (no VS Code dependency in this package).
+Expected: vitest loads the existing pixel-agents server tests. **Known failure (informational, not a Phase 0 blocker):** the suite `__tests__/hookEventHandler.test.ts` will fail to load because `server/src/hookEventHandler.ts` imports `cancelPermissionTimer`, `cancelWaitingTimer` from `../../src/timerManager.js` and the `AgentState` type from `../../src/types.js` — root `src/` was deleted in Task 1. The other ~6 suites (~97 tests) should pass. We will repair this coupling when we re-house the hook server as a Tauri sidecar in Phase 5 (move the timer module / types into `server/src/` or `shared/`).
 
-- [ ] **Step 4.4: Return to root and commit lock files**
+- [ ] **Step 4.3: Return to root and commit lock files**
 
 ```bash
 cd ..
