@@ -207,8 +207,15 @@ impl TerminalManager {
         tracing::debug!(target: "deepthix::pty", %claude_bin, "resolved claude");
 
         let mut cmd = CommandBuilder::new(claude_bin);
-        cmd.arg("--session-id");
-        cmd.arg(&session_id);
+        if resuming {
+            // Re-attach to an existing transcript.
+            cmd.arg("--resume");
+            cmd.arg(&session_id);
+        } else {
+            // Fresh session under a known UUID (so we can resume later).
+            cmd.arg("--session-id");
+            cmd.arg(&session_id);
+        }
         if skip_permissions {
             cmd.arg("--dangerously-skip-permissions");
         }
