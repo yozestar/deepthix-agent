@@ -110,43 +110,65 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
     return () => window.removeEventListener('message', handler);
   }, []);
 
-  // ── Animation loop: gentle random walk + edge bounce ─────────────────
+  // ── Animation loop: random walk + occasional pair-seek + dance ───────
   useEffect(() => {
     let raf = 0;
     function tick(): void {
       setAnimals((prev) => {
         if (prev.size === 0) return prev;
         const next = new Map(prev);
-        const ids = Array.from(next.keys());
-        const arr = ids.map((id) => next.get(id)!);
-        for (const a of arr) {
-          // Random nudge so motion feels alive.
-          a.vx += (Math.random() - 0.5) * 0.0002;
-          a.vy += (Math.random() - 0.5) * 0.0002;
-          // Damp.
-          a.vx *= 0.98;
-          a.vy *= 0.98;
-          // Move.
+        const arr = Array.from(next.values());
+        const now = Date.now();
+
+        // For each animal, pick a "buddy" — the closest other one — and
+        // gently steer toward them every few seconds. Otherwise random walk.
+        for (let i = 0; i < arr.length; i++) {
+          const a = arr[i];
+          let buddy: typeof a | null = null;
+          let bestDist = Infinity;
+          for (let j = 0; j < arr.length; j++) {
+            if (i === j) continue;
+            const b = arr[j];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < bestDist) { bestDist = d; buddy = b; }
+          }
+
+          // Steering: when bored or working, drift toward the buddy.
+          // Within 0.07 normalized units → trigger a dance.
+          const seeking = a.state !== 'waiting' && buddy !== null && bestDist > 0.06;
+          if (seeking && buddy) {
+            const dx = buddy.x - a.x;
+            const dy = buddy.y - a.y;
+            const norm = Math.max(0.001, Math.sqrt(dx * dx + dy * dy));
+            const pull = 0.00009;
+            a.vx += (dx / norm) * pull;
+            a.vy += (dy / norm) * pull;
+          } else {
+            // Random nudge so motion feels alive even when alone.
+            a.vx += (Math.random() - 0.5) * 0.00018;
+            a.vy += (Math.random() - 0.5) * 0.00018;
+          }
+
+          // Dance: when very close to a buddy, both hop in unison.
+          if (buddy && bestDist < 0.07 && now - a.lastWaveAt > 3500) {
+            a.lastWaveAt = now;
+            // Small upward "hop" by setting vy negative briefly (rendered as a bob).
+            a.vy -= 0.004;
+          }
+
+          // Damp + move.
+          a.vx *= 0.96;
+          a.vy *= 0.96;
           a.x += a.vx;
           a.y += a.vy;
+
           // Edge bounce.
           if (a.x < 0.04) { a.x = 0.04; a.vx = Math.abs(a.vx); }
           if (a.x > 0.96) { a.x = 0.96; a.vx = -Math.abs(a.vx); }
           if (a.y < 0.10) { a.y = 0.10; a.vy = Math.abs(a.vy); }
           if (a.y > 0.92) { a.y = 0.92; a.vy = -Math.abs(a.vy); }
-        }
-        // Detect close pairs and trigger a wave.
-        const now = Date.now();
-        for (let i = 0; i < arr.length; i++) {
-          for (let j = i + 1; j < arr.length; j++) {
-            const dx = arr[i].x - arr[j].x;
-            const dy = arr[i].y - arr[j].y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 0.08 && now - arr[i].lastWaveAt > 4000) {
-              arr[i].lastWaveAt = now;
-              arr[j].lastWaveAt = now;
-            }
-          }
         }
         return next;
       });
@@ -155,6 +177,29 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, []);
+
+  // ── Blink loop: every animal blinks 1 frame every ~3-5 seconds ───────
+  const [blinkTick, setBlinkTick] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    const id = setInterval(() => {
+      setBlinkTick((prev) => {
+        const next = new Set(prev);
+        // Random subset blinks; cleared after 200ms by a follow-up timer.
+        const ids = Array.from(animalsRef.current.keys());
+        for (const aId of ids) {
+          if (Math.random() < 0.25) next.add(aId);
+        }
+        return next;
+      });
+      setTimeout(() => setBlinkTick(new Set()), 180);
+    }, 2200);
+    return () => clearInterval(id);
+  }, []);
+  // Mirror animals state in a ref so the blink loop can read it cheaply.
+  const animalsRef = useRef(animals);
+  useEffect(() => {
+    animalsRef.current = animals;
+  }, [animals]);
 
   const onCanvasClick = useCallback((): void => {
     // Nudge each animal slightly on canvas click — fun bit of life.
@@ -231,7 +276,12 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
             }}
             title={`${a.label} — ${a.state}${a.toolHint ? ` (${a.toolHint})` : ''}`}
           >
-            <PixelMonster seed={a.seed} scale={5} />
+            <PixelMonster
+              seed={a.seed}
+              scale={3}
+              blink={blinkTick.has(a.id)}
+              happy={wavingNow || a.state === 'working'}
+            />
             <div
               style={{
                 fontSize: '11px',
