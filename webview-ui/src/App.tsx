@@ -111,6 +111,7 @@ function App(): React.JSX.Element {
               <TamagotchiView
                 projectName={projects.activeProject?.name ?? null}
                 terminals={visibleAgents}
+                onSelectSession={(termId) => terminals.setActive(termId)}
               />
               <div
                 style={{

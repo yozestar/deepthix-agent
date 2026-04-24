@@ -320,6 +320,13 @@ interface BrowserPaneProps {
   setBrowserDraft: (s: string) => void;
 }
 
+type Viewport = 'mobile' | 'tablet' | 'desktop';
+const VIEWPORT_SIZES: Record<Viewport, { w: number; h: number; label: string }> = {
+  mobile:  { w: 375,  h: 667,  label: '📱 Mobile (375)' },
+  tablet:  { w: 768,  h: 1024, label: '📲 Tablet (768)' },
+  desktop: { w: 1280, h: 800,  label: '🖥 Desktop (1280)' },
+};
+
 function BrowserPane({
   sessionId,
   sessions,
@@ -330,6 +337,7 @@ function BrowserPane({
 }: BrowserPaneProps): React.JSX.Element {
   const sessionUrl = sessionId ? (browserUrls.get(sessionId) ?? '') : '';
   const [draft, setDraft] = useState(sessionUrl || browserDraft);
+  const [viewport, setViewport] = useState<Viewport>('desktop');
 
   useEffect(() => {
     setDraft(sessionUrl || browserDraft);
@@ -342,6 +350,8 @@ function BrowserPane({
     setBrowserUrls(next);
     setBrowserDraft(draft);
   };
+
+  const v = VIEWPORT_SIZES[viewport];
 
   return (
     <>
@@ -408,15 +418,59 @@ function BrowserPane({
         >
           GO
         </button>
+        <div style={{ display: 'flex', gap: '2px', marginLeft: '6px' }}>
+          {(Object.keys(VIEWPORT_SIZES) as Viewport[]).map((vk) => (
+            <button
+              key={vk}
+              onClick={() => setViewport(vk)}
+              style={{
+                padding: '4px 8px',
+                background: viewport === vk ? 'var(--color-accent)' : 'transparent',
+                color: viewport === vk ? 'var(--color-bg-dark)' : 'inherit',
+                border: '2px solid var(--color-border)',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-pixel)',
+                fontSize: '10px',
+              }}
+              title={`${VIEWPORT_SIZES[vk].w}×${VIEWPORT_SIZES[vk].h}`}
+            >
+              {VIEWPORT_SIZES[vk].label}
+            </button>
+          ))}
+        </div>
       </div>
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#fff' }}>
+      <div
+        style={{
+          flex: 1,
+          position: 'relative',
+          overflow: 'auto',
+          background: 'var(--color-bg-dark)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'center',
+          padding: '12px',
+        }}
+      >
         {sessionUrl ? (
-          <iframe
-            key={`${sessionId}:${sessionUrl}`}
-            src={sessionUrl}
-            title={`browser-${sessionId}`}
-            style={{ width: '100%', height: '100%', border: 'none' }}
-          />
+          <div
+            style={{
+              width: `${v.w}px`,
+              maxWidth: '100%',
+              height: `${v.h}px`,
+              maxHeight: '100%',
+              border: '2px solid var(--color-border)',
+              boxShadow: 'var(--shadow-pixel)',
+              background: '#fff',
+              flexShrink: 0,
+            }}
+          >
+            <iframe
+              key={`${sessionId}:${sessionUrl}:${viewport}`}
+              src={sessionUrl}
+              title={`browser-${sessionId}`}
+              style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+            />
+          </div>
         ) : (
           <div
             style={{
