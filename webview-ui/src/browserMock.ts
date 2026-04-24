@@ -239,6 +239,15 @@ export async function initBrowserMock(): Promise<void> {
  * Call inside a useEffect in App.tsx — after the window message listener
  * in useExtensionMessages has been registered.
  */
+/**
+ * Returns the default (bundled) layout if browserMock has been initialized,
+ * else null. Used by Tauri callers to reset the office on project switch
+ * when the project has no saved layout of its own.
+ */
+export function getDefaultLayout(): unknown {
+  return mockPayload?.layout ?? null;
+}
+
 export function dispatchMockMessages(): void {
   if (!mockPayload) return;
 

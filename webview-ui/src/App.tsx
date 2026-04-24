@@ -25,7 +25,10 @@ import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { OfficeState } from './office/engine/officeState.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { EditTool } from './office/types.js';
-import { isBrowserRuntime } from './runtime.js';
+import { isBrowserRuntime, isTauriRuntime } from './runtime.js';
+import { loadLayout } from './tauri/commands';
+import { dispatchLayoutLoaded } from './tauri/events';
+import { setActiveProjectId } from './tauriApi';
 import { vscode } from './vscodeApi.js';
 
 // Game state lives outside React — updated imperatively by message handlers
@@ -51,13 +54,48 @@ function App() {
     fileTreeRoot: fileTree.root?.path ?? null,
   });
 
-  // Browser runtime (dev or static dist): dispatch mock messages after the
-  // useExtensionMessages listener has been registered.
+  // Bootstrap mock messages (assets + default layout) in both browser and
+  // Tauri dev runtimes. The browser mock fetches assets from the Vite dev
+  // middleware; Tauri's webview hits the same dev server in dev mode.
   useEffect(() => {
-    if (isBrowserRuntime) {
+    if (isBrowserRuntime || isTauriRuntime) {
       void import('./browserMock.js').then(({ dispatchMockMessages }) => dispatchMockMessages());
     }
   }, []);
+
+  // Keep the tauri postMessage bridge informed of the active project so it
+  // knows the scope for `saveLayout` calls coming from the webview.
+  useEffect(() => {
+    setActiveProjectId(projects.activeProjectId);
+  }, [projects.activeProjectId]);
+
+  // When the active project changes, load its persisted layout (if any).
+  // If no saved layout exists, fall back to the bundled default so the
+  // office actually resets visually on switch (otherwise the previous
+  // project's edits would linger).
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    const id = projects.activeProjectId;
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      const saved = await loadLayout(id).catch((err) => {
+        console.error('[Deepthix][App] loadLayout failed', err);
+        return null;
+      });
+      if (cancelled) return;
+      if (saved) {
+        dispatchLayoutLoaded(saved);
+        return;
+      }
+      const { getDefaultLayout } = await import('./browserMock.js');
+      const def = getDefaultLayout();
+      if (!cancelled && def) dispatchLayoutLoaded(def);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projects.activeProjectId]);
 
   const editor = useEditorActions(getOfficeState, editorState);
 
@@ -194,7 +232,33 @@ function App() {
       }}
     >
       <Sidebar projects={projects} fileTree={fileTree} />
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {hasProjects && projects.activeProject && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '12px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              padding: '14px 28px',
+              background: 'var(--color-bg-dark)',
+              border: '2px solid var(--color-border)',
+              boxShadow: 'var(--shadow-pixel)',
+              fontFamily: 'var(--font-pixel)',
+              fontSize: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '14px',
+              zIndex: 10,
+              pointerEvents: 'none',
+            }}
+            title={projects.activeProject.path}
+          >
+            <span style={{ opacity: 0.6, fontSize: '20px' }}>📂</span>
+            <span style={{ fontWeight: 'bold', letterSpacing: '0.05em' }}>{projects.activeProject.name}</span>
+          </div>
+        )}
         {!hasProjects ? (
           <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
         ) : !layoutReady ? (
@@ -399,6 +463,7 @@ function App() {
       )}
           </div>
         )}
+        </div>
       </div>
     </div>
   );
