@@ -339,6 +339,42 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
 
   const v = VIEWPORT_SIZES[viewport];
 
+  // The URL that's actively rendered in the iframe (committed via Enter / GO).
+  const [loadedUrl, setLoadedUrl] = useState<string>(sessionUrl);
+  useEffect(() => {
+    setLoadedUrl(sessionUrl);
+  }, [sessionUrl]);
+
+  const onGo = (): void => {
+    const url = draft.trim();
+    if (!url) {
+      setError('Enter a URL.');
+      return;
+    }
+    setError(null);
+    setLoadedUrl(url);
+    if (sessionId) {
+      const next = new Map(browserUrls);
+      next.set(sessionId, url);
+      setBrowserUrls(next);
+      persistStoredUrls(next);
+    }
+  };
+
+  const openInChromeExternal = async (): Promise<void> => {
+    const url = (loadedUrl || draft).trim();
+    if (!url) return;
+    setLaunching(true);
+    try {
+      await cmdOpenChrome(url, v.w, v.h);
+      setLastLaunched(`${url} @ ${v.w}x${v.h}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLaunching(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -346,130 +382,173 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
         background: 'var(--color-bg)',
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
-        padding: '24px',
-        overflow: 'auto',
         fontFamily: 'var(--font-pixel)',
+        overflow: 'hidden',
       }}
     >
+      {/* Browser chrome bar */}
       <div
         style={{
-          width: '100%',
-          maxWidth: '640px',
-          background: 'var(--color-bg-dark)',
-          border: '2px solid var(--color-border)',
-          boxShadow: 'var(--shadow-pixel)',
-          padding: '20px',
           display: 'flex',
-          flexDirection: 'column',
-          gap: '16px',
+          alignItems: 'center',
+          gap: '6px',
+          padding: '6px 8px',
+          background: 'var(--color-bg-dark)',
+          borderBottom: '2px solid var(--color-border)',
+          flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px' }}>
-          <div style={{ fontSize: '18px', letterSpacing: '0.05em' }}>Open in Chrome</div>
-          <div style={{ fontSize: '11px', opacity: 0.6 }}>
-            {sessionId ? `for ${visible.find((t) => t.id === sessionId)?.label ?? sessionId}` : 'no session'}
-          </div>
-        </div>
-
-        {/* URL input */}
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px' }}>
-          <span style={{ opacity: 0.7 }}>URL</span>
-          <input
-            type="text"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void onLaunch();
-            }}
-            placeholder="http://localhost:3000"
-            spellCheck={false}
-            style={{
-              background: 'var(--color-bg)',
-              color: 'var(--color-text)',
-              border: '2px solid var(--color-border)',
-              padding: '8px 10px',
-              fontFamily: 'var(--font-pixel)',
-              fontSize: '13px',
-              outline: 'none',
-            }}
-          />
-        </label>
-
-        {/* Viewport buttons */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px' }}>
-          <span style={{ opacity: 0.7 }}>Viewport</span>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {(Object.keys(VIEWPORT_SIZES) as Viewport[]).map((vk) => {
-              const active = viewport === vk;
-              return (
-                <button
-                  key={vk}
-                  type="button"
-                  onClick={() => onSelectViewport(vk)}
-                  style={{
-                    padding: '8px 12px',
-                    background: active ? 'var(--color-accent)' : 'transparent',
-                    color: active ? 'var(--color-bg-dark)' : 'inherit',
-                    border: '2px solid var(--color-border)',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font-pixel)',
-                    fontSize: '11px',
-                    flex: 1,
-                    minWidth: '120px',
-                  }}
-                  title={`${VIEWPORT_SIZES[vk].w}x${VIEWPORT_SIZES[vk].h}`}
-                >
-                  {VIEWPORT_SIZES[vk].label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Launch button */}
-        <button
-          type="button"
-          onClick={() => void onLaunch()}
-          disabled={launching}
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onGo();
+          }}
+          placeholder="http://localhost:3000"
+          spellCheck={false}
           style={{
-            padding: '14px 24px',
+            flex: 1,
+            background: 'var(--color-bg)',
+            color: 'var(--color-text)',
+            border: '2px solid var(--color-border)',
+            padding: '4px 8px',
+            fontFamily: 'var(--font-pixel)',
+            fontSize: '11px',
+            outline: 'none',
+          }}
+        />
+        <button
+          onClick={onGo}
+          style={{
+            padding: '4px 12px',
             background: 'var(--color-accent)',
             color: 'var(--color-bg-dark)',
             border: '2px solid var(--color-border)',
-            boxShadow: 'var(--shadow-pixel)',
+            cursor: 'pointer',
             fontFamily: 'var(--font-pixel)',
-            fontSize: '14px',
-            cursor: launching ? 'wait' : 'pointer',
-            opacity: launching ? 0.7 : 1,
+            fontSize: '11px',
           }}
-          title={`Open ${draft || '(empty)'} in Chrome at ${v.w}x${v.h}`}
         >
-          {launching ? 'Launching…' : `Open in Chrome (${v.w}x${v.h})`}
+          GO
         </button>
-
-        {/* Hint / status */}
-        <div style={{ fontSize: '11px', opacity: 0.7, lineHeight: 1.5 }}>
-          This opens a separate Google Chrome window. Closing it doesn't affect your session.
+        <div style={{ display: 'flex', gap: '2px', marginLeft: '6px' }}>
+          {(Object.keys(VIEWPORT_SIZES) as Viewport[]).map((vk) => {
+            const active = viewport === vk;
+            return (
+              <button
+                key={vk}
+                onClick={() => onSelectViewport(vk)}
+                style={{
+                  padding: '4px 8px',
+                  background: active ? 'var(--color-accent)' : 'transparent',
+                  color: active ? 'var(--color-bg-dark)' : 'inherit',
+                  border: '2px solid var(--color-border)',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-pixel)',
+                  fontSize: '10px',
+                }}
+                title={`${VIEWPORT_SIZES[vk].w}×${VIEWPORT_SIZES[vk].h}`}
+              >
+                {VIEWPORT_SIZES[vk].label}
+              </button>
+            );
+          })}
         </div>
-        {lastLaunched && (
-          <div style={{ fontSize: '11px', color: 'var(--color-status-success)' }}>
-            Last opened: {lastLaunched}
-          </div>
-        )}
-        {error && (
+        <button
+          onClick={() => void openInChromeExternal()}
+          disabled={launching || !loadedUrl}
+          title="Open the same URL in real Chrome (separate window)"
+          style={{
+            padding: '4px 8px',
+            background: 'transparent',
+            color: 'inherit',
+            border: '2px solid var(--color-border)',
+            cursor: launching ? 'wait' : 'pointer',
+            fontFamily: 'var(--font-pixel)',
+            fontSize: '10px',
+            marginLeft: '6px',
+            opacity: loadedUrl ? 1 : 0.5,
+          }}
+        >
+          ↗ Chrome
+        </button>
+      </div>
+
+      {/* Iframe area */}
+      <div
+        style={{
+          flex: 1,
+          background: 'var(--color-bg-dark)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'center',
+          overflow: 'auto',
+          padding: '12px',
+        }}
+      >
+        {loadedUrl ? (
           <div
             style={{
-              fontSize: '11px',
-              color: 'var(--color-danger)',
-              border: '2px solid var(--color-danger)',
-              padding: '8px 10px',
+              width: `${v.w}px`,
+              maxWidth: '100%',
+              height: `${v.h}px`,
+              maxHeight: '100%',
+              border: '2px solid var(--color-border)',
+              boxShadow: 'var(--shadow-pixel)',
+              background: 'var(--color-bg)',
+              flexShrink: 0,
             }}
           >
-            {error}
+            <iframe
+              key={`${sessionId ?? 'global'}:${loadedUrl}:${viewport}`}
+              src={loadedUrl}
+              title={`browser-${sessionId ?? 'global'}`}
+              style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+            />
+          </div>
+        ) : (
+          <div
+            style={{
+              alignSelf: 'center',
+              color: 'var(--color-text-muted)',
+              fontSize: '12px',
+              textAlign: 'center',
+              maxWidth: '420px',
+              lineHeight: 1.6,
+            }}
+          >
+            Type a URL above and press <strong>GO</strong>. The page renders inline at the chosen
+            viewport. Some sites refuse to be framed; in that case use <strong>↗ Chrome</strong> to
+            open in a real Chrome window.
+            {sessionId && (
+              <div style={{ marginTop: 12, opacity: 0.7 }}>
+                URL is remembered per session ({visible.find((t) => t.id === sessionId)?.label ?? sessionId}).
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {/* Status bar */}
+      {(lastLaunched || error) && (
+        <div
+          style={{
+            padding: '6px 12px',
+            background: 'var(--color-bg-dark)',
+            borderTop: '2px solid var(--color-border)',
+            fontSize: '11px',
+            display: 'flex',
+            gap: '12px',
+            flexShrink: 0,
+          }}
+        >
+          {error && <span style={{ color: 'var(--color-danger)' }}>{error}</span>}
+          {lastLaunched && (
+            <span style={{ color: 'var(--color-status-success)' }}>↗ {lastLaunched}</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
