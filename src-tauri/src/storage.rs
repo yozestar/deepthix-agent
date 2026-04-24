@@ -44,6 +44,13 @@ pub fn deepthix_dir() -> std::io::Result<PathBuf> {
     Ok(dir)
 }
 
+/// Returns `~/.deepthix/projects/<id>/`, creating it if absent.
+pub fn project_dir(id: &str) -> std::io::Result<PathBuf> {
+    let dir = deepthix_dir()?.join("projects").join(id);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,5 +112,12 @@ mod tests {
         let path = deepthix_dir().unwrap();
         assert!(path.ends_with(".deepthix"), "got {:?}", path);
         assert!(path.is_dir());
+    }
+
+    #[test]
+    fn project_dir_is_created_under_deepthix_projects() {
+        let dir = project_dir("abc123").unwrap();
+        assert!(dir.ends_with("projects/abc123"), "got {:?}", dir);
+        assert!(dir.is_dir());
     }
 }
