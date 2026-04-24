@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../dist/webview",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "cd webview-ui && npm run dev",
+    "beforeDevCommand": "npm run dev:webview",
     "beforeBuildCommand": "npm run build:server && npm run build:webview"
   },
   "app": {
