@@ -33,6 +33,8 @@ pub fn run() {
             commands::projects::switch_project,
             commands::projects::remove_project,
             commands::fs::list_dir,
+            commands::layout::save_layout,
+            commands::layout::load_layout,
         ])
         .setup(|_app| {
             tracing::info!(target: "deepthix::boot", "tauri setup complete");
