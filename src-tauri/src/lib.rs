@@ -1,3 +1,4 @@
+mod commands;
 mod log;
 mod state;
 mod storage;
