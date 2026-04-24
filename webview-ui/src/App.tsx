@@ -241,22 +241,22 @@ function App() {
               top: '12px',
               left: '50%',
               transform: 'translateX(-50%)',
-              padding: '6px 14px',
+              padding: '14px 28px',
               background: 'var(--color-bg-dark)',
               border: '2px solid var(--color-border)',
               boxShadow: 'var(--shadow-pixel)',
               fontFamily: 'var(--font-pixel)',
-              fontSize: '12px',
+              fontSize: '24px',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '14px',
               zIndex: 10,
               pointerEvents: 'none',
             }}
             title={projects.activeProject.path}
           >
-            <span style={{ opacity: 0.6 }}>📂</span>
-            <span style={{ fontWeight: 'bold' }}>{projects.activeProject.name}</span>
+            <span style={{ opacity: 0.6, fontSize: '20px' }}>📂</span>
+            <span style={{ fontWeight: 'bold', letterSpacing: '0.05em' }}>{projects.activeProject.name}</span>
           </div>
         )}
         {!hasProjects ? (
