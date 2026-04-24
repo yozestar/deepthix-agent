@@ -11,3 +11,14 @@ export async function onProjectSwitched(handler: (id: string) => void): Promise<
     handler(event.payload);
   });
 }
+
+/**
+ * Re-dispatches a saved layout into the webview's existing message protocol
+ * so the office canvas re-renders without changes to the consumer code.
+ */
+export function dispatchLayoutLoaded(layout: unknown): void {
+  console.debug('[Deepthix][evt] dispatch layoutLoaded', !!layout);
+  window.dispatchEvent(
+    new MessageEvent('message', { data: { type: 'layoutLoaded', layout } }),
+  );
+}

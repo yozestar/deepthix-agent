@@ -25,7 +25,10 @@ import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { OfficeState } from './office/engine/officeState.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { EditTool } from './office/types.js';
-import { isBrowserRuntime } from './runtime.js';
+import { isBrowserRuntime, isTauriRuntime } from './runtime.js';
+import { loadLayout } from './tauri/commands';
+import { dispatchLayoutLoaded } from './tauri/events';
+import { setActiveProjectId } from './tauriApi';
 import { vscode } from './vscodeApi.js';
 
 // Game state lives outside React — updated imperatively by message handlers
@@ -51,13 +54,38 @@ function App() {
     fileTreeRoot: fileTree.root?.path ?? null,
   });
 
-  // Browser runtime (dev or static dist): dispatch mock messages after the
-  // useExtensionMessages listener has been registered.
+  // Bootstrap mock messages (assets + default layout) in both browser and
+  // Tauri dev runtimes. The browser mock fetches assets from the Vite dev
+  // middleware; Tauri's webview hits the same dev server in dev mode.
   useEffect(() => {
-    if (isBrowserRuntime) {
+    if (isBrowserRuntime || isTauriRuntime) {
       void import('./browserMock.js').then(({ dispatchMockMessages }) => dispatchMockMessages());
     }
   }, []);
+
+  // Keep the tauri postMessage bridge informed of the active project so it
+  // knows the scope for `saveLayout` calls coming from the webview.
+  useEffect(() => {
+    setActiveProjectId(projects.activeProjectId);
+  }, [projects.activeProjectId]);
+
+  // When the active project changes, load its persisted layout (if any)
+  // and re-dispatch `layoutLoaded` to the webview so the office swaps in.
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    const id = projects.activeProjectId;
+    if (!id) return;
+    let cancelled = false;
+    void loadLayout(id).then((layout) => {
+      if (cancelled) return;
+      if (layout) dispatchLayoutLoaded(layout);
+    }).catch((err) => {
+      console.error('[Deepthix][App] loadLayout failed', err);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projects.activeProjectId]);
 
   const editor = useEditorActions(getOfficeState, editorState);
 
