@@ -70,15 +70,51 @@ export function TerminalTab({ termId, visible }: Props): React.JSX.Element {
     };
   }, [termId]);
 
+  // When this tab becomes visible (display:none → block), the ResizeObserver
+  // might not fire (it doesn't observe display changes). Run multiple fits
+  // across frames so the xterm dims reflect the now-laid-out container, and
+  // sync the new size back to the pty so claude redraws at the correct width.
   useEffect(() => {
-    if (visible && fitRef.current && termRef.current) {
+    if (!visible) return;
+    let cancelled = false;
+    const refit = (): void => {
+      if (cancelled) return;
+      if (!fitRef.current || !termRef.current) return;
+      try {
+        fitRef.current.fit();
+        void ptyResize(termId, termRef.current.cols, termRef.current.rows);
+      } catch (e) {
+        console.debug('[Deepthix][TerminalTab] fit error', e);
+      }
+    };
+    requestAnimationFrame(() => {
+      refit();
       requestAnimationFrame(() => {
-        fitRef.current?.fit();
-        if (termRef.current) {
-          void ptyResize(termId, termRef.current.cols, termRef.current.rows);
-        }
+        refit();
+        // One more after CSS transitions / layout settle.
+        setTimeout(refit, 80);
       });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, termId]);
+
+  // Re-fit on every window resize (user dragging the BottomPanel handle
+  // also fires a window resize for the terminal container).
+  useEffect(() => {
+    function onWindowResize(): void {
+      if (!visible) return;
+      if (!fitRef.current || !termRef.current) return;
+      try {
+        fitRef.current.fit();
+        void ptyResize(termId, termRef.current.cols, termRef.current.rows);
+      } catch (e) {
+        console.debug('[Deepthix][TerminalTab] window-resize fit error', e);
+      }
     }
+    window.addEventListener('resize', onWindowResize);
+    return () => window.removeEventListener('resize', onWindowResize);
   }, [visible, termId]);
 
   return (
