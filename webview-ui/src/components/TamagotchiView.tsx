@@ -38,11 +38,27 @@ interface Animal {
   lastWaveAt: number;
 }
 
-function randomSpecies(): { emoji: string; name: string } {
-  return SPECIES[Math.floor(Math.random() * SPECIES.length)];
+/** djb2 — fast deterministic string hash. */
+function hashString(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
 }
-function randomHue(): number {
-  return Math.floor(Math.random() * 360);
+
+/** Same projectId → same emoji (1:1 within the SPECIES list). */
+function projectEmoji(projectId: string): string {
+  return SPECIES[hashString(projectId) % SPECIES.length].emoji;
+}
+
+/**
+ * Same projectId → same base hue. Different agents within the project get
+ * a small offset so they're distinguishable but visually a "family".
+ */
+function projectHue(projectId: string, agentIndex: number): number {
+  const base = hashString(projectId) % 360;
+  return (base + agentIndex * 35) % 360;
 }
 
 interface Props {
@@ -67,29 +83,29 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
   useEffect(() => {
     setAnimals((prev) => {
       const next = new Map(prev);
-      // Add new agents.
-      for (const t of terminals) {
-        if (t.kind !== 'claude') continue;
-        if (!next.has(t.agentId)) {
-          const sp = randomSpecies();
-          next.set(t.agentId, {
-            id: t.agentId,
-            termId: t.id,
-            label: t.label,
-            emoji: sp.emoji,
-            hue: randomHue(),
-            x: 0.1 + Math.random() * 0.8,
-            y: 0.2 + Math.random() * 0.6,
-            vx: (Math.random() - 0.5) * 0.0015,
-            vy: (Math.random() - 0.5) * 0.0015,
-            state: 'idle',
-            toolHint: '',
-            bornAt: Date.now(),
-            lastWaveAt: 0,
-          });
-        }
-      }
-      // Drop agents no longer present.
+      // Each project gets a deterministic emoji + base hue so the same
+      // project always shows the same animal across restarts. Within a
+      // project, agents share the emoji but get a small hue offset so
+      // multiple agents in the same project remain distinguishable.
+      const claudeTerms = terminals.filter((t) => t.kind === 'claude');
+      claudeTerms.forEach((t, indexWithinProject) => {
+        if (next.has(t.agentId)) return;
+        next.set(t.agentId, {
+          id: t.agentId,
+          termId: t.id,
+          label: t.label,
+          emoji: projectEmoji(t.projectId),
+          hue: projectHue(t.projectId, indexWithinProject),
+          x: 0.1 + Math.random() * 0.8,
+          y: 0.2 + Math.random() * 0.6,
+          vx: (Math.random() - 0.5) * 0.0015,
+          vy: (Math.random() - 0.5) * 0.0015,
+          state: 'idle',
+          toolHint: '',
+          bornAt: Date.now(),
+          lastWaveAt: 0,
+        });
+      });
       const presentIds = new Set(terminals.map((t) => t.agentId));
       for (const id of next.keys()) {
         if (!presentIds.has(id)) next.delete(id);
