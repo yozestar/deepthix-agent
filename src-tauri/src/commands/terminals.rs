@@ -63,10 +63,12 @@ pub fn spawn_terminal(
     cols: Option<u16>,
     rows: Option<u16>,
     kind: Option<TerminalKind>,
+    skip_permissions: Option<bool>,
 ) -> Result<SpawnResult, String> {
     let kind = kind.unwrap_or_default();
+    let skip_permissions = skip_permissions.unwrap_or(false);
     let id = format!("term-{}", Uuid::new_v4().simple());
-    tracing::info!(target: "deepthix::commands", %id, ?cwd, kind = serialize_kind(&kind), ?cols, ?rows, "spawn_terminal");
+    tracing::info!(target: "deepthix::commands", %id, ?cwd, kind = serialize_kind(&kind), ?cols, ?rows, skip_permissions, "spawn_terminal");
 
     let app_data = app.clone();
     pty.spawn_with_kind(
@@ -75,6 +77,7 @@ pub fn spawn_terminal(
         cols.unwrap_or(80),
         rows.unwrap_or(24),
         &kind,
+        skip_permissions,
         move |term_id, data| {
             let payload = PtyDataPayload {
                 id: term_id.to_string(),

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { BottomPanel } from './components/BottomPanel';
 import { Sidebar } from './components/Sidebar';
@@ -75,11 +75,19 @@ function App(): React.JSX.Element {
   const hasProjects = projects.projects.length > 0;
   const visibleAgents = terminals.forProject(projects.activeProjectId);
 
+  const SKIP_PERMS_KEY = 'deepthix.skipPermissions';
+  const [skipPerms, setSkipPerms] = useState<boolean>(() => {
+    return localStorage.getItem(SKIP_PERMS_KEY) === 'true';
+  });
+  useEffect(() => {
+    localStorage.setItem(SKIP_PERMS_KEY, String(skipPerms));
+  }, [skipPerms]);
+
   const onSpawnAgent = (): void => {
     const projectId = projects.activeProjectId;
     const cwd = projects.activeProject?.path;
     if (!projectId || !cwd) return;
-    void terminals.open(projectId, cwd, 'claude');
+    void terminals.open(projectId, cwd, 'claude', undefined, { skipPermissions: skipPerms });
   };
 
   return (
@@ -102,26 +110,58 @@ function App(): React.JSX.Element {
                 projectName={projects.activeProject?.name ?? null}
                 terminals={visibleAgents}
               />
-              <button
-                type="button"
-                onClick={onSpawnAgent}
+              <div
                 style={{
                   position: 'absolute',
                   bottom: 24,
                   right: 24,
-                  padding: '14px 24px',
-                  background: 'var(--color-accent)',
-                  color: 'var(--color-bg-dark)',
-                  border: '2px solid var(--color-border)',
-                  boxShadow: 'var(--shadow-pixel)',
-                  fontFamily: 'var(--font-pixel)',
-                  fontSize: '16px',
-                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-end',
+                  gap: 8,
                   zIndex: 6,
                 }}
               >
-                + Agent
-              </button>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    background: 'var(--color-bg-dark)',
+                    border: '2px solid var(--color-border)',
+                    boxShadow: 'var(--shadow-pixel)',
+                    padding: '6px 10px',
+                    fontFamily: 'var(--font-pixel)',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                  title="Pass --dangerously-skip-permissions to new sessions"
+                >
+                  <input
+                    type="checkbox"
+                    checked={skipPerms}
+                    onChange={(e) => setSkipPerms(e.target.checked)}
+                  />
+                  skip perms
+                </label>
+                <button
+                  type="button"
+                  onClick={onSpawnAgent}
+                  style={{
+                    padding: '14px 24px',
+                    background: 'var(--color-accent)',
+                    color: 'var(--color-bg-dark)',
+                    border: '2px solid var(--color-border)',
+                    boxShadow: 'var(--shadow-pixel)',
+                    fontFamily: 'var(--font-pixel)',
+                    fontSize: '16px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  + Session
+                </button>
+              </div>
             </>
           )}
         </div>

@@ -52,6 +52,7 @@ impl TerminalManager {
     }
 
     /// Dispatches to `spawn_shell` or `spawn_claude` based on `kind`.
+    /// `skip_permissions` is forwarded to claude as `--dangerously-skip-permissions`.
     pub fn spawn_with_kind<F: FnMut(&str, &[u8]) + Send + 'static>(
         &self,
         id: String,
@@ -59,6 +60,7 @@ impl TerminalManager {
         cols: u16,
         rows: u16,
         kind: &crate::commands::terminals::TerminalKind,
+        skip_permissions: bool,
         on_data: F,
     ) -> std::io::Result<()> {
         match kind {
@@ -66,7 +68,7 @@ impl TerminalManager {
                 self.spawn_shell(id, cwd, cols, rows, on_data)
             }
             crate::commands::terminals::TerminalKind::Claude => {
-                self.spawn_claude(id, cwd, cols, rows, on_data)
+                self.spawn_claude(id, cwd, cols, rows, skip_permissions, on_data)
             }
         }
     }
@@ -156,10 +158,11 @@ impl TerminalManager {
         cwd: PathBuf,
         cols: u16,
         rows: u16,
+        skip_permissions: bool,
         mut on_data: F,
     ) -> std::io::Result<()> {
         let session_id = uuid::Uuid::new_v4().to_string();
-        tracing::info!(target: "deepthix::pty", %id, ?cwd, %session_id, cols, rows, "spawn_claude");
+        tracing::info!(target: "deepthix::pty", %id, ?cwd, %session_id, cols, rows, skip_permissions, "spawn_claude");
 
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -185,6 +188,9 @@ impl TerminalManager {
         let mut cmd = CommandBuilder::new(claude_bin);
         cmd.arg("--session-id");
         cmd.arg(&session_id);
+        if skip_permissions {
+            cmd.arg("--dangerously-skip-permissions");
+        }
         cmd.cwd(cwd);
         for (k, v) in std::env::vars() {
             cmd.env(k, v);

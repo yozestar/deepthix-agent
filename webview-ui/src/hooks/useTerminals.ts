@@ -29,6 +29,7 @@ export interface UseTerminalsResult {
     cwd: string,
     kind?: TerminalKind,
     label?: string,
+    opts?: { skipPermissions?: boolean },
   ) => Promise<TerminalEntry | null>;
   close: (id: string) => Promise<void>;
   /**
@@ -96,14 +97,15 @@ export function useTerminals(): UseTerminalsResult {
       cwd: string,
       kind: TerminalKind = 'shell',
       label?: string,
+      opts?: { skipPermissions?: boolean },
     ): Promise<TerminalEntry | null> => {
-      console.debug('[Deepthix][useTerminals] open', { projectId, cwd, kind, label });
+      console.debug('[Deepthix][useTerminals] open', { projectId, cwd, kind, label, opts });
       try {
-        const result = await cmdSpawnTerminal(cwd, kind);
+        const result = await cmdSpawnTerminal(cwd, kind, undefined, undefined, opts);
         const agentId = nextAgentIdRef.current++;
         const entry: TerminalEntry = {
           id: result.id,
-          label: label ?? `${kind === 'claude' ? 'agent' : 'shell'}-${agentId}`,
+          label: label ?? `${kind === 'claude' ? 'session' : 'shell'}-${agentId}`,
           cwd,
           kind,
           agentId,

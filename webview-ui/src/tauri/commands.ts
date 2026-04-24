@@ -58,9 +58,16 @@ export async function spawnTerminal(
   kind: TerminalKind = 'shell',
   cols?: number,
   rows?: number,
+  opts?: { skipPermissions?: boolean },
 ): Promise<SpawnTerminalResult> {
-  log('spawnTerminal', { cwd, kind, cols, rows });
-  return await invoke<SpawnTerminalResult>('spawn_terminal', { cwd, cols, rows, kind });
+  log('spawnTerminal', { cwd, kind, cols, rows, opts });
+  return await invoke<SpawnTerminalResult>('spawn_terminal', {
+    cwd,
+    cols,
+    rows,
+    kind,
+    skipPermissions: opts?.skipPermissions ?? false,
+  });
 }
 
 export async function ptyWrite(id: string, data: string): Promise<void> {
