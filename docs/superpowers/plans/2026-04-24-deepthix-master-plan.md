@@ -26,7 +26,7 @@ The work is split into 10 phases. Each produces working, demoable software and g
 | 5 | Hook server sidecar | TBD | Node `server/` runs as Tauri sidecar with crash-restart. Hook installer wires Claude Code → sidecar → Rust → office. Hooks-mode visualization (instant, accurate). |
 | 6 | Code viewer | TBD | Click a file → bottom panel viewer tab opens with Shiki-highlighted read-only contents. |
 | 7 | Per-project state persistence | TBD | Each project remembers its layout, agents, open terminals, last-viewed file. Switching projects fully restores state. |
-| 8 | Unified logging | TBD | Rust + Node sidecar + frontend logs all funnel into a single rotating `~/.deepthix/logs/deepthix-YYYY-MM-DD.log`. Settings has "Open Log File" button. |
+| 8 | Unified logging | TBD | Rust + Node sidecar + frontend logs all funnel into a single rotating `~/.deepthix/logs/deepthix.YYYY-MM-DD.log`. Settings has "Open Log File" button. |
 | 9 | Rebrand & polish | TBD | All `pixel-agents` references → `deepthix-agent`. New icon. README rewritten. LICENSE attribution preserved. Production `tauri build` produces a runnable `.app`. |
 
 ## Dependency rules
