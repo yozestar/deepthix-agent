@@ -467,7 +467,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
               maxWidth: `${v.w}px`,
               marginBottom: '8px',
               padding: '8px 12px',
-              background: 'var(--color-warning, #ff8d14)',
+              background: 'var(--color-warning)',
               color: 'var(--color-bg-dark)',
               border: '2px solid var(--color-border)',
               boxShadow: 'var(--shadow-pixel)',
