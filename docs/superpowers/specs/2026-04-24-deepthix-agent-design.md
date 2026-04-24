@@ -278,7 +278,7 @@ Identical to pixel-agents'. `server/src/providers/file/claudeHookInstaller.ts` w
 ├── projects.json              # [{id, path, name, last_opened, hue?}, ...]
 ├── server.json                # {port, pid, token} — written by sidecar
 ├── logs/
-│   └── deepthix-YYYY-MM-DD.log   # rotated daily, all components unified
+│   └── deepthix.YYYY-MM-DD.log   # rotated daily, all components unified
 ├── hooks/
 │   └── claude-hook.js         # bundled hook script (CJS, esbuild output)
 └── projects/
@@ -291,12 +291,12 @@ Identical to pixel-agents'. `server/src/providers/file/claudeHookInstaller.ts` w
 
 ## Logging
 
-**Goal:** debugging anywhere = `tail -f ~/.deepthix/logs/deepthix-<today>.log`.
+**Goal:** debugging anywhere = `tail -f ~/.deepthix/logs/deepthix.<today>.log`.
 
 ### Rust (`src-tauri/`)
 
 - `tracing` + `tracing-subscriber` + `tracing-appender` (daily rotation).
-- Subscriber writes to **stderr** *and* to `~/.deepthix/logs/deepthix-YYYY-MM-DD.log`.
+- Subscriber writes to **stderr** *and* to `~/.deepthix/logs/deepthix.YYYY-MM-DD.log`.
 - All spans/events tagged with target `deepthix::<module>` (rendered as `[Deepthix][<module>]`).
 - Default level `info`; `RUST_LOG=deepthix=debug` (or env var `DEEPTHIX_LOG`) enables debug.
 - Logged: PTY spawn/exit, file watcher events, every IPC command (with payload truncated), every IPC event emitted, sidecar stdout/stderr forwarded.
