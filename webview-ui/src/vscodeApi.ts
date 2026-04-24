@@ -8,7 +8,7 @@ function makeBridge(): { postMessage(msg: unknown): void } {
   if (isBrowserRuntime) {
     return { postMessage: (msg: unknown) => console.log('[Deepthix][bridge.browser]', msg) };
   }
-  return acquireVsCodeApi() as { postMessage(msg: unknown): void };
+  return acquireVsCodeApi();
 }
 
 // Name kept as `vscode` to avoid touching every call site in this phase.
