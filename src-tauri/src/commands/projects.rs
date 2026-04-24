@@ -15,13 +15,18 @@ pub async fn open_folder(app: tauri::AppHandle) -> Result<Option<PathBuf>, Strin
         .pick_folder(move |path| {
             let _ = tx.send(path.map(|p| p.into_path().ok()).flatten());
         });
-    rx.recv().map_err(|e| e.to_string())
+    let picked = rx.recv().map_err(|e| e.to_string())?;
+    Ok(picked.and_then(|p| std::fs::canonicalize(&p).ok()))
 }
 
 #[tauri::command]
 pub fn add_project(state: State<'_, AppState>, path: PathBuf) -> Result<Project, String> {
     tracing::info!(target: "deepthix::commands", ?path, "add_project");
-    state.add(path).map_err(|e| e.to_string())
+    let canonical = std::fs::canonicalize(&path).map_err(|e| {
+        format!("cannot canonicalize {}: {}", path.display(), e)
+    })?;
+    tracing::debug!(target: "deepthix::commands", ?path, ?canonical, "canonicalized");
+    state.add(canonical).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

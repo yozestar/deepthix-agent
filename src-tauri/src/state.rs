@@ -42,7 +42,9 @@ impl AppState {
     /// Returns the inserted-or-existing project.
     pub fn add(&self, path: PathBuf) -> std::io::Result<Project> {
         let mut state = self.inner.lock().unwrap();
-        if let Some(existing) = state.projects.iter().find(|p| p.path == path).cloned() {
+        if let Some(idx) = state.projects.iter().position(|p| p.path == path) {
+            state.projects[idx].last_opened_unix_ms = now_unix_ms();
+            let existing = state.projects[idx].clone();
             state.active_project_id = Some(existing.id.clone());
             self.write_locked(&state)?;
             return Ok(existing);
@@ -178,6 +180,23 @@ mod tests {
         assert!(ok);
         assert!(state.snapshot().projects.is_empty());
         assert!(state.snapshot().active_project_id.is_none());
+    }
+
+    #[test]
+    fn add_existing_path_refreshes_last_opened() {
+        let (_dir, state) = fixture();
+        let project_dir = tempdir().unwrap();
+        let p1 = state.add(project_dir.path().to_path_buf()).unwrap();
+        // Sleep at least 2ms so the timestamp can change measurably.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let p2 = state.add(project_dir.path().to_path_buf()).unwrap();
+        assert_eq!(p1.id, p2.id, "id stable across re-add");
+        assert!(
+            p2.last_opened_unix_ms > p1.last_opened_unix_ms,
+            "last_opened bumped: p1={} p2={}",
+            p1.last_opened_unix_ms,
+            p2.last_opened_unix_ms
+        );
     }
 
     #[test]
