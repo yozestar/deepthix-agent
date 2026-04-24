@@ -305,6 +305,13 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
 
   const v = VIEWPORT_SIZES[viewport];
 
+  /** True for URLs that typically allow iframing (localhost / 127.* / file://). */
+  const isLocalish = (url: string): boolean => {
+    return /^(https?:\/\/)?(localhost|127\.|0\.0\.0\.0|\[::1\]|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|file:)/i.test(
+      url,
+    );
+  };
+
   // The URL that's actively rendered in the iframe (committed via Enter / GO).
   const [loadedUrl, setLoadedUrl] = useState<string>(sessionUrl);
   useEffect(() => {
@@ -447,12 +454,52 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
           flex: 1,
           background: 'var(--color-bg-dark)',
           display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'center',
+          flexDirection: 'column',
+          alignItems: 'center',
           overflow: 'auto',
           padding: '12px',
         }}
       >
+        {loadedUrl && !isLocalish(loadedUrl) && (
+          <div
+            style={{
+              width: '100%',
+              maxWidth: `${v.w}px`,
+              marginBottom: '8px',
+              padding: '8px 12px',
+              background: 'var(--color-warning, #ff8d14)',
+              color: 'var(--color-bg-dark)',
+              border: '2px solid var(--color-border)',
+              boxShadow: 'var(--shadow-pixel)',
+              fontSize: '13px',
+              fontFamily: 'var(--font-pixel)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+            }}
+          >
+            <span>
+              External sites usually refuse to be framed. If the area below stays blank, use
+              <strong> ↗ Chrome</strong> to open it in a real Chrome window.
+            </span>
+            <button
+              onClick={() => void openInChromeExternal()}
+              disabled={launching}
+              style={{
+                padding: '4px 10px',
+                background: 'var(--color-bg-dark)',
+                color: 'var(--color-text)',
+                border: '2px solid var(--color-border)',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-pixel)',
+                fontSize: '12px',
+              }}
+            >
+              ↗ Chrome
+            </button>
+          </div>
+        )}
         {loadedUrl ? (
           <div
             style={{
@@ -470,6 +517,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
               key={`${sessionId ?? 'global'}:${loadedUrl}:${viewport}`}
               src={loadedUrl}
               title={`browser-${sessionId ?? 'global'}`}
+              referrerPolicy="no-referrer"
               style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
             />
           </div>
