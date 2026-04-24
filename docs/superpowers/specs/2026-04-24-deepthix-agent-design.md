@@ -287,7 +287,7 @@ Identical to pixel-agents'. `server/src/providers/file/claudeHookInstaller.ts` w
         └── state.json         # {agents: [{id, uuid, palette, hueShift, seatId, terminalId}], lastViewedFile?, openTerminals: [...]}
 ```
 
-`<hash>` = sha1 of the absolute project path (first 16 chars), so projects are addressed deterministically.
+`<hash>` = sha1(absolute_project_path)[:16], used only for our own storage layout. Distinct from Claude Code's own project hash under `~/.claude/projects/`, which uses a different scheme (path with `:`/`\`/`/` → `-`).
 
 ## Logging
 
@@ -323,7 +323,7 @@ Identical to pixel-agents'. `server/src/providers/file/claudeHookInstaller.ts` w
 
 | Suite                                 | Tooling                  | Coverage                                                                       |
 | ------------------------------------- | ------------------------ | ------------------------------------------------------------------------------ |
-| `webview-ui/` unit tests              | Vitest + Testing Library | Existing pixel-agents tests preserved. New tests for `useTauriEvents`, `Sidebar`, `BottomPanel`, `TerminalTab`, `CodeViewer`. |
+| `webview-ui/` unit tests              | Existing test runner (per pixel-agents setup) | Existing pixel-agents tests preserved. New tests for `useTauriEvents`, `Sidebar`, `BottomPanel`, `TerminalTab`, `CodeViewer`. |
 | `server/` unit + integration tests    | Vitest                   | Existing pixel-agents tests preserved (server lifecycle, hook routing, hook installer, claude-hook integration). |
 | `src-tauri/` unit + integration tests | `cargo test`             | `pty/manager.rs` (spawn/kill, write, output), `watchers/jsonl.rs` (line buffering, parsing, partial reads), commands (Tauri mock runtime). |
 | E2E                                   | —                        | Removed (pixel-agents Playwright targeted VS Code).                            |
