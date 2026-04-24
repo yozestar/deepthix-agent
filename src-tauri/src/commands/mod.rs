@@ -1,4 +1,5 @@
 pub mod chrome;
+pub mod embedded_browser;
 pub mod fs;
 pub mod layout;
 pub mod memory;

@@ -30,6 +30,7 @@ pub fn run() {
         .manage(app_state)
         .manage(crate::pty::TerminalManager::new())
         .manage(crate::commands::terminals::WatcherRegistry::default())
+        .manage(crate::commands::embedded_browser::EmbeddedBrowserRegistry::new())
         .invoke_handler(tauri::generate_handler![
             commands::projects::open_folder,
             commands::projects::add_project,
@@ -49,6 +50,11 @@ pub fn run() {
             commands::processes::list_processes,
             commands::processes::kill_process,
             commands::chrome::open_chrome,
+            commands::embedded_browser::spawn_embedded_browser,
+            commands::embedded_browser::position_embedded_browser,
+            commands::embedded_browser::hide_embedded_browser,
+            commands::embedded_browser::show_embedded_browser,
+            commands::embedded_browser::close_embedded_browser,
             commands::memory::read_project_memory,
             commands::memory::write_project_memory,
             commands::memory::read_global_memory,
