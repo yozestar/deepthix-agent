@@ -1,6 +1,5 @@
 import type { UseFileTreeResult } from '../hooks/useFileTree';
 import type { UseProjectsResult } from '../hooks/useProjects';
-
 import { FileTree } from './FileTree';
 import { ProjectList } from './ProjectList';
 
@@ -15,11 +14,11 @@ export function Sidebar({ projects, fileTree }: Props): React.JSX.Element {
       style={{
         width: '220px',
         minWidth: '180px',
-        background: 'var(--pixel-bg)',
-        borderRight: '2px solid var(--pixel-border)',
+        background: 'var(--color-bg)',
+        borderRight: '2px solid var(--color-border)',
         display: 'flex',
         flexDirection: 'column',
-        fontFamily: 'inherit',
+        fontFamily: 'var(--font-pixel)',
       }}
     >
       <ProjectList
@@ -32,7 +31,7 @@ export function Sidebar({ projects, fileTree }: Props): React.JSX.Element {
       <div
         style={{
           height: '2px',
-          background: 'var(--pixel-border)',
+          background: 'var(--color-border)',
           margin: '0',
         }}
       />

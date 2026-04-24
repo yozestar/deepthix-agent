@@ -12,9 +12,9 @@ export function Welcome({ onOpenFolder }: Props): React.JSX.Element {
         justifyContent: 'center',
         height: '100%',
         gap: '24px',
-        background: 'var(--pixel-bg)',
+        background: 'var(--color-bg)',
         color: 'inherit',
-        fontFamily: 'inherit',
+        fontFamily: 'var(--font-pixel)',
       }}
     >
       <div style={{ fontSize: '24px', letterSpacing: '0.05em' }}>Deepthix Agent</div>
@@ -28,12 +28,12 @@ export function Welcome({ onOpenFolder }: Props): React.JSX.Element {
         style={{
           padding: '12px 24px',
           fontSize: '14px',
-          background: 'var(--pixel-accent)',
-          color: '#0a0a14',
-          border: '2px solid var(--pixel-border)',
-          boxShadow: '4px 4px 0 #0a0a14',
+          background: 'var(--color-accent)',
+          color: 'var(--color-bg-dark)',
+          border: '2px solid var(--color-border)',
+          boxShadow: 'var(--shadow-pixel)',
           cursor: 'pointer',
-          fontFamily: 'inherit',
+          fontFamily: 'var(--font-pixel)',
         }}
       >
         📂 Open Folder

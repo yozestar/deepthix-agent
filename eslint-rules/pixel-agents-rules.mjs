@@ -3,8 +3,8 @@
  *
  * Rules:
  *   no-inline-colors  — flag hex/rgb/rgba/hsl/hsla color literals (centralize in constants)
- *   pixel-shadow      — flag box-shadow values not using var(--pixel-shadow) or 2px 2px 0px
- *   pixel-font        — flag font-family values not referencing FS Pixel Sans
+ *   pixel-shadow      — flag box-shadow values not using var(--shadow-pixel) or 2px 2px 0px
+ *   pixel-font        — flag font-family values not referencing FS Pixel Sans or --font-pixel
  */
 
 const HEX_COLOR = /#[0-9a-fA-F]{3,8}\b/;
@@ -71,11 +71,11 @@ const pixelShadow = {
     type: 'suggestion',
     docs: {
       description:
-        'Require box-shadow values to use var(--pixel-shadow) or the 2px 2px 0px pattern.',
+        'Require box-shadow values to use var(--shadow-pixel) or the 2px 2px 0px pattern.',
     },
     schema: [],
     messages: {
-      found: 'Use `var(--pixel-shadow)` or a hard offset `2px 2px 0px` shadow.',
+      found: 'Use `var(--shadow-pixel)` or a hard offset `2px 2px 0px` shadow.',
     },
   },
   create(context) {
@@ -85,7 +85,13 @@ const pixelShadow = {
         const value = node.value;
         if (value.type !== 'Literal' || typeof value.value !== 'string') return;
         const text = value.value;
-        if (text.includes('var(--pixel-shadow)') || text.includes('2px 2px 0px')) return;
+        if (
+          text.includes('var(--shadow-pixel)') ||
+          text.includes('var(--pixel-shadow)') ||
+          text.includes('2px 2px 0px')
+        ) {
+          return;
+        }
         context.report({ node: value, messageId: 'found' });
       },
     };
@@ -107,11 +113,11 @@ const pixelFont = {
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Require font-family values to reference FS Pixel Sans.',
+      description: 'Require font-family values to reference FS Pixel Sans or var(--font-pixel).',
     },
     schema: [],
     messages: {
-      found: 'Use the FS Pixel Sans font for UI styling.',
+      found: 'Use the FS Pixel Sans font (or `var(--font-pixel)` token) for UI styling.',
     },
   },
   create(context) {
@@ -120,7 +126,9 @@ const pixelFont = {
         if (!isFontFamilyProperty(node)) return;
         const value = node.value;
         if (value.type !== 'Literal' || typeof value.value !== 'string') return;
-        if (value.value.includes('FS Pixel Sans')) return;
+        if (value.value.includes('FS Pixel Sans') || value.value.includes('var(--font-pixel)')) {
+          return;
+        }
         context.report({ node: value, messageId: 'found' });
       },
     };

@@ -20,7 +20,6 @@ export const tauri: MessageBridge = {
     // to typed Tauri commands via invoke().
     void getTauri().then((mod) => {
       if (mod) {
-        // eslint-disable-next-line no-console
         console.log('[Deepthix][tauri.postMessage]', msg);
       }
     });

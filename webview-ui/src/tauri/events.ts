@@ -1,7 +1,6 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 function log(name: string, payload?: unknown): void {
-  // eslint-disable-next-line no-console
   console.debug('[Deepthix][evt]', name, payload ?? '');
 }
 

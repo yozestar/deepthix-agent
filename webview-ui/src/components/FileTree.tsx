@@ -10,11 +10,11 @@ export function FileTree({ tree }: Props): React.JSX.Element {
   return (
     <div
       style={{
-        background: 'var(--pixel-bg)',
+        background: 'var(--color-bg)',
         padding: '8px',
         flex: 1,
         overflow: 'auto',
-        fontFamily: 'inherit',
+        fontFamily: 'var(--font-pixel)',
         fontSize: '11px',
       }}
     >
@@ -50,7 +50,7 @@ export function FileTree({ tree }: Props): React.JSX.Element {
         </button>
       </div>
       {error && (
-        <div style={{ color: '#ff6b6b', padding: '4px' }}>
+        <div style={{ color: 'var(--color-danger)', padding: '4px' }}>
           {error}
         </div>
       )}

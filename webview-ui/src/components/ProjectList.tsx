@@ -19,13 +19,13 @@ export function ProjectList({
     <div
       className="project-list"
       style={{
-        background: 'var(--pixel-bg)',
-        borderRight: '2px solid var(--pixel-border)',
+        background: 'var(--color-bg)',
+        borderRight: '2px solid var(--color-border)',
         padding: '8px',
         display: 'flex',
         flexDirection: 'column',
         gap: '4px',
-        fontFamily: 'inherit',
+        fontFamily: 'var(--font-pixel)',
       }}
     >
       <div
@@ -57,10 +57,10 @@ export function ProjectList({
             style={{
               cursor: 'pointer',
               padding: '4px 6px',
-              background: isActive ? 'var(--pixel-accent)' : 'transparent',
-              color: isActive ? '#0a0a14' : 'inherit',
-              border: isActive ? '2px solid var(--pixel-border)' : '2px solid transparent',
-              boxShadow: isActive ? '2px 2px 0 #0a0a14' : 'none',
+              background: isActive ? 'var(--color-accent)' : 'transparent',
+              color: isActive ? 'var(--color-bg-dark)' : 'inherit',
+              border: isActive ? '2px solid var(--color-border)' : '2px solid transparent',
+              boxShadow: isActive ? 'var(--shadow-pixel)' : 'none',
               fontSize: '12px',
               display: 'flex',
               alignItems: 'center',
@@ -104,11 +104,11 @@ export function ProjectList({
           padding: '6px 8px',
           background: 'transparent',
           color: 'inherit',
-          border: '2px solid var(--pixel-border)',
-          boxShadow: '2px 2px 0 #0a0a14',
+          border: '2px solid var(--color-border)',
+          boxShadow: 'var(--shadow-pixel)',
           cursor: 'pointer',
           fontSize: '11px',
-          fontFamily: 'inherit',
+          fontFamily: 'var(--font-pixel)',
         }}
       >
         + Open Folder
