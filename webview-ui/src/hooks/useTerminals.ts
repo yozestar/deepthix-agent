@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   killTerminal as cmdKillTerminal,
@@ -15,21 +15,29 @@ export interface TerminalEntry {
   kind: TerminalKind;
   agentId: number;
   sessionId: string | null;
+  projectId: string;
 }
 
 export interface UseTerminalsResult {
+  /** All terminals across every project (flat, unfiltered). */
   terminals: TerminalEntry[];
+  /** Active tab id (filtered to the visible project's terminals at the call site). */
   activeId: string | null;
   setActive: (id: string | null) => void;
-  open: (cwd: string, kind?: TerminalKind, label?: string) => Promise<TerminalEntry | null>;
+  open: (
+    projectId: string,
+    cwd: string,
+    kind?: TerminalKind,
+    label?: string,
+  ) => Promise<TerminalEntry | null>;
   close: (id: string) => Promise<void>;
+  /**
+   * Returns terminals scoped to one project. Used by the BottomPanel and the
+   * project-switch effect to drive office character add/remove.
+   */
+  forProject: (projectId: string | null) => TerminalEntry[];
 }
 
-/**
- * Convert a parser-emitted message into the legacy pixel-agents window
- * MessageEvent shape consumed by `useExtensionMessages`. Logged at debug for
- * easier troubleshooting when the office character doesn't react.
- */
 function dispatchWebviewMessage(msg: { type: string; [k: string]: unknown }): void {
   console.debug('[Deepthix][useTerminals] dispatch', msg);
   window.dispatchEvent(new MessageEvent('message', { data: msg }));
@@ -39,18 +47,13 @@ export function useTerminals(): UseTerminalsResult {
   const [terminals, setTerminals] = useState<TerminalEntry[]>([]);
   const [activeId, setActive] = useState<string | null>(null);
 
-  // Monotonic agent id (1-based) used by the office canvas as the character key.
   const nextAgentIdRef = useRef(1);
 
-  // Mirror of `terminals` so the JSONL listener can resolve term-id → agent-id
-  // without re-subscribing every time the list changes.
   const terminalsRef = useRef<TerminalEntry[]>([]);
   useEffect(() => {
     terminalsRef.current = terminals;
   }, [terminals]);
 
-  // Subscribe once to the global agent_jsonl_line event stream. Each line is
-  // parsed and dispatched as window message events for officeState.
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let cancelled = false;
@@ -89,11 +92,12 @@ export function useTerminals(): UseTerminalsResult {
 
   const open = useCallback(
     async (
+      projectId: string,
       cwd: string,
       kind: TerminalKind = 'shell',
       label?: string,
     ): Promise<TerminalEntry | null> => {
-      console.debug('[Deepthix][useTerminals] open', { cwd, kind, label });
+      console.debug('[Deepthix][useTerminals] open', { projectId, cwd, kind, label });
       try {
         const result = await cmdSpawnTerminal(cwd, kind);
         const agentId = nextAgentIdRef.current++;
@@ -104,11 +108,11 @@ export function useTerminals(): UseTerminalsResult {
           kind,
           agentId,
           sessionId: result.session_id,
+          projectId,
         };
         console.debug('[Deepthix][useTerminals] opened', entry);
         setTerminals((prev) => [...prev, entry]);
         setActive(result.id);
-        // Tell the office to spawn a character for this agent (heuristic mode).
         if (kind === 'claude') {
           dispatchWebviewMessage({
             type: 'agentCreated',
@@ -141,5 +145,16 @@ export function useTerminals(): UseTerminalsResult {
     }
   }, []);
 
-  return { terminals, activeId, setActive, open, close };
+  const forProject = useCallback(
+    (projectId: string | null): TerminalEntry[] => {
+      if (!projectId) return [];
+      return terminals.filter((t) => t.projectId === projectId);
+    },
+    [terminals],
+  );
+
+  return useMemo(
+    () => ({ terminals, activeId, setActive, open, close, forProject }),
+    [terminals, activeId, open, close, forProject],
+  );
 }

@@ -82,11 +82,44 @@ function App() {
 
   useEffect(() => {
     setOnOpenTerminal((cwd, kind) => {
-      console.debug('[Deepthix][App] openTerminal handler invoked', { cwd, kind });
-      void terminals.open(cwd, kind);
+      const projectId = projects.activeProjectId;
+      if (!projectId) {
+        console.warn('[Deepthix][App] openTerminal dropped — no active project');
+        return;
+      }
+      console.debug('[Deepthix][App] openTerminal handler invoked', { projectId, cwd, kind });
+      void terminals.open(projectId, cwd, kind);
     });
     return () => setOnOpenTerminal(null);
-  }, [terminals]);
+  }, [terminals, projects.activeProjectId]);
+
+  // When the active project changes, swap the office characters: dispatch
+  // agentClosed for any agents that don't belong to the new project, then
+  // agentCreated for the new project's agents. This visually scopes the
+  // office to the active project.
+  const lastActiveProjectIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const newId = projects.activeProjectId;
+    const prevId = lastActiveProjectIdRef.current;
+    if (prevId === newId) return;
+    lastActiveProjectIdRef.current = newId;
+    if (prevId !== null) {
+      for (const t of terminals.forProject(prevId)) {
+        if (t.kind === 'claude') {
+          window.dispatchEvent(new MessageEvent('message', { data: { type: 'agentClosed', id: t.agentId } }));
+        }
+      }
+    }
+    if (newId !== null) {
+      for (const t of terminals.forProject(newId)) {
+        if (t.kind === 'claude') {
+          window.dispatchEvent(new MessageEvent('message', { data: {
+            type: 'agentCreated', id: t.agentId, terminalId: t.id, name: t.label, skipSpawnEffect: true,
+          } }));
+        }
+      }
+    }
+  }, [projects.activeProjectId, terminals]);
 
   // When the active project changes, load its persisted layout (if any).
   // If no saved layout exists, fall back to the bundled default so the
@@ -483,7 +516,7 @@ function App() {
           </div>
         )}
         </div>
-        <BottomPanel terminals={terminals} />
+        <BottomPanel terminals={terminals} projectId={projects.activeProjectId} />
       </div>
     </div>
   );

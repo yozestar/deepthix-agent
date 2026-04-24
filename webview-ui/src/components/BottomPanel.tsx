@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { UseTerminalsResult } from '../hooks/useTerminals';
-
 import { TerminalTab } from './TerminalTab';
 
 const MIN_HEIGHT = 120;
@@ -10,9 +9,14 @@ const STORAGE_KEY = 'deepthix.bottomPanelHeight';
 
 interface Props {
   terminals: UseTerminalsResult;
+  projectId: string | null;
 }
 
-export function BottomPanel({ terminals }: Props): React.JSX.Element | null {
+export function BottomPanel({ terminals, projectId }: Props): React.JSX.Element | null {
+  const visible = terminals.forProject(projectId);
+  const effectiveActive: string | null = visible.some((t) => t.id === terminals.activeId)
+    ? terminals.activeId
+    : (visible[0]?.id ?? null);
   const [height, setHeight] = useState<number>(() => {
     const stored = Number(localStorage.getItem(STORAGE_KEY));
     return Number.isFinite(stored) && stored >= MIN_HEIGHT ? stored : DEFAULT_HEIGHT;
@@ -55,7 +59,7 @@ export function BottomPanel({ terminals }: Props): React.JSX.Element | null {
     };
   }, []);
 
-  if (terminals.terminals.length === 0) return null;
+  if (visible.length === 0) return null;
   return (
     <div
       style={{
@@ -92,8 +96,8 @@ export function BottomPanel({ terminals }: Props): React.JSX.Element | null {
           flexShrink: 0,
         }}
       >
-        {terminals.terminals.map((t) => {
-          const isActive = t.id === terminals.activeId;
+        {visible.map((t) => {
+          const isActive = t.id === effectiveActive;
           return (
             <button
               key={t.id}
@@ -129,16 +133,16 @@ export function BottomPanel({ terminals }: Props): React.JSX.Element | null {
         })}
       </div>
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {terminals.terminals.map((t) => (
+        {visible.map((t) => (
           <div
             key={t.id}
             style={{
               position: 'absolute',
               inset: 0,
-              display: t.id === terminals.activeId ? 'block' : 'none',
+              display: t.id === effectiveActive ? 'block' : 'none',
             }}
           >
-            <TerminalTab termId={t.id} visible={t.id === terminals.activeId} />
+            <TerminalTab termId={t.id} visible={t.id === effectiveActive} />
           </div>
         ))}
       </div>

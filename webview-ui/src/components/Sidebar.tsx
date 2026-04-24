@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { UseFileTreeResult } from '../hooks/useFileTree';
 import type { UseProjectsResult } from '../hooks/useProjects';
-
 import { FileTree } from './FileTree';
 import { ProjectList } from './ProjectList';
 
