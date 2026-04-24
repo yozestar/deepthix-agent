@@ -1,5 +1,4 @@
 import type { UseTerminalsResult } from '../hooks/useTerminals';
-
 import { TerminalTab } from './TerminalTab';
 
 interface Props {

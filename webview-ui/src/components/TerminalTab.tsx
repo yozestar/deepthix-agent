@@ -1,11 +1,12 @@
+import 'xterm/css/xterm.css';
+
 import { FitAddon } from '@xterm/addon-fit';
 import { useEffect, useRef } from 'react';
 import { Terminal } from 'xterm';
 
+import { TERMINAL_DEFAULT_BG } from '../constants';
 import { ptyResize, ptyWrite } from '../tauri/commands';
 import { onPtyData, type PtyDataEvent } from '../tauri/events';
-
-import 'xterm/css/xterm.css';
 
 interface Props {
   termId: string;
@@ -24,10 +25,15 @@ export function TerminalTab({ termId, visible }: Props): React.JSX.Element {
       return;
     }
     console.debug('[Deepthix][TerminalTab] mount', { termId });
+    // xterm renders to canvas → CSS vars don't resolve there. Read the
+    // computed --color-bg from :root so the terminal background matches the
+    // pixel-art palette without hardcoding the literal.
+    const rootStyle = getComputedStyle(document.documentElement);
+    const bgColor = rootStyle.getPropertyValue('--color-bg').trim() || TERMINAL_DEFAULT_BG;
     const term = new Terminal({
       fontSize: 13,
-      fontFamily: 'Menlo, monospace',
-      theme: { background: '#1e1e2e' },
+      fontFamily: 'var(--font-pixel), Menlo, monospace',
+      theme: { background: bgColor },
       convertEol: true,
     });
     const fit = new FitAddon();

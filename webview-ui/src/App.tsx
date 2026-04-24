@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
+import { BottomPanel } from './components/BottomPanel';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { DebugView } from './components/DebugView.js';
@@ -18,6 +19,7 @@ import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useFileTree } from './hooks/useFileTree';
 import { useProjects } from './hooks/useProjects';
+import { useTerminals } from './hooks/useTerminals';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -28,7 +30,7 @@ import { EditTool } from './office/types.js';
 import { isBrowserRuntime, isTauriRuntime } from './runtime.js';
 import { loadLayout } from './tauri/commands';
 import { dispatchLayoutLoaded } from './tauri/events';
-import { setActiveProjectId } from './tauriApi';
+import { setActiveProjectId, setActiveProjectPath, setOnOpenTerminal } from './tauriApi';
 import { vscode } from './vscodeApi.js';
 
 // Game state lives outside React — updated imperatively by message handlers
@@ -68,6 +70,23 @@ function App() {
   useEffect(() => {
     setActiveProjectId(projects.activeProjectId);
   }, [projects.activeProjectId]);
+
+  // Phase 3: terminal state for the bottom panel + bridge handlers so the
+  // existing `+ Agent` button (which posts `openClaude`) routes to spawn a
+  // pty rooted in the active project's path.
+  const terminals = useTerminals();
+
+  useEffect(() => {
+    setActiveProjectPath(projects.activeProject?.path ?? null);
+  }, [projects.activeProject?.path]);
+
+  useEffect(() => {
+    setOnOpenTerminal((cwd) => {
+      console.debug('[Deepthix][App] openTerminal handler invoked', { cwd });
+      void terminals.open(cwd);
+    });
+    return () => setOnOpenTerminal(null);
+  }, [terminals]);
 
   // When the active project changes, load its persisted layout (if any).
   // If no saved layout exists, fall back to the bundled default so the
@@ -464,6 +483,7 @@ function App() {
           </div>
         )}
         </div>
+        <BottomPanel terminals={terminals} />
       </div>
     </div>
   );
