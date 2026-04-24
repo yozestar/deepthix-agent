@@ -1,4 +1,5 @@
 mod commands;
+mod jsonl_watcher;
 mod log;
 mod pty;
 mod state;
