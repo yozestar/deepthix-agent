@@ -45,3 +45,29 @@ export async function loadLayout(projectId: string): Promise<unknown | null> {
   log('loadLayout', { projectId });
   return await invoke<unknown | null>('load_layout', { projectId });
 }
+
+export interface SpawnTerminalResult {
+  id: string;
+}
+
+export async function spawnTerminal(
+  cwd: string,
+  cols?: number,
+  rows?: number,
+): Promise<SpawnTerminalResult> {
+  log('spawnTerminal', { cwd, cols, rows });
+  return await invoke<SpawnTerminalResult>('spawn_terminal', { cwd, cols, rows });
+}
+
+export async function ptyWrite(id: string, data: string): Promise<void> {
+  return await invoke<void>('pty_write', { id, data });
+}
+
+export async function ptyResize(id: string, cols: number, rows: number): Promise<void> {
+  return await invoke<void>('pty_resize', { id, cols, rows });
+}
+
+export async function killTerminal(id: string): Promise<void> {
+  log('killTerminal', { id });
+  return await invoke<void>('kill_terminal', { id });
+}

@@ -22,3 +22,14 @@ export function dispatchLayoutLoaded(layout: unknown): void {
     new MessageEvent('message', { data: { type: 'layoutLoaded', layout } }),
   );
 }
+
+export interface PtyDataEvent {
+  id: string;
+  data: string;
+}
+
+export async function onPtyData(handler: (e: PtyDataEvent) => void): Promise<UnlistenFn> {
+  return await listen<PtyDataEvent>('pty_data', (event) => {
+    handler(event.payload);
+  });
+}
