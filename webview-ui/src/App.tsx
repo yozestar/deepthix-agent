@@ -69,19 +69,29 @@ function App() {
     setActiveProjectId(projects.activeProjectId);
   }, [projects.activeProjectId]);
 
-  // When the active project changes, load its persisted layout (if any)
-  // and re-dispatch `layoutLoaded` to the webview so the office swaps in.
+  // When the active project changes, load its persisted layout (if any).
+  // If no saved layout exists, fall back to the bundled default so the
+  // office actually resets visually on switch (otherwise the previous
+  // project's edits would linger).
   useEffect(() => {
     if (!isTauriRuntime) return;
     const id = projects.activeProjectId;
     if (!id) return;
     let cancelled = false;
-    void loadLayout(id).then((layout) => {
+    (async () => {
+      const saved = await loadLayout(id).catch((err) => {
+        console.error('[Deepthix][App] loadLayout failed', err);
+        return null;
+      });
       if (cancelled) return;
-      if (layout) dispatchLayoutLoaded(layout);
-    }).catch((err) => {
-      console.error('[Deepthix][App] loadLayout failed', err);
-    });
+      if (saved) {
+        dispatchLayoutLoaded(saved);
+        return;
+      }
+      const { getDefaultLayout } = await import('./browserMock.js');
+      const def = getDefaultLayout();
+      if (!cancelled && def) dispatchLayoutLoaded(def);
+    })();
     return () => {
       cancelled = true;
     };
