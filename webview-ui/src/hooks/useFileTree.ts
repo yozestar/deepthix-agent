@@ -32,7 +32,7 @@ export function useFileTree(rootPath: string | null): UseFileTreeResult {
     setError(null);
     try {
       const children = await listDir(rootPath);
-      const name = rootPath.split('/').filter(Boolean).pop() ?? rootPath;
+      const name = basename(rootPath);
       setRoot({
         name,
         path: rootPath,
@@ -40,7 +40,6 @@ export function useFileTree(rootPath: string | null): UseFileTreeResult {
         is_hidden: false,
         children: children.map((c) => ({ ...c, children: c.is_dir ? undefined : [] })),
       });
-      // Reset expansion to top level on refresh.
       setExpanded(new Set([rootPath]));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -65,42 +64,72 @@ export function useFileTree(rootPath: string | null): UseFileTreeResult {
       }
       return next;
     });
-    // Lazy-load children if needed.
+    // Mark the target as loading (immutable update along the path).
+    let needsLoad = false;
     setRoot((prev) => {
       if (!prev) return prev;
-      const target = findNode(prev, path);
-      if (!target || !target.is_dir || target.children !== undefined) return prev;
-      // Mark loading; actual fetch happens below.
-      target.loading = true;
-      return { ...prev };
+      const updated = updateNode(prev, path, (node) => {
+        if (!node.is_dir || node.children !== undefined) return node;
+        needsLoad = true;
+        return { ...node, loading: true };
+      });
+      return updated ?? prev;
     });
+    if (!needsLoad) return;
     try {
       const children = await listDir(path);
       setRoot((prev) => {
         if (!prev) return prev;
-        const target = findNode(prev, path);
-        if (target) {
-          target.children = children.map((c) => ({ ...c, children: c.is_dir ? undefined : [] }));
-          target.loading = false;
-        }
-        return { ...prev };
+        const updated = updateNode(prev, path, (node) => ({
+          ...node,
+          loading: false,
+          children: children.map((c) => ({ ...c, children: c.is_dir ? undefined : [] })),
+        }));
+        return updated ?? prev;
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[Deepthix][useFileTree] toggle failed', { path, msg });
       setError(msg);
+      // Clear the loading flag so the user can retry.
+      setRoot((prev) => {
+        if (!prev) return prev;
+        const updated = updateNode(prev, path, (node) => ({ ...node, loading: false }));
+        return updated ?? prev;
+      });
     }
   }, []);
 
   return { root, expanded, error, loading, toggle, refresh };
 }
 
-function findNode(node: FileTreeNode, path: string): FileTreeNode | null {
-  if (node.path === path) return node;
+/**
+ * Returns a new tree where the node at `path` has been replaced by `update(node)`.
+ * Returns `null` if no node matches `path` (caller should keep the previous tree).
+ * Pure: does not mutate the input.
+ */
+function updateNode(
+  node: FileTreeNode,
+  path: string,
+  update: (n: FileTreeNode) => FileTreeNode,
+): FileTreeNode | null {
+  if (node.path === path) {
+    return update(node);
+  }
   if (!node.children) return null;
-  for (const child of node.children) {
-    const found = findNode(child, path);
-    if (found) return found;
+  for (let i = 0; i < node.children.length; i++) {
+    const child = node.children[i];
+    const updatedChild = updateNode(child, path, update);
+    if (updatedChild) {
+      const newChildren = node.children.slice();
+      newChildren[i] = updatedChild;
+      return { ...node, children: newChildren };
+    }
   }
   return null;
+}
+
+/** macOS / unix path basename. Tauri target is macOS for v1, but accept `\` defensively. */
+function basename(p: string): string {
+  return p.split(/[/\\]/).filter(Boolean).pop() ?? p;
 }
