@@ -1,7 +1,7 @@
 import 'xterm/css/xterm.css';
 
 import { FitAddon } from '@xterm/addon-fit';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Terminal } from 'xterm';
 
 import { TERMINAL_DEFAULT_BG } from '../constants';
