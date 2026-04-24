@@ -7,16 +7,45 @@
 //! perspective this looks like Chrome is "embedded" inside Deepthix's
 //! BROWSER tab.
 //!
-//! ## Why AppleScript and not `addChildWindow:` ?
+//! ## Why not `[NSWindow addChildWindow:ordered:]` ?
 //!
-//! `[NSWindow addChildWindow:ordered:]` would auto-track parent moves and
-//! avoid the small lag we get with osascript. But cross-process NSWindow
-//! manipulation requires either the Accessibility API (and a permission
-//! prompt) or low-level CoreGraphics + objc2 plumbing. AppleScript control
-//! of Chrome only requires the user to grant Automation permission once
-//! (the same permission needed to drive Chrome from any script). That keeps
-//! the implementation small and the UX similar enough — drag lag is ~16-50ms
-//! during fast motions, otherwise imperceptible.
+//! `addChildWindow:` is exactly what we'd want — an auto-tracked, hide-with-
+//! parent, follow-on-drag z-order coupling. Unfortunately it ONLY works for
+//! NSWindows that live in the SAME process. Chrome's NSWindow is owned by
+//! Chrome's process (different PID, different address space) — there is no
+//! API that returns an `NSWindow*` pointer for a window in another process.
+//! Apple intentionally forbids this to preserve app-sandbox boundaries.
+//!
+//! So we emulate the effect with two cooperating tricks (see `zorder` module
+//! below). Both are gated on macOS and on having at least one embedded
+//! browser active:
+//!
+//! 1. **Lower Deepthix's `NSWindow.level`** to `NSNormalWindowLevel - 1`
+//!    while an embedded browser is open. macOS's window level is an absolute
+//!    z-order override: a level-0 window (Chrome's default) is always drawn
+//!    above a level-(-1) window (Deepthix), even when Deepthix is the active
+//!    app. This gives us the visual stacking we want "for free" from the
+//!    compositor — no polling, no lag.
+//!
+//! 2. **Re-raise Chrome on activation**: when Deepthix becomes the active
+//!    app (`NSWorkspaceDidActivateApplicationNotification`), we fire an
+//!    AppleScript `tell application "Google Chrome" to activate` so Chrome
+//!    is brought above whatever other app was in front, and re-activate
+//!    ourselves via System Events so keyboard focus returns to Deepthix.
+//!    The window-level override from (1) then keeps Chrome visually on top.
+//!
+//! The combination gives: Chrome visible above Deepthix's browser pane while
+//! Deepthix retains keyboard focus, survives Deepthix drags and minimizes,
+//! and restores cleanly when the embedded browser closes.
+//!
+//! ### Known limitation
+//!
+//! While Deepthix's window level is sub-normal, any OTHER non-active app's
+//! window at level 0 (normal) that overlaps Deepthix will also draw above
+//! Deepthix. In practice, users running Deepthix's BROWSER mode have it as
+//! their focal app and don't have other windows overlapping the browser
+//! pane, so this is a non-issue. If we ever need true isolation, CEF is the
+//! only real answer.
 //!
 //! ## Lifecycle
 //!
@@ -25,7 +54,9 @@
 //!    user-data-dir (or the user's default profile if `useProfile=true`).
 //!    Poll `osascript` for up to ~3s waiting for a window matching the
 //!    spawned PID + URL to appear; once found, store the window id in our
-//!    in-memory registry and return a string id to the caller.
+//!    in-memory registry and return a string id to the caller. On macOS,
+//!    the first spawn also installs the z-order coupling (observer + window
+//!    level demotion); close of the last embedded browser restores it.
 //!
 //! 2. `position_embedded_browser(id, x, y, w, h)` — `set bounds of window …`
 //!    via AppleScript. Coordinates come from the frontend in screen-space
@@ -47,7 +78,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 /// One spawned Chrome instance we are tracking.
 #[derive(Debug, Clone)]
@@ -195,6 +226,7 @@ fn make_profile_dir(uuid: &str) -> Result<PathBuf, String> {
 /// creates a fresh per-instance profile dir, which is useful for clean-room
 /// testing but loses the user's extensions and cookies.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri commands take whatever the JS caller passes — splitting these would just push the boilerplate elsewhere.
 pub fn spawn_embedded_browser(
     url: String,
     x: i32,
@@ -202,6 +234,7 @@ pub fn spawn_embedded_browser(
     width: u32,
     height: u32,
     use_profile: Option<bool>,
+    app: AppHandle,
     registry: State<'_, EmbeddedBrowserRegistry>,
 ) -> Result<EmbeddedBrowserSpawn, String> {
     let use_profile = use_profile.unwrap_or(true);
@@ -325,11 +358,36 @@ pub fn spawn_embedded_browser(
         url: url.clone(),
         profile_dir,
     };
-    registry
-        .inner
-        .lock()
-        .unwrap()
-        .insert(id.clone(), handle);
+    let new_count = {
+        let mut map = registry.inner.lock().unwrap();
+        map.insert(id.clone(), handle);
+        map.len()
+    };
+
+    // First embedded browser → install the z-order coupling (lower Deepthix
+    // window level + start the activation observer). On subsequent spawns
+    // this is a no-op because we keep the level lowered until the LAST
+    // embedded browser closes.
+    #[cfg(target_os = "macos")]
+    {
+        if new_count == 1 {
+            tracing::info!(
+                target: "deepthix::embedded_browser",
+                "first embedded browser — engaging z-order coupling"
+            );
+            zorder::engage(&app);
+        } else {
+            tracing::debug!(
+                target: "deepthix::embedded_browser",
+                count = new_count,
+                "z-order already engaged"
+            );
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (&app, new_count); // suppress unused warnings on non-mac builds
+    }
 
     tracing::info!(
         target: "deepthix::embedded_browser",
@@ -464,12 +522,14 @@ end try
 #[tauri::command]
 pub fn close_embedded_browser(
     id: String,
+    app: AppHandle,
     registry: State<'_, EmbeddedBrowserRegistry>,
 ) -> Result<(), String> {
     tracing::info!(target: "deepthix::embedded_browser", %id, "close_embedded_browser");
-    let handle = {
+    let (handle, remaining) = {
         let mut map = registry.inner.lock().unwrap();
-        map.remove(&id)
+        let h = map.remove(&id);
+        (h, map.len())
     };
     let Some(handle) = handle else {
         return Err(format!("Unknown embedded browser id: {id}"));
@@ -502,10 +562,315 @@ end try
         }
     }
 
+    // If that was the last embedded browser, restore Deepthix's normal window
+    // level so the rest of the app behaves like a regular macOS window again.
+    #[cfg(target_os = "macos")]
+    {
+        if remaining == 0 {
+            tracing::info!(
+                target: "deepthix::embedded_browser",
+                "last embedded browser closed — disengaging z-order coupling"
+            );
+            zorder::disengage(&app);
+        } else {
+            tracing::debug!(
+                target: "deepthix::embedded_browser",
+                count = remaining,
+                "other embedded browsers still active — leaving z-order engaged"
+            );
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (&app, remaining); // suppress unused warnings on non-mac builds
+    }
+
     tracing::info!(
         target: "deepthix::embedded_browser",
         %id, pid = handle.pid, url = %handle.url,
         "close_embedded_browser ok"
     );
     Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// macOS z-order coupling
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Cross-process z-order coupling for the embedded Chrome trick.
+///
+/// See the module-level docs for the full design. Briefly:
+///
+/// - On `engage`: lower Deepthix's main window level to one below normal so
+///   Chrome (level 0) always draws above us, then install a one-time
+///   `NSWorkspaceDidActivateApplicationNotification` observer that re-raises
+///   Chrome and re-focuses Deepthix whenever Deepthix becomes the active
+///   app. The observer is global and self-gating — it only acts when an
+///   embedded browser is currently registered.
+///
+/// - On `disengage`: raise Deepthix's window level back to normal. We leave
+///   the notification observer registered (it's cheap and harmless to keep
+///   around — it checks the registry on every tick); installing only once
+///   per app boot avoids any chance of duplicate observers piling up if the
+///   user opens & closes the BROWSER pane many times.
+#[cfg(target_os = "macos")]
+mod zorder {
+    use std::ptr::NonNull;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::OnceLock;
+
+    use block2::RcBlock;
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2_app_kit::{
+        NSRunningApplication, NSWindow, NSWindowLevel, NSWorkspace, NSWorkspaceApplicationKey,
+        NSWorkspaceDidActivateApplicationNotification,
+    };
+    use objc2_foundation::NSNotification;
+    use tauri::{AppHandle, Manager};
+
+    /// We install the activation observer at most once per process boot.
+    static OBSERVER_INSTALLED: AtomicBool = AtomicBool::new(false);
+
+    /// Set to `true` while at least one embedded browser is active. The
+    /// activation observer reads this and is a no-op when false. Mirrors
+    /// `EmbeddedBrowserRegistry.len() > 0` from outside the registry's lock
+    /// so the observer never has to acquire it.
+    static COUPLING_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+    /// Cached PID of our own process. Used by the activation observer to
+    /// decide whether the activated app is us. Cheaper than fetching the
+    /// bundle id every tick.
+    static OUR_PID: OnceLock<i32> = OnceLock::new();
+
+    fn our_pid() -> i32 {
+        *OUR_PID.get_or_init(|| std::process::id() as i32)
+    }
+
+    /// Lower Deepthix's main window level + arm the activation observer.
+    pub fn engage(app: &AppHandle) {
+        COUPLING_ACTIVE.store(true, Ordering::SeqCst);
+        if let Err(e) = set_main_window_level(app, sub_normal_level()) {
+            tracing::warn!(
+                target: "deepthix::embedded_browser",
+                error = %e,
+                "could not lower Deepthix window level"
+            );
+        }
+        install_observer_once();
+        // Trigger the re-raise immediately so Chrome is in front from the
+        // very first frame the user sees, instead of waiting for the next
+        // app-activation event.
+        reraise_chrome_then_self();
+    }
+
+    /// Restore Deepthix's main window level to normal. The observer remains
+    /// installed but becomes a no-op via `COUPLING_ACTIVE`.
+    pub fn disengage(app: &AppHandle) {
+        COUPLING_ACTIVE.store(false, Ordering::SeqCst);
+        if let Err(e) = set_main_window_level(app, normal_level()) {
+            tracing::warn!(
+                target: "deepthix::embedded_browser",
+                error = %e,
+                "could not restore Deepthix window level"
+            );
+        }
+    }
+
+    /// `NSNormalWindowLevel = 0`. Hard-coded because objc2-app-kit exposes
+    /// these as `NSWindowLevel` integers; we don't want a feature gate
+    /// dependency on the constants module.
+    fn normal_level() -> NSWindowLevel {
+        0 as NSWindowLevel
+    }
+
+    /// One step below normal. macOS treats window level as the dominant
+    /// axis for stacking — a normal-level window from any app will draw
+    /// above a sub-normal window even when the sub-normal app is active.
+    fn sub_normal_level() -> NSWindowLevel {
+        -1 as NSWindowLevel
+    }
+
+    /// Set the level on Deepthix's main window. Must run on the main thread.
+    fn set_main_window_level(app: &AppHandle, level: NSWindowLevel) -> Result<(), String> {
+        // Tauri exposes the underlying NSWindow via `WebviewWindow::ns_window`.
+        // We grab the main window (the only one Deepthix has). The pointer
+        // returned is a non-owning `*mut c_void` to the NSWindow.
+        let window = app
+            .get_webview_window("main")
+            .ok_or_else(|| "no `main` webview window".to_string())?;
+
+        // ns_window() returns Result<*mut c_void, _> with the raw NSWindow
+        // pointer. We must touch AppKit on the main thread.
+        let raw = window
+            .ns_window()
+            .map_err(|e| format!("ns_window() failed: {e}"))?;
+        if raw.is_null() {
+            return Err("ns_window returned null".to_string());
+        }
+
+        // Hop to the main thread. Tauri's `run_on_main_thread` runs the
+        // closure on the AppKit main thread, where it's safe to mutate
+        // NSWindow state.
+        let raw_addr = raw as usize;
+        let level_val = level;
+        app.run_on_main_thread(move || {
+            // SAFETY: raw_addr was a valid `*mut NSWindow` at the time we
+            // captured it. NSWindow lives for the whole app lifetime (it's
+            // owned by the AppKit window list), so the pointer remains
+            // valid here. We only touch it on the main thread.
+            unsafe {
+                let ptr = raw_addr as *mut NSWindow;
+                let nswin: &NSWindow = &*ptr;
+                nswin.setLevel(level_val);
+            }
+            tracing::debug!(
+                target: "deepthix::embedded_browser",
+                level = level_val,
+                "Deepthix main NSWindow level set"
+            );
+        })
+        .map_err(|e| format!("run_on_main_thread failed: {e}"))?;
+        Ok(())
+    }
+
+    /// Install the global `NSWorkspaceDidActivateApplicationNotification`
+    /// observer. Idempotent — only the first call actually subscribes.
+    fn install_observer_once() {
+        if OBSERVER_INSTALLED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        // Install on the main thread so AppKit doesn't yell at us.
+        std::thread::spawn(|| {
+            // We can't dispatch to the AppKit main thread from arbitrary
+            // Rust code without an AppHandle. But NSWorkspace's notification
+            // center is thread-safe to subscribe to, and the block we pass
+            // is invoked on the main thread by the notification system, so
+            // doing it from this thread is fine.
+            unsafe {
+                let workspace = NSWorkspace::sharedWorkspace();
+                let center = workspace.notificationCenter();
+
+                let block = RcBlock::new(move |notif: NonNull<NSNotification>| {
+                    handle_did_activate(notif);
+                });
+
+                // We pass NULL for object (= subscribe to ALL senders) and
+                // NULL for queue (= invoke synchronously on the posting
+                // thread, which is the main thread for NSWorkspace).
+                let _token = center.addObserverForName_object_queue_usingBlock(
+                    Some(NSWorkspaceDidActivateApplicationNotification),
+                    None,
+                    None,
+                    &block,
+                );
+                // We intentionally leak `_token` — we never want to remove
+                // this observer, it lives for the app's whole lifetime.
+                std::mem::forget(_token);
+            }
+            tracing::info!(
+                target: "deepthix::embedded_browser",
+                "NSWorkspaceDidActivateApplicationNotification observer installed"
+            );
+        });
+    }
+
+    /// Notification callback. Runs on the main thread (NSWorkspace posts on
+    /// the main thread). Decides whether the activated app is us, and if so
+    /// re-raises Chrome then re-focuses Deepthix.
+    fn handle_did_activate(notif: NonNull<NSNotification>) {
+        // Cheap early-out: when no embedded browser is active, do nothing.
+        if !COUPLING_ACTIVE.load(Ordering::SeqCst) {
+            return;
+        }
+
+        // SAFETY: the notification reference is valid for the duration of
+        // this call (NSNotificationCenter contracts).
+        let activated_pid = unsafe {
+            let notif_ref: &NSNotification = notif.as_ref();
+            let user_info = match notif_ref.userInfo() {
+                Some(d) => d,
+                None => {
+                    tracing::debug!(target: "deepthix::embedded_browser", "didActivate without userInfo");
+                    return;
+                }
+            };
+            // The userInfo dict holds the activated NSRunningApplication
+            // under NSWorkspaceApplicationKey.
+            let key: &objc2_foundation::NSString = NSWorkspaceApplicationKey;
+            let any: Option<Retained<AnyObject>> =
+                user_info.objectForKey(key.as_ref() as &AnyObject);
+            let Some(any) = any else {
+                tracing::debug!(target: "deepthix::embedded_browser", "no NSWorkspaceApplicationKey in userInfo");
+                return;
+            };
+            // Cast to NSRunningApplication and read its PID.
+            let app_ptr = Retained::as_ptr(&any) as *const NSRunningApplication;
+            let app_ref: &NSRunningApplication = &*app_ptr;
+            app_ref.processIdentifier()
+        };
+
+        let our = our_pid();
+        if activated_pid != our {
+            tracing::trace!(
+                target: "deepthix::embedded_browser",
+                activated = activated_pid,
+                ours = our,
+                "didActivate from a different app — ignoring"
+            );
+            return;
+        }
+
+        tracing::debug!(
+            target: "deepthix::embedded_browser",
+            "Deepthix activated — re-raising Chrome"
+        );
+        reraise_chrome_then_self();
+    }
+
+    /// Fire the AppleScript that brings Chrome above Deepthix in z-order
+    /// then re-asserts focus on Deepthix. Runs in a background thread so we
+    /// never block AppKit's main thread on osascript.
+    fn reraise_chrome_then_self() {
+        std::thread::spawn(|| {
+            // Step 1: ask Chrome to come to the front. This raises Chrome's
+            // windows above all OTHER apps — but because Deepthix's main
+            // window has a sub-normal level, Chrome stays drawn above
+            // Deepthix even after the next step.
+            //
+            // Step 2: re-activate Deepthix via System Events. Using
+            // `frontmost of process X`, not `tell app X to activate`,
+            // because the latter would force Deepthix to bring all its
+            // windows above all of Chrome's. `frontmost` is the lighter
+            // touch — it makes Deepthix the active app (so it receives
+            // keystrokes) without aggressive window restacking. Combined
+            // with the sub-normal window level, this leaves Chrome
+            // visually on top while Deepthix has keyboard focus.
+            let script = r#"
+try
+  tell application "Google Chrome" to activate
+end try
+try
+  tell application "System Events" to set frontmost of (first process whose unix id is OUR_PID) to true
+end try
+"#;
+            let script = script.replace("OUR_PID", &our_pid().to_string());
+            match super::run_osascript(&script) {
+                Ok(_) => {
+                    tracing::trace!(
+                        target: "deepthix::embedded_browser",
+                        "re-raise sequence ok"
+                    );
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        target: "deepthix::embedded_browser",
+                        error = %e,
+                        "re-raise sequence failed (non-fatal)"
+                    );
+                }
+            }
+        });
+    }
+
 }
