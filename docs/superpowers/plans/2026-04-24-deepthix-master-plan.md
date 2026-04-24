@@ -18,8 +18,8 @@ The work is split into 10 phases. Each produces working, demoable software and g
 
 | # | Phase | Plan file | Outcome |
 |---|-------|-----------|---------|
-| 0 | Bootstrap & Tauri shell | [`2026-04-24-deepthix-phase-0-bootstrap.md`](./2026-04-24-deepthix-phase-0-bootstrap.md) | Fresh fork, VS Code stripped, Tauri scaffold, empty Tauri window boots and renders the existing pixel-art canvas with no data. |
-| 1 | Projects + sidebar | TBD | Open Folder works. Sidebar shows project list + active project file tree. Can switch projects. State persisted to `~/.deepthix/projects.json`. |
+| 0 | Bootstrap & Tauri shell | [`2026-04-24-deepthix-phase-0-bootstrap.md`](./2026-04-24-deepthix-phase-0-bootstrap.md) | ✅ Done. Fresh fork, VS Code stripped, Tauri scaffold, empty Tauri window boots and renders the existing pixel-art canvas with no data. Tag: `deepthix-phase-0-done`. |
+| 1 | Projects + sidebar | [`2026-04-24-deepthix-phase-1-projects-sidebar.md`](./2026-04-24-deepthix-phase-1-projects-sidebar.md) | ✅ Done. Open Folder works. Sidebar shows project list + active project file tree. Can switch projects. State persisted to `~/.deepthix/projects.json`. Tag: `deepthix-phase-1-done`. |
 | 2 | Pixel office wired | TBD | Asset loading via Tauri commands. Office renders properly, all sprites/floors/walls load. Layout editor still works, persists per-project. |
 | 3 | Terminals (pty + xterm) | TBD | `+ Agent` spawns a pty running a shell (placeholder for `claude`). Bottom panel slides up with xterm.js. PTY round-trip works. |
 | 4 | Agents + JSONL watcher | TBD | Spawn replaced with `claude --session-id <uuid>`. Rust JSONL watcher feeds animations into the office. Heuristic-mode agent visualization works end-to-end. |
