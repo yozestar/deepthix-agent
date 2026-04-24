@@ -1,3 +1,4 @@
+pub mod chrome;
 pub mod fs;
 pub mod layout;
 pub mod processes;
