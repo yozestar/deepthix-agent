@@ -99,11 +99,29 @@ function browserMockAssetsPlugin(): Plugin {
   };
 }
 
+// `TAURI_DEBUG` is set by `tauri dev`. We use it to keep sourcemaps in dev
+// and skip minification, but still produce a fully optimized prod bundle.
+const tauriDebug = !!process.env.TAURI_DEBUG;
+
 export default defineConfig({
   plugins: [tailwindcss(), react(), browserMockAssetsPlugin()],
   build: {
     outDir: '../dist/webview',
     emptyOutDir: true,
+    // macOS WKWebView is Safari-based; pinning the target avoids shipping
+    // syntax the runtime can't parse.
+    target: 'safari15',
+    minify: tauriDebug ? false : 'esbuild',
+    sourcemap: tauriDebug,
   },
   base: './',
+  // Tauri integration: pin the dev server so `tauri dev` can find it,
+  // and don't clobber Tauri's own terminal output.
+  clearScreen: false,
+  server: {
+    port: 1420,
+    strictPort: true,
+    host: '127.0.0.1',
+  },
+  envPrefix: ['VITE_', 'TAURI_'],
 });
