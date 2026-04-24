@@ -59,28 +59,33 @@ export function BottomPanel({ terminals, projectId }: Props): React.JSX.Element 
     };
   }, []);
 
-  if (visible.length === 0) return null;
+  // Always render so xterm instances stay alive across project switches.
+  // The visible chrome (resize handle, tab bar) collapses when the current
+  // project has no terminals; the off-project xterm instances live inside a
+  // hidden tray to retain their scrollback / pty connection.
+  const hasVisible = visible.length > 0;
   return (
     <div
       style={{
-        height: `${height}px`,
+        height: hasVisible ? `${height}px` : 0,
         background: 'var(--color-bg)',
         display: 'flex',
         flexDirection: 'column',
         fontFamily: 'var(--font-pixel)',
         flexShrink: 0,
         position: 'relative',
+        overflow: 'hidden',
       }}
     >
       <div
         onMouseDown={onMouseDown}
         title="Drag to resize"
         style={{
-          height: '6px',
+          height: hasVisible ? '6px' : 0,
           cursor: 'ns-resize',
           background: 'var(--color-border)',
-          borderTop: '1px solid var(--color-bg-dark)',
-          borderBottom: '1px solid var(--color-bg-dark)',
+          borderTop: hasVisible ? '1px solid var(--color-bg-dark)' : 'none',
+          borderBottom: hasVisible ? '1px solid var(--color-bg-dark)' : 'none',
           flexShrink: 0,
         }}
       />
@@ -133,7 +138,11 @@ export function BottomPanel({ terminals, projectId }: Props): React.JSX.Element 
         })}
       </div>
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {visible.map((t) => (
+        {/* Mount EVERY terminal across all projects so xterm instances retain
+            their scrollback when the user switches projects. Only the active
+            visible one is on-screen; off-project tabs and same-project
+            inactive tabs are visually hidden but still receive pty_data. */}
+        {terminals.terminals.map((t) => (
           <div
             key={t.id}
             style={{
