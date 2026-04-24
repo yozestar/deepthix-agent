@@ -2,26 +2,21 @@
 // App.tsx can mount the chosen one directly:
 //
 //   • SessionsPane  — per-session sub-tabs + xterm content (resizable bottom area)
-//   • BrowserPane   — Embedded Chrome launcher (real Chrome `--app=URL` window
-//                      overlaid on the placeholder, positioned via AppleScript)
+//   • BrowserPane   — Chrome launcher (URL + viewport buttons + Open in Chrome)
 //   • ProcessPane   — list project node-ish processes with kill buttons
 //
 // The 3 mode tabs themselves used to live here at the top of the panel; they
 // have moved up to the App-level top header bar. This file no longer renders
 // any tab strip — it only renders content panes.
 
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { UseTerminalsResult } from '../hooks/useTerminals';
 import {
-  closeEmbeddedBrowser as cmdCloseEmbeddedBrowser,
   killProcess as cmdKillProcess,
   listProcesses as cmdListProcesses,
   openChrome as cmdOpenChrome,
-  positionEmbeddedBrowser as cmdPositionEmbeddedBrowser,
   type ProcessInfo,
-  spawnEmbeddedBrowser as cmdSpawnEmbeddedBrowser,
 } from '../tauri/commands';
 import { TerminalTab } from './TerminalTab';
 
@@ -275,16 +270,10 @@ interface BrowserPaneProps {
 /**
  * Browser launcher pane (full-area). The Tauri WebView on macOS is WKWebView
  * (Safari engine), which is not what users want when developing for Chrome.
- *
- * GO spawns the user's real Chrome in `--app=URL` mode and overlays it on
- * the iframe-shaped placeholder below. The Rust side (commands::embedded_browser)
- * keeps the Chrome window's bounds in sync via AppleScript whenever this
- * component's container resizes or the parent Tauri window moves/resizes.
+ * Instead of an iframe, we spawn the user's real Chrome via a backend command.
  *
  * Each session remembers its own last URL (per terminal id), persisted to
  * localStorage so the URL survives reloads.
- *
- * macOS only — see CLAUDE.md note in the Rust module about why.
  */
 export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.JSX.Element {
   const visible = terminals.forProject(projectId);
@@ -300,11 +289,6 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastLaunched, setLastLaunched] = useState<string | null>(null);
-  // When set, an embedded Chrome window is being tracked. We render a
-  // placeholder div instead of an iframe and keep Chrome's bounds in sync.
-  const [embeddedId, setEmbeddedId] = useState<string | null>(null);
-  // Ref to the placeholder div so we can read its on-screen rect.
-  const placeholderRef = useRef<HTMLDivElement | null>(null);
 
   // When the user picks a different session in another pane, refresh the draft
   // to that session's last-known URL (or fall back to the current draft).
@@ -328,121 +312,13 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
     );
   };
 
-  // The URL that's actively shown (committed via Enter / GO). Used as the
-  // input to spawnEmbeddedBrowser as well as for status text.
+  // The URL that's actively rendered in the iframe (committed via Enter / GO).
   const [loadedUrl, setLoadedUrl] = useState<string>(sessionUrl);
   useEffect(() => {
     setLoadedUrl(sessionUrl);
   }, [sessionUrl]);
 
-  /**
-   * Compute the screen-space (logical px, top-left origin) rect of the
-   * iframe placeholder. AppleScript's `set bounds` expects exactly these
-   * coordinates, so we keep the math here in JS and pass plain ints to Rust.
-   */
-  const computePlaceholderRect = useCallback(async (): Promise<{
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  } | null> => {
-    const el = placeholderRef.current;
-    if (!el) {
-      console.warn('[Deepthix][BrowserPane] computePlaceholderRect: ref not set');
-      return null;
-    }
-    const rect = el.getBoundingClientRect();
-    const win = getCurrentWindow();
-    const [pos, scale] = await Promise.all([win.outerPosition(), win.scaleFactor()]);
-    // Tauri's outerPosition is in PHYSICAL pixels; AppleScript expects LOGICAL
-    // points (top-left origin). Divide by scale factor. Then add the CSS-px
-    // rect offset within the window.
-    const winLogicalX = pos.x / scale;
-    const winLogicalY = pos.y / scale;
-    // The webview is inset slightly inside the OS window (titlebar etc.) but
-    // since outerPosition is the OS window's top-left and rect.left is the
-    // CSS coord within the webview (which fills the OS window content area),
-    // we approximate by adding rect coords directly. macOS Tauri windows
-    // typically have a 28px titlebar; rect.top already accounts for any
-    // in-page chrome we draw.
-    const x = Math.round(winLogicalX + rect.left);
-    const y = Math.round(winLogicalY + rect.top);
-    const w = Math.max(1, Math.round(rect.width));
-    const h = Math.max(1, Math.round(rect.height));
-    return { x, y, w, h };
-  }, []);
-
-  /** Re-sync Chrome's bounds to wherever our placeholder currently sits. */
-  const syncEmbeddedPosition = useCallback(
-    async (id: string): Promise<void> => {
-      const rect = await computePlaceholderRect();
-      if (!rect) return;
-      try {
-        await cmdPositionEmbeddedBrowser(id, rect.x, rect.y, rect.w, rect.h);
-      } catch (e) {
-        // The Chrome window may have been closed by the user — surface as a
-        // soft error and drop the tracked id so the UI returns to "no
-        // embedded browser" state.
-        console.warn('[Deepthix][BrowserPane] positionEmbeddedBrowser failed', e);
-      }
-    },
-    [computePlaceholderRect],
-  );
-
-  // Watch the placeholder's own size (viewport switch, panel resize) and
-  // resync Chrome bounds whenever it changes.
-  useEffect(() => {
-    if (!embeddedId) return;
-    const el = placeholderRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      console.debug('[Deepthix][BrowserPane] placeholder resized — repositioning Chrome');
-      void syncEmbeddedPosition(embeddedId);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [embeddedId, syncEmbeddedPosition]);
-
-  // Watch the parent Tauri window for moves/resizes and resync.
-  useEffect(() => {
-    if (!embeddedId) return;
-    const win = getCurrentWindow();
-    let unMove: (() => void) | null = null;
-    let unResize: (() => void) | null = null;
-    void (async () => {
-      unMove = await win.onMoved(() => {
-        void syncEmbeddedPosition(embeddedId);
-      });
-      unResize = await win.onResized(() => {
-        void syncEmbeddedPosition(embeddedId);
-      });
-    })();
-    return () => {
-      unMove?.();
-      unResize?.();
-    };
-  }, [embeddedId, syncEmbeddedPosition]);
-
-  // On unmount of BrowserPane (mode switch away from BROWSER), hide the
-  // Chrome window so it doesn't float over the rest of the app. App.tsx
-  // remounts BrowserPane on mode return — we re-show on next GO. (Persisting
-  // the embeddedId across remounts is intentionally not implemented; if the
-  // user wants to keep using Chrome they can stay on this tab.)
-  useEffect(() => {
-    return () => {
-      if (embeddedId) {
-        console.debug('[Deepthix][BrowserPane] unmount — closing embedded Chrome', { embeddedId });
-        // Use close (not hide) since we lose the id on unmount anyway.
-        void cmdCloseEmbeddedBrowser(embeddedId).catch((e) => {
-          console.warn('[Deepthix][BrowserPane] close on unmount failed', e);
-        });
-      }
-    };
-    // We intentionally only depend on embeddedId so that the cleanup uses
-    // the current id; recreating the closure on every render is fine.
-  }, [embeddedId]);
-
-  const onGo = async (): Promise<void> => {
+  const onGo = (): void => {
     const url = draft.trim();
     if (!url) {
       setError('Enter a URL.');
@@ -456,47 +332,6 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
       setBrowserUrls(next);
       persistStoredUrls(next);
     }
-    // Close any existing embedded browser first (URL change → fresh window).
-    if (embeddedId) {
-      try {
-        await cmdCloseEmbeddedBrowser(embeddedId);
-      } catch (e) {
-        console.warn('[Deepthix][BrowserPane] close before respawn failed', e);
-      }
-      setEmbeddedId(null);
-    }
-    // Wait one tick so the placeholder div lays out at the new viewport size
-    // before we read its rect.
-    await new Promise((r) => setTimeout(r, 0));
-    const rect = await computePlaceholderRect();
-    if (!rect) {
-      setError('Could not measure placeholder rect.');
-      return;
-    }
-    setLaunching(true);
-    try {
-      console.info('[Deepthix][BrowserPane] spawning embedded Chrome', { url, ...rect });
-      const handle = await cmdSpawnEmbeddedBrowser(url, rect.x, rect.y, rect.w, rect.h);
-      setEmbeddedId(handle.id);
-      setLastLaunched(`${url} (embedded ${rect.w}×${rect.h})`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[Deepthix][BrowserPane] spawnEmbeddedBrowser failed', e);
-      setError(msg);
-    } finally {
-      setLaunching(false);
-    }
-  };
-
-  const onClose = async (): Promise<void> => {
-    if (!embeddedId) return;
-    try {
-      await cmdCloseEmbeddedBrowser(embeddedId);
-    } catch (e) {
-      console.warn('[Deepthix][BrowserPane] close failed', e);
-    }
-    setEmbeddedId(null);
-    setLastLaunched(null);
   };
 
   const openInChromeExternal = async (): Promise<void> => {
@@ -510,19 +345,6 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLaunching(false);
-    }
-  };
-
-  // Ref helper: re-sync once whenever the placeholder mounts (handles
-  // initial paint and StrictMode double-mount). The
-  // `cmdShowEmbeddedBrowser` command is exported by the wrapper for future
-  // use if we ever decide to keep the Chrome window alive across tab
-  // switches; today the unmount-close path makes that unnecessary.
-  const setPlaceholderRef = (el: HTMLDivElement | null): void => {
-    placeholderRef.current = el;
-    if (el && embeddedId) {
-      // Defer one frame so layout settles.
-      requestAnimationFrame(() => void syncEmbeddedPosition(embeddedId));
     }
   };
 
@@ -554,7 +376,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') void onGo();
+            if (e.key === 'Enter') onGo();
           }}
           placeholder="http://localhost:3000"
           spellCheck={false}
@@ -570,19 +392,18 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
           }}
         />
         <button
-          onClick={() => void onGo()}
-          disabled={launching}
+          onClick={onGo}
           style={{
             padding: '4px 12px',
             background: 'var(--color-accent)',
             color: 'var(--color-bg-dark)',
             border: '2px solid var(--color-border)',
-            cursor: launching ? 'wait' : 'pointer',
+            cursor: 'pointer',
             fontFamily: 'var(--font-pixel)',
             fontSize: '13px',
           }}
         >
-          {launching ? '…' : 'GO'}
+          GO
         </button>
         <div style={{ display: 'flex', gap: '2px', marginLeft: '6px' }}>
           {(Object.keys(VIEWPORT_SIZES) as Viewport[]).map((vk) => {
@@ -607,28 +428,10 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
             );
           })}
         </div>
-        {embeddedId && (
-          <button
-            onClick={() => void onClose()}
-            title="Close the embedded Chrome window"
-            style={{
-              padding: '4px 8px',
-              background: 'var(--color-danger)',
-              color: 'var(--color-bg-dark)',
-              border: '2px solid var(--color-border)',
-              cursor: 'pointer',
-              fontFamily: 'var(--font-pixel)',
-              fontSize: '12px',
-              marginLeft: '6px',
-            }}
-          >
-            × close
-          </button>
-        )}
         <button
           onClick={() => void openInChromeExternal()}
           disabled={launching || !loadedUrl}
-          title="Open the same URL in a separate, untracked Chrome window"
+          title="Open the same URL in real Chrome (separate window)"
           style={{
             padding: '4px 8px',
             background: 'transparent',
@@ -645,10 +448,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
         </button>
       </div>
 
-      {/* Iframe area — the placeholder div reserves the space; real Chrome
-          floats on top of it (positioned via AppleScript). When no embedded
-          browser is active and the URL is local-ish we still drop an iframe
-          inside as a quick preview. */}
+      {/* Iframe area */}
       <div
         style={{
           flex: 1,
@@ -660,7 +460,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
           padding: '12px',
         }}
       >
-        {!embeddedId && loadedUrl && !isLocalish(loadedUrl) && (
+        {loadedUrl && !isLocalish(loadedUrl) && (
           <div
             style={{
               width: '100%',
@@ -680,8 +480,8 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
             }}
           >
             <span>
-              External sites usually refuse to be framed. Press <strong>GO</strong> to spawn a real
-              Chrome window overlaid on this area.
+              External sites usually refuse to be framed. If the area below stays blank, use
+              <strong> ↗ Chrome</strong> to open it in a real Chrome window.
             </span>
             <button
               onClick={() => void openInChromeExternal()}
@@ -702,7 +502,6 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
         )}
         {loadedUrl ? (
           <div
-            ref={setPlaceholderRef}
             style={{
               width: `${v.w}px`,
               maxWidth: '100%',
@@ -712,37 +511,15 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
               boxShadow: 'var(--shadow-pixel)',
               background: 'var(--color-bg)',
               flexShrink: 0,
-              position: 'relative',
             }}
           >
-            {embeddedId ? (
-              // Visual placeholder while real Chrome floats on top. We deliberately
-              // keep it empty (no iframe) so the GPU doesn't fight Chrome for the
-              // pixels.
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'var(--color-text-muted)',
-                  fontSize: '12px',
-                  pointerEvents: 'none',
-                }}
-              >
-                {/* Visible if Chrome fails to render or briefly during reposition */}
-                Chrome embedded — {loadedUrl}
-              </div>
-            ) : (
-              <iframe
-                key={`${sessionId ?? 'global'}:${loadedUrl}:${viewport}`}
-                src={loadedUrl}
-                title={`browser-${sessionId ?? 'global'}`}
-                referrerPolicy="no-referrer"
-                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-              />
-            )}
+            <iframe
+              key={`${sessionId ?? 'global'}:${loadedUrl}:${viewport}`}
+              src={loadedUrl}
+              title={`browser-${sessionId ?? 'global'}`}
+              referrerPolicy="no-referrer"
+              style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+            />
           </div>
         ) : (
           <div
@@ -755,9 +532,9 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
               lineHeight: 1.6,
             }}
           >
-            Type a URL above and press <strong>GO</strong>. A real Chrome window will appear
-            embedded in this pane (using your default Chrome profile so extensions like
-            claude-in-chrome MCP work).
+            Type a URL above and press <strong>GO</strong>. The page renders inline at the chosen
+            viewport. Some sites refuse to be framed; in that case use <strong>↗ Chrome</strong> to
+            open in a real Chrome window.
             {sessionId && (
               <div style={{ marginTop: 12, opacity: 0.7 }}>
                 URL is remembered per session ({visible.find((t) => t.id === sessionId)?.label ?? sessionId}).
@@ -781,7 +558,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
           }}
         >
           {error && <span style={{ color: 'var(--color-danger)' }}>{error}</span>}
-          {lastLaunched && !error && (
+          {lastLaunched && (
             <span style={{ color: 'var(--color-status-success)' }}>↗ {lastLaunched}</span>
           )}
         </div>
@@ -789,7 +566,6 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
     </div>
   );
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────
 // Process pane — list project node servers + kill / restart
