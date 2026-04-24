@@ -303,40 +303,6 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
     setViewport(v);
   };
 
-  const onLaunch = async (): Promise<void> => {
-    const url = draft.trim();
-    if (!url) {
-      setError('Please enter a URL.');
-      return;
-    }
-    const v = VIEWPORT_SIZES[viewport];
-    console.info('[Deepthix][BrowserPane] launching Chrome', { url, viewport, ...v });
-    setError(null);
-    setLaunching(true);
-    try {
-      await cmdOpenChrome(url, v.w, v.h);
-      setLastLaunched(`${url} @ ${v.w}x${v.h}`);
-      // Remember per-session URL.
-      if (sessionId) {
-        const next = new Map(browserUrls);
-        next.set(sessionId, url);
-        setBrowserUrls(next);
-        persistStoredUrls(next);
-      }
-    } catch (e) {
-      console.error('[Deepthix][BrowserPane] open_chrome failed', e);
-      const msg = e instanceof Error ? e.message : String(e);
-      // Detect a common "Chrome not installed" failure; otherwise show raw.
-      if (msg.toLowerCase().includes('chrome')) {
-        setError(`Couldn't launch Chrome — make sure Google Chrome is installed in /Applications. (${msg})`);
-      } else {
-        setError(msg);
-      }
-    } finally {
-      setLaunching(false);
-    }
-  };
-
   const v = VIEWPORT_SIZES[viewport];
 
   // The URL that's actively rendered in the iframe (committed via Enter / GO).
