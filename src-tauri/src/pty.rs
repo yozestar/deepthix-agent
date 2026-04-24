@@ -165,8 +165,25 @@ impl TerminalManager {
         resume_session_id: Option<String>,
         mut on_data: F,
     ) -> std::io::Result<()> {
+        let resuming = resume_session_id.is_some();
         let session_id = resume_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        tracing::info!(target: "deepthix::pty", %id, ?cwd, %session_id, cols, rows, skip_permissions, "spawn_claude");
+        tracing::info!(target: "deepthix::pty", %id, ?cwd, %session_id, cols, rows, skip_permissions, resuming, "spawn_claude");
+
+        // Claude creates ~/.claude/session-env/<uuid>/ as a lock per session.
+        // When we respawn (resume), the previous lock survives the host process
+        // exit and claude refuses to start with "Session ID is already in use".
+        // Remove the stale lock dir before spawning if we're resuming.
+        if resuming {
+            if let Some(home) = dirs::home_dir() {
+                let lock = home.join(".claude").join("session-env").join(&session_id);
+                if lock.exists() {
+                    match std::fs::remove_dir_all(&lock) {
+                        Ok(()) => tracing::debug!(target: "deepthix::pty", ?lock, "removed stale session lock"),
+                        Err(e) => tracing::warn!(target: "deepthix::pty", ?lock, error = %e, "failed to remove stale session lock"),
+                    }
+                }
+            }
+        }
 
         let pty_system = native_pty_system();
         let pair = pty_system

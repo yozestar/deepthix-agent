@@ -70,52 +70,50 @@ export function TerminalTab({ termId, visible }: Props): React.JSX.Element {
     };
   }, [termId]);
 
+  // Safe fit: xterm's FitAddon throws if called before the renderer has
+  // initialized (visible-from-hidden race). Catch and retry a few times.
+  const safeFit = useCallback((): void => {
+    const fit = fitRef.current;
+    const term = termRef.current;
+    if (!fit || !term) return;
+    const el = term.element;
+    if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return;
+    try {
+      fit.fit();
+      if (term.cols > 0 && term.rows > 0) {
+        void ptyResize(termId, term.cols, term.rows);
+      }
+    } catch (e) {
+      console.debug('[Deepthix][TerminalTab] fit deferred', e);
+    }
+  }, [termId]);
+
   // When this tab becomes visible (display:none → block), the ResizeObserver
-  // might not fire (it doesn't observe display changes). Run multiple fits
-  // across frames so the xterm dims reflect the now-laid-out container, and
-  // sync the new size back to the pty so claude redraws at the correct width.
+  // might not fire. Run a few delayed fits so the xterm dims reflect the
+  // laid-out container, and sync the new size back to the pty.
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
-    const refit = (): void => {
-      if (cancelled) return;
-      if (!fitRef.current || !termRef.current) return;
-      try {
-        fitRef.current.fit();
-        void ptyResize(termId, termRef.current.cols, termRef.current.rows);
-      } catch (e) {
-        console.debug('[Deepthix][TerminalTab] fit error', e);
-      }
-    };
-    requestAnimationFrame(() => {
-      refit();
-      requestAnimationFrame(() => {
-        refit();
-        // One more after CSS transitions / layout settle.
-        setTimeout(refit, 80);
-      });
-    });
+    const tries = [50, 150, 400];
+    const timers = tries.map((ms) =>
+      setTimeout(() => {
+        if (!cancelled) safeFit();
+      }, ms),
+    );
     return () => {
       cancelled = true;
+      for (const t of timers) clearTimeout(t);
     };
-  }, [visible, termId]);
+  }, [visible, safeFit]);
 
-  // Re-fit on every window resize (user dragging the BottomPanel handle
-  // also fires a window resize for the terminal container).
+  // Re-fit on every window resize (BottomPanel resize handle drags also fire it).
   useEffect(() => {
     function onWindowResize(): void {
-      if (!visible) return;
-      if (!fitRef.current || !termRef.current) return;
-      try {
-        fitRef.current.fit();
-        void ptyResize(termId, termRef.current.cols, termRef.current.rows);
-      } catch (e) {
-        console.debug('[Deepthix][TerminalTab] window-resize fit error', e);
-      }
+      if (visible) safeFit();
     }
     window.addEventListener('resize', onWindowResize);
     return () => window.removeEventListener('resize', onWindowResize);
-  }, [visible, termId]);
+  }, [visible, safeFit]);
 
   return (
     <div
