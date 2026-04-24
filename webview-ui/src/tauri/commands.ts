@@ -46,17 +46,21 @@ export async function loadLayout(projectId: string): Promise<unknown | null> {
   return await invoke<unknown | null>('load_layout', { projectId });
 }
 
+export type TerminalKind = 'shell' | 'claude';
+
 export interface SpawnTerminalResult {
   id: string;
+  session_id: string | null;
 }
 
 export async function spawnTerminal(
   cwd: string,
+  kind: TerminalKind = 'shell',
   cols?: number,
   rows?: number,
 ): Promise<SpawnTerminalResult> {
-  log('spawnTerminal', { cwd, cols, rows });
-  return await invoke<SpawnTerminalResult>('spawn_terminal', { cwd, cols, rows });
+  log('spawnTerminal', { cwd, kind, cols, rows });
+  return await invoke<SpawnTerminalResult>('spawn_terminal', { cwd, cols, rows, kind });
 }
 
 export async function ptyWrite(id: string, data: string): Promise<void> {

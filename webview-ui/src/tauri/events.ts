@@ -33,3 +33,18 @@ export async function onPtyData(handler: (e: PtyDataEvent) => void): Promise<Unl
     handler(event.payload);
   });
 }
+
+export interface AgentJsonlEvent {
+  id: string;
+  session_id: string;
+  line: string;
+}
+
+export async function onAgentJsonlLine(
+  handler: (e: AgentJsonlEvent) => void,
+): Promise<UnlistenFn> {
+  return await listen<AgentJsonlEvent>('agent_jsonl_line', (event) => {
+    log('agent_jsonl_line', { id: event.payload.id, bytes: event.payload.line.length });
+    handler(event.payload);
+  });
+}

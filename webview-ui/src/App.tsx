@@ -81,9 +81,9 @@ function App() {
   }, [projects.activeProject?.path]);
 
   useEffect(() => {
-    setOnOpenTerminal((cwd) => {
-      console.debug('[Deepthix][App] openTerminal handler invoked', { cwd });
-      void terminals.open(cwd);
+    setOnOpenTerminal((cwd, kind) => {
+      console.debug('[Deepthix][App] openTerminal handler invoked', { cwd, kind });
+      void terminals.open(cwd, kind);
     });
     return () => setOnOpenTerminal(null);
   }, [terminals]);

@@ -21,7 +21,7 @@ interface MessageBridge {
  */
 let activeProjectId: string | null = null;
 let activeProjectPath: string | null = null;
-let onOpenTerminal: ((cwd: string) => void) | null = null;
+let onOpenTerminal: ((cwd: string, kind: 'shell' | 'claude') => void) | null = null;
 
 export function setActiveProjectId(id: string | null): void {
   console.debug('[Deepthix][bridge] setActiveProjectId', id);
@@ -33,7 +33,9 @@ export function setActiveProjectPath(path: string | null): void {
   activeProjectPath = path;
 }
 
-export function setOnOpenTerminal(fn: ((cwd: string) => void) | null): void {
+export function setOnOpenTerminal(
+  fn: ((cwd: string, kind: 'shell' | 'claude') => void) | null,
+): void {
   console.debug('[Deepthix][bridge] setOnOpenTerminal', !!fn);
   onOpenTerminal = fn;
 }
@@ -83,8 +85,8 @@ export const tauri: MessageBridge = {
         );
         return;
       }
-      console.debug('[Deepthix][bridge] openClaude → spawnTerminal', activeProjectPath);
-      onOpenTerminal(activeProjectPath);
+      console.debug('[Deepthix][bridge] openClaude → spawn claude agent', activeProjectPath);
+      onOpenTerminal(activeProjectPath, 'claude');
       return;
     }
     // Future phases will route more message types (saveAgentSeats, settings, etc.)
