@@ -10,18 +10,11 @@ pub fn run() {
     );
 
     tauri::Builder::default()
-        .setup(|app| {
-            // Preserved from `tauri init` scaffold — registers the
-            // `tauri-plugin-log` plugin in debug builds. We use `tracing`
-            // for our own logging (see `log.rs`); this plugin is left in
-            // place for any future Tauri-internal log plumbing.
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(::log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+        .setup(|_app| {
+            // `log::*` calls from Tauri internals (and any other dep using
+            // the `log` facade) are bridged into our tracing subscriber by
+            // `tracing_log::LogTracer::init()` in `log::init()`, so they
+            // land in the same unified file as native tracing events.
             tracing::info!(target: "deepthix::boot", "tauri setup complete");
             Ok(())
         })

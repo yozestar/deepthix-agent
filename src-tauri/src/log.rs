@@ -7,6 +7,13 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 /// the caller MUST keep it alive for the program lifetime, otherwise
 /// the file logger is dropped.
 pub fn init() -> WorkerGuard {
+    // Bridge the `log` crate facade into `tracing`. Every `log::info!` /
+    // `log::warn!` etc call from Tauri internals (and any other dep using
+    // the `log` facade) is converted into a `tracing` event with the same
+    // target/level, so it flows through the subscriber registered below
+    // and lands in our unified file alongside native tracing events.
+    tracing_log::LogTracer::init().expect("install log->tracing bridge");
+
     let log_dir = log_dir();
     std::fs::create_dir_all(&log_dir).expect("create log dir");
 
