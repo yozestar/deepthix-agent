@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { TerminalEntry } from '../hooks/useTerminals';
-import { PixelMonster } from './PixelMonster';
+import { Companion, type Emotion } from './Companion';
 
 type AgentState = 'idle' | 'working' | 'waiting';
 
@@ -13,17 +13,33 @@ interface Animal {
   id: number;
   termId: string;
   label: string;
-  /** Seed for the procedural pixel monster — same project + slot → same creature. */
+  /** Seed for the companion design (stable per project + slot). */
   seed: string;
   x: number;         // 0..1 normalized
   y: number;         // 0..1 normalized
   vx: number;        // velocity per frame, normalized
   vy: number;
   state: AgentState;
-  toolHint: string;  // displayed bubble when working
+  toolHint: string;
   bornAt: number;
   lastWaveAt: number;
+  /** Transient on-canvas speech bubble; auto-clears. */
+  speech: string | null;
+  speechUntil: number;
 }
+
+function pickEmotion(a: { state: AgentState; speech: string | null }, waving: boolean, blinking: boolean): Emotion {
+  if (blinking) return 'sleepy';
+  if (a.speech || waving) return 'excited';
+  if (a.state === 'working') return 'working';
+  if (a.state === 'waiting') return 'surprised';
+  return 'happy';
+}
+
+const CHATTER = [
+  'hi!', 'yo', 'wassup?', 'play?', '🎵', 'tag!', 'race?', 'lol',
+  'hehe', '<3', '✨', 'wow', 'cool', 'tag', '!?',
+] as const;
 
 interface Props {
   /** Active project name shown as the header. */
@@ -69,6 +85,8 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
           toolHint: '',
           bornAt: Date.now(),
           lastWaveAt: 0,
+          speech: null,
+          speechUntil: 0,
         });
       });
       const presentIds = new Set(terminals.map((t) => t.agentId));
@@ -151,11 +169,17 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
             a.vy += (Math.random() - 0.5) * 0.00018;
           }
 
-          // Dance: when very close to a buddy, both hop in unison.
+          // Dance: when very close to a buddy, both hop + emit a speech bubble.
           if (buddy && bestDist < 0.07 && now - a.lastWaveAt > 3500) {
             a.lastWaveAt = now;
-            // Small upward "hop" by setting vy negative briefly (rendered as a bob).
             a.vy -= 0.004;
+            const word = CHATTER[Math.floor(Math.random() * CHATTER.length)];
+            a.speech = word;
+            a.speechUntil = now + 1800;
+          }
+          // Clear stale speech.
+          if (a.speech && a.speechUntil < now) {
+            a.speech = null;
           }
 
           // Damp + move.
@@ -276,11 +300,11 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
             }}
             title={`${a.label} — ${a.state}${a.toolHint ? ` (${a.toolHint})` : ''}`}
           >
-            <PixelMonster
+            <Companion
               seed={a.seed}
-              scale={3}
-              blink={blinkTick.has(a.id)}
-              happy={wavingNow || a.state === 'working'}
+              size={88}
+              emotion={pickEmotion(a, wavingNow, blinkTick.has(a.id))}
+              speech={a.speech}
             />
             <div
               style={{

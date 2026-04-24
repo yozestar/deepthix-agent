@@ -167,7 +167,11 @@ function App(): React.JSX.Element {
             </>
           )}
         </div>
-        <BottomPanel terminals={terminals} projectId={projects.activeProjectId} />
+        <BottomPanel
+          terminals={terminals}
+          projectId={projects.activeProjectId}
+          projectPath={projects.activeProject?.path ?? null}
+        />
       </div>
     </div>
   );

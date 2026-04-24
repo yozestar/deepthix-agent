@@ -89,6 +89,22 @@ export async function loadSessions(projectId: string): Promise<PersistedSession[
   return await invoke<PersistedSession[]>('load_sessions', { projectId });
 }
 
+export interface ProcessInfo {
+  pid: number;
+  command: string;
+  cwd: string | null;
+}
+
+export async function listProcesses(projectPath: string): Promise<ProcessInfo[]> {
+  log('listProcesses', { projectPath });
+  return await invoke<ProcessInfo[]>('list_processes', { projectPath });
+}
+
+export async function killProcess(pid: number): Promise<void> {
+  log('killProcess', { pid });
+  return await invoke<void>('kill_process', { pid });
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }
