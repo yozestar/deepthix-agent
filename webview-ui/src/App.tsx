@@ -233,27 +233,32 @@ function App() {
     >
       <Sidebar projects={projects} fileTree={fileTree} />
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {hasProjects && projects.activeProject && (
           <div
             style={{
-              padding: '8px 12px',
+              position: 'absolute',
+              top: '12px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              padding: '6px 14px',
               background: 'var(--color-bg-dark)',
-              borderBottom: '2px solid var(--color-border)',
+              border: '2px solid var(--color-border)',
+              boxShadow: 'var(--shadow-pixel)',
               fontFamily: 'var(--font-pixel)',
               fontSize: '12px',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              flexShrink: 0,
+              zIndex: 10,
+              pointerEvents: 'none',
             }}
             title={projects.activeProject.path}
           >
-            <span style={{ opacity: 0.5 }}>📂</span>
+            <span style={{ opacity: 0.6 }}>📂</span>
             <span style={{ fontWeight: 'bold' }}>{projects.activeProject.name}</span>
-            <span style={{ opacity: 0.4, fontSize: '10px' }}>{projects.activeProject.path}</span>
           </div>
         )}
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {!hasProjects ? (
           <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
         ) : !layoutReady ? (
