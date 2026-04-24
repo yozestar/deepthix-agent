@@ -1,4 +1,5 @@
 mod log;
+mod state;
 mod storage;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
