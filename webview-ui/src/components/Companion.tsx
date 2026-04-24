@@ -222,7 +222,7 @@ export function Companion({ seed, size, emotion, speech }: Props): React.JSX.Ele
             border: '2px solid var(--color-border)',
             boxShadow: 'var(--shadow-pixel)',
             padding: '4px 8px',
-            fontSize: '11px',
+            fontSize: '13px',
             fontFamily: 'var(--font-pixel)',
             whiteSpace: 'nowrap',
             maxWidth: '180px',

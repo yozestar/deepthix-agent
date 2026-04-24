@@ -51,7 +51,7 @@ export function ProjectList({
     >
       <div
         style={{
-          fontSize: '10px',
+          fontSize: '12px',
           opacity: 0.7,
           letterSpacing: '0.1em',
           padding: '4px',
@@ -60,7 +60,7 @@ export function ProjectList({
         PROJECTS
       </div>
       {projects.length === 0 && (
-        <div style={{ fontSize: '11px', opacity: 0.6, padding: '4px' }}>
+        <div style={{ fontSize: '13px', opacity: 0.6, padding: '4px' }}>
           No projects yet.
         </div>
       )}
@@ -89,7 +89,7 @@ export function ProjectList({
               color: isActive ? 'var(--color-bg-dark)' : 'inherit',
               border: isActive ? '2px solid var(--color-border)' : '2px solid transparent',
               boxShadow: isActive ? 'var(--shadow-pixel)' : 'none',
-              fontSize: '12px',
+              fontSize: '14px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -120,7 +120,7 @@ export function ProjectList({
                     border: 'none',
                     color: 'inherit',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: '12px',
+                    fontSize: '14px',
                     width: '100%',
                     outline: 'none',
                   }}
@@ -163,7 +163,7 @@ export function ProjectList({
           border: '2px solid var(--color-border)',
           boxShadow: 'var(--shadow-pixel)',
           cursor: 'pointer',
-          fontSize: '11px',
+          fontSize: '13px',
           fontFamily: 'var(--font-pixel)',
         }}
       >

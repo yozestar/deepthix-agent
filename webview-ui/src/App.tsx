@@ -176,7 +176,7 @@ function App(): React.JSX.Element {
                     boxShadow: 'var(--shadow-pixel)',
                     padding: '6px 10px',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: '11px',
+                    fontSize: '13px',
                     cursor: 'pointer',
                     userSelect: 'none',
                   }}
@@ -199,7 +199,7 @@ function App(): React.JSX.Element {
                     border: '2px solid var(--color-border)',
                     boxShadow: 'var(--shadow-pixel)',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: '16px',
+                    fontSize: '18px',
                     cursor: 'pointer',
                   }}
                 >

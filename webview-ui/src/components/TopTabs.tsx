@@ -40,7 +40,7 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
           background: 'var(--color-bg)',
           border: '2px solid var(--color-border)',
           boxShadow: 'var(--shadow-pixel)',
-          fontSize: '13px',
+          fontSize: '15px',
           letterSpacing: '0.05em',
           maxWidth: '50%',
           overflow: 'hidden',
@@ -72,7 +72,7 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
                 boxShadow: active ? 'var(--shadow-pixel)' : 'none',
                 cursor: 'pointer',
                 fontFamily: 'var(--font-pixel)',
-                fontSize: '11px',
+                fontSize: '13px',
                 textTransform: 'uppercase',
                 letterSpacing: '0.06em',
               }}

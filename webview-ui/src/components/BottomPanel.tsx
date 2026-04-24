@@ -155,7 +155,7 @@ export function SessionsPane({ terminals, projectId }: SessionsPaneProps): React
                 border: '2px solid var(--color-border)',
                 cursor: isEditing ? 'text' : 'pointer',
                 fontFamily: 'var(--font-pixel)',
-                fontSize: '11px',
+                fontSize: '13px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
@@ -183,7 +183,7 @@ export function SessionsPane({ terminals, projectId }: SessionsPaneProps): React
                     border: 'none',
                     color: 'inherit',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: '11px',
+                    fontSize: '13px',
                     width: `${Math.max(60, editingValue.length * 8)}px`,
                     outline: 'none',
                   }}
@@ -380,7 +380,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
             border: '2px solid var(--color-border)',
             padding: '4px 8px',
             fontFamily: 'var(--font-pixel)',
-            fontSize: '11px',
+            fontSize: '13px',
             outline: 'none',
           }}
         />
@@ -393,7 +393,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
             border: '2px solid var(--color-border)',
             cursor: 'pointer',
             fontFamily: 'var(--font-pixel)',
-            fontSize: '11px',
+            fontSize: '13px',
           }}
         >
           GO
@@ -412,7 +412,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
                   border: '2px solid var(--color-border)',
                   cursor: 'pointer',
                   fontFamily: 'var(--font-pixel)',
-                  fontSize: '10px',
+                  fontSize: '12px',
                 }}
                 title={`${VIEWPORT_SIZES[vk].w}×${VIEWPORT_SIZES[vk].h}`}
               >
@@ -432,7 +432,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
             border: '2px solid var(--color-border)',
             cursor: launching ? 'wait' : 'pointer',
             fontFamily: 'var(--font-pixel)',
-            fontSize: '10px',
+            fontSize: '12px',
             marginLeft: '6px',
             opacity: loadedUrl ? 1 : 0.5,
           }}
@@ -478,7 +478,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
             style={{
               alignSelf: 'center',
               color: 'var(--color-text-muted)',
-              fontSize: '12px',
+              fontSize: '14px',
               textAlign: 'center',
               maxWidth: '420px',
               lineHeight: 1.6,
@@ -503,7 +503,7 @@ export function BrowserPane({ terminals, projectId }: BrowserPaneProps): React.J
             padding: '6px 12px',
             background: 'var(--color-bg-dark)',
             borderTop: '2px solid var(--color-border)',
-            fontSize: '11px',
+            fontSize: '13px',
             display: 'flex',
             gap: '12px',
             flexShrink: 0,
@@ -576,7 +576,7 @@ export function ProcessPane({ projectPath }: ProcessPaneProps): React.JSX.Elemen
         flex: 1,
         overflow: 'auto',
         padding: '8px',
-        fontSize: '11px',
+        fontSize: '13px',
         background: 'var(--color-bg)',
         fontFamily: 'var(--font-pixel)',
       }}
@@ -592,7 +592,7 @@ export function ProcessPane({ projectPath }: ProcessPaneProps): React.JSX.Elemen
             border: '2px solid var(--color-border)',
             cursor: 'pointer',
             fontFamily: 'var(--font-pixel)',
-            fontSize: '11px',
+            fontSize: '13px',
           }}
         >
           ⟳ refresh
@@ -635,7 +635,7 @@ export function ProcessPane({ projectPath }: ProcessPaneProps): React.JSX.Elemen
                     border: '2px solid var(--color-border)',
                     cursor: 'pointer',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: '10px',
+                    fontSize: '12px',
                   }}
                 >
                   KILL

@@ -15,7 +15,7 @@ export function FileTree({ tree }: Props): React.JSX.Element {
         flex: 1,
         overflow: 'auto',
         fontFamily: 'var(--font-pixel)',
-        fontSize: '11px',
+        fontSize: '13px',
       }}
     >
       <div
@@ -23,7 +23,7 @@ export function FileTree({ tree }: Props): React.JSX.Element {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          fontSize: '10px',
+          fontSize: '12px',
           opacity: 0.7,
           letterSpacing: '0.1em',
           padding: '4px',
@@ -41,7 +41,7 @@ export function FileTree({ tree }: Props): React.JSX.Element {
             cursor: 'pointer',
             opacity: 0.6,
             padding: '0 4px',
-            fontSize: '10px',
+            fontSize: '12px',
           }}
           aria-label="Refresh file tree"
           title="Refresh"
