@@ -165,8 +165,29 @@ impl TerminalManager {
         resume_session_id: Option<String>,
         mut on_data: F,
     ) -> std::io::Result<()> {
-        let resuming = resume_session_id.is_some();
+        let mut resuming = resume_session_id.is_some();
         let session_id = resume_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+        // If the caller asked us to resume but the JSONL transcript file
+        // doesn't exist on disk, claude exits immediately with "No
+        // conversation found with session ID …". This typically happens when
+        // the user closes the app before claude has flushed any output: we
+        // persisted the session UUID but the transcript file was never
+        // created. In that case, fall back to spawning a brand-new session
+        // under the SAME UUID via `--session-id`, so the persisted identifier
+        // remains stable for future resumes.
+        if resuming {
+            let predicted = crate::jsonl_watcher::predict_jsonl_path(&cwd, &session_id);
+            if !predicted.exists() {
+                tracing::info!(
+                    target: "deepthix::pty",
+                    %id, %session_id, ?predicted,
+                    "no JSONL on disk for resume target; falling back to fresh --session-id"
+                );
+                resuming = false;
+            }
+        }
+
         tracing::info!(target: "deepthix::pty", %id, ?cwd, %session_id, cols, rows, skip_permissions, resuming, "spawn_claude");
 
         // Claude creates ~/.claude/session-env/<uuid>/ as a lock per session.

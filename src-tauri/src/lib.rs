@@ -36,6 +36,7 @@ pub fn run() {
             commands::projects::list_projects,
             commands::projects::switch_project,
             commands::projects::remove_project,
+            commands::projects::rename_project,
             commands::fs::list_dir,
             commands::layout::save_layout,
             commands::layout::load_layout,
@@ -48,6 +49,10 @@ pub fn run() {
             commands::processes::list_processes,
             commands::processes::kill_process,
             commands::chrome::open_chrome,
+            commands::memory::read_project_memory,
+            commands::memory::write_project_memory,
+            commands::memory::read_global_memory,
+            commands::memory::write_global_memory,
         ])
         .setup(|_app| {
             tracing::info!(target: "deepthix::boot", "tauri setup complete");

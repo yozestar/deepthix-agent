@@ -73,6 +73,7 @@ export function Sidebar({ projects, fileTree }: Props): React.JSX.Element {
           activeProjectId={projects.activeProjectId}
           onSwitch={(id) => void projects.switchProject(id)}
           onRemove={(id) => void projects.removeProject(id)}
+          onRename={(id, name) => void projects.renameProject(id, name)}
           onOpenFolder={() => void projects.openAndAddProject()}
         />
         <div

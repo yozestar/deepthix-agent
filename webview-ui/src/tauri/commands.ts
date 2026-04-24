@@ -31,6 +31,11 @@ export async function removeProject(id: string): Promise<boolean> {
   return await invoke<boolean>('remove_project', { id });
 }
 
+export async function renameProject(id: string, name: string): Promise<boolean> {
+  log('renameProject', { id, name });
+  return await invoke<boolean>('rename_project', { id, name });
+}
+
 export async function listDir(path: string): Promise<FileEntry[]> {
   log('listDir', { path });
   return await invoke<FileEntry[]>('list_dir', { path });
@@ -125,4 +130,24 @@ export async function ptyResize(id: string, cols: number, rows: number): Promise
 export async function killTerminal(id: string): Promise<void> {
   log('killTerminal', { id });
   return await invoke<void>('kill_terminal', { id });
+}
+
+export async function readProjectMemory(projectPath: string): Promise<string> {
+  log('readProjectMemory', { projectPath });
+  return await invoke<string>('read_project_memory', { projectPath });
+}
+
+export async function writeProjectMemory(projectPath: string, content: string): Promise<void> {
+  log('writeProjectMemory', { projectPath, bytes: content.length });
+  return await invoke<void>('write_project_memory', { projectPath, content });
+}
+
+export async function readGlobalMemory(): Promise<string> {
+  log('readGlobalMemory');
+  return await invoke<string>('read_global_memory');
+}
+
+export async function writeGlobalMemory(content: string): Promise<void> {
+  log('writeGlobalMemory', { bytes: content.length });
+  return await invoke<void>('write_global_memory', { content });
 }

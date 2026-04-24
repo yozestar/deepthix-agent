@@ -58,3 +58,13 @@ pub fn remove_project(state: State<'_, AppState>, id: String) -> Result<bool, St
     tracing::info!(target: "deepthix::commands", %id, "remove_project");
     state.remove(&id).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn rename_project(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+) -> Result<bool, String> {
+    tracing::info!(target: "deepthix::commands", %id, %name, "rename_project");
+    state.rename(&id, name).map_err(|e| e.to_string())
+}

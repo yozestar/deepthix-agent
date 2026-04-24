@@ -1,8 +1,8 @@
 // Top header bar for the right pane: project name on the left, mode tabs
-// (Sessions / Browser / Process) on the right. The active mode controls
-// which content App.tsx mounts in the rest of the right pane.
+// (Sessions / Browser / Process / Memory) on the right. The active mode
+// controls which content App.tsx mounts in the rest of the right pane.
 
-export type Mode = 'sessions' | 'browser' | 'process';
+export type Mode = 'sessions' | 'browser' | 'process' | 'memory';
 
 interface Props {
   projectName: string | null;
@@ -10,7 +10,7 @@ interface Props {
   onChangeMode: (m: Mode) => void;
 }
 
-const MODES: ReadonlyArray<Mode> = ['sessions', 'browser', 'process'];
+const MODES: ReadonlyArray<Mode> = ['sessions', 'browser', 'process', 'memory'];
 
 export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.Element {
   return (

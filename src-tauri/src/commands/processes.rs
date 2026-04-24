@@ -36,15 +36,10 @@ pub fn list_processes(project_path: PathBuf) -> Result<Vec<ProcessInfo>, String>
         };
         let pid: i32 = match pid_str.parse() { Ok(n) => n, Err(_) => continue };
 
-        // Heuristic: only show processes whose command mentions the project path
-        // OR is a likely dev server (node/npm/pnpm/bun in or near the project).
-        let lower = rest.to_lowercase();
-        let mentions_project = rest.contains(&needle);
-        let is_devvy = lower.contains("node ") || lower.contains("/node ")
-            || lower.starts_with("node ") || lower.contains("npm ") || lower.contains("pnpm ")
-            || lower.contains("yarn ") || lower.contains("bun ") || lower.contains("vite")
-            || lower.contains("next") || lower.contains("nodemon");
-        if !mentions_project && !is_devvy { continue; }
+        // Tight filter: the process must mention the project path in its
+        // argv. Otherwise the list fills up with unrelated `node`/`npm`
+        // processes from other projects on the machine.
+        if !rest.contains(&needle) { continue; }
         // Filter out our own deepthix processes / claude / shell.
         if rest.contains("target/debug/app") || rest.contains("target/release/app") { continue; }
         if rest.contains("claude --session-id") || rest.contains("claude --resume") { continue; }

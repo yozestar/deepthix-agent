@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { BrowserPane, ProcessPane, SessionsPane } from './components/BottomPanel';
+import { MemoryPane } from './components/MemoryPane';
 import { Sidebar } from './components/Sidebar';
 import { TamagotchiView } from './components/TamagotchiView';
 import { type Mode, TopTabs } from './components/TopTabs';
@@ -21,7 +22,14 @@ function App(): React.JSX.Element {
   // Top-level mode: which content fills the right pane.
   const [mode, setMode] = useState<Mode>(() => {
     const stored = localStorage.getItem(MODE_STORAGE_KEY);
-    if (stored === 'sessions' || stored === 'browser' || stored === 'process') return stored;
+    if (
+      stored === 'sessions' ||
+      stored === 'browser' ||
+      stored === 'process' ||
+      stored === 'memory'
+    ) {
+      return stored;
+    }
     return 'sessions';
   });
   useEffect(() => {
@@ -203,8 +211,10 @@ function App(): React.JSX.Element {
           </>
         ) : mode === 'browser' ? (
           <BrowserPane terminals={terminals} projectId={projects.activeProjectId} />
-        ) : (
+        ) : mode === 'process' ? (
           <ProcessPane projectPath={projects.activeProject?.path ?? null} />
+        ) : (
+          <MemoryPane projectPath={projects.activeProject?.path ?? null} />
         )}
       </div>
     </div>
