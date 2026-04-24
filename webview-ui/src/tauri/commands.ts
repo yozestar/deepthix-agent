@@ -35,3 +35,13 @@ export async function listDir(path: string): Promise<FileEntry[]> {
   log('listDir', { path });
   return await invoke<FileEntry[]>('list_dir', { path });
 }
+
+export async function saveLayout(projectId: string, layout: unknown): Promise<void> {
+  log('saveLayout', { projectId });
+  return await invoke<void>('save_layout', { projectId, layout });
+}
+
+export async function loadLayout(projectId: string): Promise<unknown | null> {
+  log('loadLayout', { projectId });
+  return await invoke<unknown | null>('load_layout', { projectId });
+}

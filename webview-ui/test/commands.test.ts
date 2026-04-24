@@ -9,4 +9,6 @@ test('command wrappers exist with expected signatures', async () => {
   assert.equal(typeof mod.switchProject, 'function');
   assert.equal(typeof mod.removeProject, 'function');
   assert.equal(typeof mod.listDir, 'function');
+  assert.equal(typeof mod.saveLayout, 'function');
+  assert.equal(typeof mod.loadLayout, 'function');
 });
