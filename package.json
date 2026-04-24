@@ -7,16 +7,20 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
     "dev:webview": "cd webview-ui && npm run dev",
     "build:webview": "cd webview-ui && npm run build",
     "build:server": "cd server && npm run build",
+    "tauri": "tauri",
     "lint": "eslint server shared && cd webview-ui && eslint .",
     "lint:fix": "eslint server shared --fix && cd webview-ui && eslint . --fix",
     "format": "prettier --write \"server/**/*.ts\" \"shared/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx,css}\" \"*.{js,mjs}\" \"webview-ui/*.{js,ts}\"",
     "format:check": "prettier --check \"server/**/*.ts\" \"shared/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx,css}\" \"*.{js,mjs}\" \"webview-ui/*.{js,ts}\"",
     "test:webview": "cd webview-ui && npm test",
     "test:server": "cd server && npm test",
-    "test": "npm run test:webview && npm run test:server"
+    "test:rust": "cd src-tauri && cargo test",
+    "test": "npm run test:webview && npm run test:server && npm run test:rust"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.1",
