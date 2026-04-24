@@ -59,13 +59,12 @@ interface Ball {
 }
 
 interface Props {
-  projectName: string | null;
   terminals: TerminalEntry[];
   /** Called when the user clicks a ball — should focus that session. */
   onSelectSession: (termId: string) => void;
 }
 
-export function TamagotchiView({ projectName, terminals, onSelectSession }: Props): React.JSX.Element {
+export function TamagotchiView({ terminals, onSelectSession }: Props): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const [balls, setBalls] = useState<Map<number, Ball>>(new Map());
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -157,9 +156,9 @@ export function TamagotchiView({ projectName, terminals, onSelectSession }: Prop
         const arr = Array.from(prev.values());
         const w = size.w;
         const h = size.h;
-        const headerSpace = projectName ? 80 : 0;
 
-        // Move + edge bounce
+        // Move + edge bounce. (No header reserve anymore — project name lives
+        // in the top tab bar above the canvas, not floating inside it.)
         for (const b of arr) {
           b.x += b.vx * dt;
           b.y += b.vy * dt;
@@ -172,7 +171,7 @@ export function TamagotchiView({ projectName, terminals, onSelectSession }: Prop
           // Edge bounce
           if (b.x - RADIUS < 0) { b.x = RADIUS; b.vx = Math.abs(b.vx); }
           if (b.x + RADIUS > w) { b.x = w - RADIUS; b.vx = -Math.abs(b.vx); }
-          if (b.y - RADIUS < headerSpace) { b.y = headerSpace + RADIUS; b.vy = Math.abs(b.vy); }
+          if (b.y - RADIUS < 0) { b.y = RADIUS; b.vy = Math.abs(b.vy); }
           if (b.y + RADIUS > h) { b.y = h - RADIUS; b.vy = -Math.abs(b.vy); }
         }
 
@@ -232,7 +231,7 @@ export function TamagotchiView({ projectName, terminals, onSelectSession }: Prop
     }
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [size.w, size.h, projectName]);
+  }, [size.w, size.h]);
 
   const onBallClick = useCallback(
     (b: Ball, e: React.MouseEvent) => {
@@ -273,26 +272,6 @@ export function TamagotchiView({ projectName, terminals, onSelectSession }: Prop
         fontFamily: 'var(--font-pixel)',
       }}
     >
-      {projectName && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 16,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            padding: '14px 28px',
-            background: 'var(--color-bg-dark)',
-            border: '2px solid var(--color-border)',
-            boxShadow: 'var(--shadow-pixel)',
-            fontSize: '24px',
-            letterSpacing: '0.05em',
-            zIndex: 5,
-            pointerEvents: 'none',
-          }}
-        >
-          🌿 {projectName}
-        </div>
-      )}
       {Array.from(balls.values()).map((b) => (
         <BallView key={b.id} ball={b} onClick={(e) => onBallClick(b, e)} />
       ))}

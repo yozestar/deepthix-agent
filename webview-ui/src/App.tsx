@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { BottomPanel } from './components/BottomPanel';
+import { BrowserPane, ProcessPane, SessionsPane } from './components/BottomPanel';
 import { Sidebar } from './components/Sidebar';
 import { TamagotchiView } from './components/TamagotchiView';
+import { type Mode, TopTabs } from './components/TopTabs';
 import { Welcome } from './components/Welcome';
 import { useFileTree } from './hooks/useFileTree';
 import { useProjects } from './hooks/useProjects';
@@ -10,16 +11,29 @@ import { useTerminals } from './hooks/useTerminals';
 import { isTauriRuntime } from './runtime';
 import { setActiveProjectId, setActiveProjectPath, setOnOpenTerminal } from './tauriApi';
 
+const MODE_STORAGE_KEY = 'deepthix.mode';
+
 function App(): React.JSX.Element {
   const projects = useProjects();
   const fileTree = useFileTree(projects.activeProject?.path ?? null);
   const terminals = useTerminals();
+
+  // Top-level mode: which content fills the right pane.
+  const [mode, setMode] = useState<Mode>(() => {
+    const stored = localStorage.getItem(MODE_STORAGE_KEY);
+    if (stored === 'sessions' || stored === 'browser' || stored === 'process') return stored;
+    return 'sessions';
+  });
+  useEffect(() => {
+    localStorage.setItem(MODE_STORAGE_KEY, mode);
+  }, [mode]);
 
   console.log('[Deepthix][App] render', {
     projectsCount: projects.projects.length,
     activeProjectId: projects.activeProjectId,
     activeProjectPath: projects.activeProject?.path ?? null,
     terminalsCount: terminals.terminals.length,
+    mode,
   });
 
   // Keep the postMessage bridge in sync with the active project (used by
@@ -89,6 +103,7 @@ function App(): React.JSX.Element {
     const projectId = projects.activeProjectId;
     const cwd = projects.activeProject?.path;
     if (!projectId || !cwd) return;
+    console.debug('[Deepthix][App] spawn session', { projectId, cwd, skipPerms });
     void terminals.open(projectId, cwd, 'claude', undefined, { skipPermissions: skipPerms });
   };
 
@@ -102,14 +117,32 @@ function App(): React.JSX.Element {
       }}
     >
       <Sidebar projects={projects} fileTree={fileTree} />
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-          {!hasProjects ? (
-            <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
-          ) : (
-            <>
+      <div
+        style={{
+          flex: 1,
+          position: 'relative',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        {/* Top header bar: project name + mode tabs. Always present so the
+            user can switch modes even when no project is open (modes that
+            need a project will degrade gracefully). */}
+        <TopTabs
+          projectName={projects.activeProject?.name ?? null}
+          mode={mode}
+          onChangeMode={setMode}
+        />
+        {/* Right-pane body: depends on whether a project is open + which mode. */}
+        {!hasProjects ? (
+          <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
+        ) : mode === 'sessions' ? (
+          <>
+            {/* Tamagotchi fills the upper area; SessionsPane (when present)
+                anchors the resizable terminal area below. */}
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
               <TamagotchiView
-                projectName={projects.activeProject?.name ?? null}
                 terminals={visibleAgents}
                 onSelectSession={(termId) => terminals.setActive(termId)}
               />
@@ -165,14 +198,14 @@ function App(): React.JSX.Element {
                   + Session
                 </button>
               </div>
-            </>
-          )}
-        </div>
-        <BottomPanel
-          terminals={terminals}
-          projectId={projects.activeProjectId}
-          projectPath={projects.activeProject?.path ?? null}
-        />
+            </div>
+            <SessionsPane terminals={terminals} projectId={projects.activeProjectId} />
+          </>
+        ) : mode === 'browser' ? (
+          <BrowserPane terminals={terminals} projectId={projects.activeProjectId} />
+        ) : (
+          <ProcessPane projectPath={projects.activeProject?.path ?? null} />
+        )}
       </div>
     </div>
   );

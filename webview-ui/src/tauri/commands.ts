@@ -105,6 +105,15 @@ export async function killProcess(pid: number): Promise<void> {
   return await invoke<void>('kill_process', { pid });
 }
 
+/**
+ * Spawn the user's real Google Chrome on `url` at the given viewport size.
+ * Returns a friendly error string if Chrome isn't installed (or `open` fails).
+ */
+export async function openChrome(url: string, width: number, height: number): Promise<void> {
+  log('openChrome', { url, width, height });
+  return await invoke<void>('open_chrome', { url, width, height });
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }
