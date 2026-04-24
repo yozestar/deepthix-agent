@@ -43,6 +43,8 @@ pub fn run() {
             commands::terminals::pty_write,
             commands::terminals::pty_resize,
             commands::terminals::kill_terminal,
+            commands::sessions::save_sessions,
+            commands::sessions::load_sessions,
         ])
         .setup(|_app| {
             tracing::info!(target: "deepthix::boot", "tauri setup complete");

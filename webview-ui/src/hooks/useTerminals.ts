@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   killTerminal as cmdKillTerminal,
+  loadSessions as cmdLoadSessions,
+  type PersistedSession,
+  saveSessions as cmdSaveSessions,
   spawnTerminal as cmdSpawnTerminal,
   type TerminalKind,
 } from '../tauri/commands';
@@ -29,14 +32,13 @@ export interface UseTerminalsResult {
     cwd: string,
     kind?: TerminalKind,
     label?: string,
-    opts?: { skipPermissions?: boolean },
+    opts?: { skipPermissions?: boolean; resumeSessionId?: string },
   ) => Promise<TerminalEntry | null>;
   close: (id: string) => Promise<void>;
-  /**
-   * Returns terminals scoped to one project. Used by the BottomPanel and the
-   * project-switch effect to drive office character add/remove.
-   */
+  /** Returns terminals scoped to one project. */
   forProject: (projectId: string | null) => TerminalEntry[];
+  /** Re-spawn every persisted claude session for the project (idempotent). */
+  resumeProject: (projectId: string) => Promise<void>;
 }
 
 function dispatchWebviewMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -91,13 +93,35 @@ export function useTerminals(): UseTerminalsResult {
     };
   }, []);
 
+  /**
+   * Persist the current claude sessions for `projectId` to disk so they can
+   * be resumed across app restarts.
+   */
+  const persistProjectSessions = useCallback(
+    (projectId: string): void => {
+      const sessions: PersistedSession[] = terminalsRef.current
+        .filter((t) => t.projectId === projectId && t.kind === 'claude' && t.sessionId)
+        .map((t) => ({
+          session_id: t.sessionId as string,
+          label: t.label,
+          cwd: t.cwd,
+          skip_permissions: false, // we don't currently surface this back; resume always asks fresh
+          created_at_ms: Date.now(),
+        }));
+      void cmdSaveSessions(projectId, sessions).catch((err) => {
+        console.error('[Deepthix][useTerminals] persistProjectSessions failed', err);
+      });
+    },
+    [],
+  );
+
   const open = useCallback(
     async (
       projectId: string,
       cwd: string,
       kind: TerminalKind = 'shell',
       label?: string,
-      opts?: { skipPermissions?: boolean },
+      opts?: { skipPermissions?: boolean; resumeSessionId?: string },
     ): Promise<TerminalEntry | null> => {
       console.debug('[Deepthix][useTerminals] open', { projectId, cwd, kind, label, opts });
       try {
@@ -114,6 +138,7 @@ export function useTerminals(): UseTerminalsResult {
         };
         console.debug('[Deepthix][useTerminals] opened', entry);
         setTerminals((prev) => [...prev, entry]);
+        terminalsRef.current = [...terminalsRef.current, entry];
         setActive(result.id);
         if (kind === 'claude') {
           dispatchWebviewMessage({
@@ -122,6 +147,7 @@ export function useTerminals(): UseTerminalsResult {
             terminalId: result.id,
             name: entry.label,
           });
+          persistProjectSessions(projectId);
         }
         return entry;
       } catch (e) {
@@ -129,7 +155,37 @@ export function useTerminals(): UseTerminalsResult {
         return null;
       }
     },
-    [],
+    [persistProjectSessions],
+  );
+
+  const resumeProject = useCallback(
+    async (projectId: string): Promise<void> => {
+      // Skip if we already have terminals for this project (avoids double-spawn
+      // when an effect fires after the user has already opened sessions manually).
+      const already = terminalsRef.current.some((t) => t.projectId === projectId);
+      if (already) {
+        console.debug('[Deepthix][useTerminals] resumeProject skipped (already loaded)', projectId);
+        return;
+      }
+      let saved: PersistedSession[] = [];
+      try {
+        saved = await cmdLoadSessions(projectId);
+      } catch (e) {
+        console.error('[Deepthix][useTerminals] loadSessions failed', e);
+        return;
+      }
+      console.debug('[Deepthix][useTerminals] resumeProject', { projectId, count: saved.length });
+      for (const s of saved) {
+        // claude resumes from the existing JSONL transcript when given the same
+        // --session-id; if the JSONL is gone, claude starts a fresh session
+        // under that id (still useful — keeps the same identifier).
+        await open(projectId, s.cwd, 'claude', s.label, {
+          skipPermissions: s.skip_permissions,
+          resumeSessionId: s.session_id,
+        });
+      }
+    },
+    [open],
   );
 
   const close = useCallback(async (id: string): Promise<void> => {
@@ -140,12 +196,15 @@ export function useTerminals(): UseTerminalsResult {
     } catch (e) {
       console.error('[Deepthix][useTerminals] kill failed', e);
     }
+    const projectId = entry?.projectId;
     setTerminals((prev) => prev.filter((t) => t.id !== id));
+    terminalsRef.current = terminalsRef.current.filter((t) => t.id !== id);
     setActive((prev) => (prev === id ? null : prev));
     if (entry?.kind === 'claude') {
       dispatchWebviewMessage({ type: 'agentClosed', id: entry.agentId });
+      if (projectId) persistProjectSessions(projectId);
     }
-  }, []);
+  }, [persistProjectSessions]);
 
   const forProject = useCallback(
     (projectId: string | null): TerminalEntry[] => {
@@ -156,7 +215,7 @@ export function useTerminals(): UseTerminalsResult {
   );
 
   return useMemo(
-    () => ({ terminals, activeId, setActive, open, close, forProject }),
-    [terminals, activeId, open, close, forProject],
+    () => ({ terminals, activeId, setActive, open, close, forProject, resumeProject }),
+    [terminals, activeId, open, close, forProject, resumeProject],
   );
 }

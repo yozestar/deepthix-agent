@@ -58,7 +58,7 @@ export async function spawnTerminal(
   kind: TerminalKind = 'shell',
   cols?: number,
   rows?: number,
-  opts?: { skipPermissions?: boolean },
+  opts?: { skipPermissions?: boolean; resumeSessionId?: string },
 ): Promise<SpawnTerminalResult> {
   log('spawnTerminal', { cwd, kind, cols, rows, opts });
   return await invoke<SpawnTerminalResult>('spawn_terminal', {
@@ -67,7 +67,26 @@ export async function spawnTerminal(
     rows,
     kind,
     skipPermissions: opts?.skipPermissions ?? false,
+    resumeSessionId: opts?.resumeSessionId ?? null,
   });
+}
+
+export interface PersistedSession {
+  session_id: string;
+  label: string;
+  cwd: string;
+  skip_permissions: boolean;
+  created_at_ms: number;
+}
+
+export async function saveSessions(projectId: string, sessions: PersistedSession[]): Promise<void> {
+  log('saveSessions', { projectId, count: sessions.length });
+  return await invoke<void>('save_sessions', { projectId, sessions });
+}
+
+export async function loadSessions(projectId: string): Promise<PersistedSession[]> {
+  log('loadSessions', { projectId });
+  return await invoke<PersistedSession[]>('load_sessions', { projectId });
 }
 
 export async function ptyWrite(id: string, data: string): Promise<void> {

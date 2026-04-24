@@ -53,6 +53,8 @@ impl TerminalManager {
 
     /// Dispatches to `spawn_shell` or `spawn_claude` based on `kind`.
     /// `skip_permissions` is forwarded to claude as `--dangerously-skip-permissions`.
+    /// `resume_session_id` is used as `--session-id` (claude resumes from the
+    /// existing JSONL transcript if it exists); when None, a fresh UUID is generated.
     pub fn spawn_with_kind<F: FnMut(&str, &[u8]) + Send + 'static>(
         &self,
         id: String,
@@ -61,6 +63,7 @@ impl TerminalManager {
         rows: u16,
         kind: &crate::commands::terminals::TerminalKind,
         skip_permissions: bool,
+        resume_session_id: Option<String>,
         on_data: F,
     ) -> std::io::Result<()> {
         match kind {
@@ -68,7 +71,7 @@ impl TerminalManager {
                 self.spawn_shell(id, cwd, cols, rows, on_data)
             }
             crate::commands::terminals::TerminalKind::Claude => {
-                self.spawn_claude(id, cwd, cols, rows, skip_permissions, on_data)
+                self.spawn_claude(id, cwd, cols, rows, skip_permissions, resume_session_id, on_data)
             }
         }
     }
@@ -159,9 +162,10 @@ impl TerminalManager {
         cols: u16,
         rows: u16,
         skip_permissions: bool,
+        resume_session_id: Option<String>,
         mut on_data: F,
     ) -> std::io::Result<()> {
-        let session_id = uuid::Uuid::new_v4().to_string();
+        let session_id = resume_session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         tracing::info!(target: "deepthix::pty", %id, ?cwd, %session_id, cols, rows, skip_permissions, "spawn_claude");
 
         let pty_system = native_pty_system();

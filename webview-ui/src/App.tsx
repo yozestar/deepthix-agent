@@ -53,19 +53,21 @@ function App(): React.JSX.Element {
   // existing JSONL parser in useTerminals already dispatches those events.
   // No additional bridging needed for the per-project visualization.
 
-  // Track project changes so we can prune the in-memory office state if a
-  // future feature needs it. For now this is just a debug log.
+  // On project switch, log + resume any persisted sessions for the new
+  // project. resumeProject is idempotent (no-op if sessions already loaded).
   const lastActiveRef = useRef<string | null>(null);
   useEffect(() => {
     const newId = projects.activeProjectId;
-    if (lastActiveRef.current !== newId) {
-      console.debug('[Deepthix][App] active project changed', {
-        from: lastActiveRef.current,
-        to: newId,
-      });
-      lastActiveRef.current = newId;
+    if (lastActiveRef.current === newId) return;
+    console.debug('[Deepthix][App] active project changed', {
+      from: lastActiveRef.current,
+      to: newId,
+    });
+    lastActiveRef.current = newId;
+    if (newId) {
+      void terminals.resumeProject(newId);
     }
-  }, [projects.activeProjectId]);
+  }, [projects.activeProjectId, projects.activeProject?.path, terminals]);
 
   // Tauri runtime indicator (compile-time presence check; logged once).
   useEffect(() => {
