@@ -1,5 +1,5 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 
 test('detectRuntime falls back to browser when neither vscode nor tauri globals exist', async () => {
   // The module reads globals at import time; this test exists to lock the

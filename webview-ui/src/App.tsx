@@ -7,13 +7,17 @@ import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { SettingsModal } from './components/SettingsModal.js';
+import { Sidebar } from './components/Sidebar';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
+import { Welcome } from './components/Welcome';
 import { ZoomControls } from './components/ZoomControls.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
+import { useFileTree } from './hooks/useFileTree';
+import { useProjects } from './hooks/useProjects';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -36,6 +40,17 @@ function getOfficeState(): OfficeState {
 }
 
 function App() {
+  // Deepthix Phase 1: project + file-tree state for the sidebar. Independent of
+  // the pixel-office hooks below so they remain unchanged.
+  const projects = useProjects();
+  const fileTree = useFileTree(projects.activeProject?.path ?? null);
+  console.log('[Deepthix][App] render', {
+    projectsCount: projects.projects.length,
+    activeProjectId: projects.activeProjectId,
+    activeProjectPath: projects.activeProject?.path ?? null,
+    fileTreeRoot: fileTree.root?.path ?? null,
+  });
+
   // Browser runtime (dev or static dist): dispatch mock messages after the
   // useExtensionMessages listener has been registered.
   useEffect(() => {
@@ -164,13 +179,29 @@ function App() {
       return false;
     })();
 
-  if (!layoutReady) {
-    return <div className="w-full h-full flex items-center justify-center ">Loading...</div>;
-  }
+  // Deepthix Phase 1 layout: Sidebar (always present) | right pane (Welcome
+  // when no projects, otherwise the existing pixel-art office). The original
+  // pixel-agents UI is preserved verbatim inside the right pane.
+  const hasProjects = projects.projects.length > 0;
 
   return (
-    <div ref={containerRef} className="w-full h-full relative overflow-hidden">
-      <OfficeCanvas
+    <div
+      style={{
+        display: 'flex',
+        height: '100vh',
+        width: '100vw',
+        background: 'var(--pixel-bg)',
+      }}
+    >
+      <Sidebar projects={projects} fileTree={fileTree} />
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {!hasProjects ? (
+          <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
+        ) : !layoutReady ? (
+          <div className="w-full h-full flex items-center justify-center ">Loading...</div>
+        ) : (
+          <div ref={containerRef} className="w-full h-full relative overflow-hidden">
+            <OfficeCanvas
         officeState={officeState}
         onClick={handleClick}
         isEditMode={editor.isEditMode}
@@ -366,6 +397,9 @@ function App() {
       {showMigrationNotice && (
         <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />
       )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
