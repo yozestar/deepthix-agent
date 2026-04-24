@@ -18,6 +18,7 @@
     "test": "npm run test:webview && npm run test:server"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
     "eslint": "^10.0.3",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-simple-import-sort": "^12.1.1",
