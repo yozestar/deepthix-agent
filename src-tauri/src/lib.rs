@@ -1,5 +1,6 @@
 mod commands;
 mod log;
+mod pty;
 mod state;
 mod storage;
 
@@ -26,6 +27,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
+        .manage(crate::pty::TerminalManager::new())
         .invoke_handler(tauri::generate_handler![
             commands::projects::open_folder,
             commands::projects::add_project,
@@ -35,6 +37,10 @@ pub fn run() {
             commands::fs::list_dir,
             commands::layout::save_layout,
             commands::layout::load_layout,
+            commands::terminals::spawn_terminal,
+            commands::terminals::pty_write,
+            commands::terminals::pty_resize,
+            commands::terminals::kill_terminal,
         ])
         .setup(|_app| {
             tracing::info!(target: "deepthix::boot", "tauri setup complete");
