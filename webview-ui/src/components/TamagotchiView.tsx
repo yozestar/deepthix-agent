@@ -1,24 +1,11 @@
+/* eslint-disable pixel-agents/no-inline-colors */
+// The grid-overlay background uses inline rgba so it can layer on top of the
+// existing radial gradient — replacing it with a CSS variable would force a
+// new --color-* token for a single-use ornament. Pragmatic exemption.
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { TerminalEntry } from '../hooks/useTerminals';
-
-const SPECIES = [
-  { emoji: '🐶', name: 'Pup' },
-  { emoji: '🐱', name: 'Kit' },
-  { emoji: '🐰', name: 'Bun' },
-  { emoji: '🦊', name: 'Fox' },
-  { emoji: '🐻', name: 'Bear' },
-  { emoji: '🐼', name: 'Panda' },
-  { emoji: '🐨', name: 'Koala' },
-  { emoji: '🐯', name: 'Tiger' },
-  { emoji: '🦁', name: 'Lion' },
-  { emoji: '🐸', name: 'Frog' },
-  { emoji: '🐵', name: 'Mono' },
-  { emoji: '🦝', name: 'Coon' },
-  { emoji: '🐹', name: 'Hams' },
-  { emoji: '🦔', name: 'Hog' },
-  { emoji: '🐧', name: 'Pen' },
-] as const;
+import { PixelMonster } from './PixelMonster';
 
 type AgentState = 'idle' | 'working' | 'waiting';
 
@@ -26,8 +13,8 @@ interface Animal {
   id: number;
   termId: string;
   label: string;
-  emoji: string;
-  hue: number;       // CSS hue rotation degrees, 0–360
+  /** Seed for the procedural pixel monster — same project + slot → same creature. */
+  seed: string;
   x: number;         // 0..1 normalized
   y: number;         // 0..1 normalized
   vx: number;        // velocity per frame, normalized
@@ -36,29 +23,6 @@ interface Animal {
   toolHint: string;  // displayed bubble when working
   bornAt: number;
   lastWaveAt: number;
-}
-
-/** djb2 — fast deterministic string hash. */
-function hashString(s: string): number {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
-}
-
-/** Same projectId → same emoji (1:1 within the SPECIES list). */
-function projectEmoji(projectId: string): string {
-  return SPECIES[hashString(projectId) % SPECIES.length].emoji;
-}
-
-/**
- * Same projectId → same base hue. Different agents within the project get
- * a small offset so they're distinguishable but visually a "family".
- */
-function projectHue(projectId: string, agentIndex: number): number {
-  const base = hashString(projectId) % 360;
-  return (base + agentIndex * 35) % 360;
 }
 
 interface Props {
@@ -94,8 +58,9 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
           id: t.agentId,
           termId: t.id,
           label: t.label,
-          emoji: projectEmoji(t.projectId),
-          hue: projectHue(t.projectId, indexWithinProject),
+          // Project-deterministic seed; agent index nudges the design so multiple
+          // agents in the same project look related but distinguishable.
+          seed: `${t.projectId}#${indexWithinProject}`,
           x: 0.1 + Math.random() * 0.8,
           y: 0.2 + Math.random() * 0.6,
           vx: (Math.random() - 0.5) * 0.0015,
@@ -134,6 +99,9 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
         } else if (data.type === 'agentStatus') {
           const ad = data as { status?: string };
           next.set(agentId, { ...a, state: ad.status === 'waiting' ? 'waiting' : a.state });
+        } else if (data.type === 'agentRenamed') {
+          const ad = data as { name?: string };
+          if (ad.name) next.set(agentId, { ...a, label: ad.name });
         }
         return next;
       });
@@ -210,8 +178,12 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
         height: '100%',
         background:
           'radial-gradient(ellipse at top, color-mix(in srgb, var(--color-accent) 8%, var(--color-bg)) 0%, var(--color-bg) 70%)',
+        backgroundImage:
+          'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px), radial-gradient(ellipse at top, color-mix(in srgb, var(--color-accent) 8%, var(--color-bg)) 0%, var(--color-bg) 70%)',
+        backgroundSize: '24px 24px, 24px 24px, 100% 100%',
         overflow: 'hidden',
         fontFamily: 'var(--font-pixel)',
+        imageRendering: 'pixelated',
       }}
     >
       {projectName && (
@@ -252,25 +224,23 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
               top: `${a.y * 100}%`,
               transform: `translate(-50%, -50%) ${bob} scale(${scale})`,
               transition: 'transform 0.2s ease-out, left 0.05s linear, top 0.05s linear',
-              filter: `hue-rotate(${a.hue}deg) drop-shadow(0 4px 0 var(--color-bg-dark))`,
-              fontSize: '64px',
+              filter: 'drop-shadow(0 4px 0 var(--color-bg-dark))',
               userSelect: 'none',
               pointerEvents: 'none',
               textAlign: 'center',
             }}
             title={`${a.label} — ${a.state}${a.toolHint ? ` (${a.toolHint})` : ''}`}
           >
-            <div style={{ lineHeight: 1 }}>{a.emoji}</div>
+            <PixelMonster seed={a.seed} scale={5} />
             <div
               style={{
                 fontSize: '11px',
-                marginTop: '2px',
+                marginTop: '4px',
                 background: 'var(--color-bg-dark)',
                 color: 'var(--color-text)',
                 padding: '2px 6px',
                 border: '1px solid var(--color-border)',
                 whiteSpace: 'nowrap',
-                filter: `hue-rotate(-${a.hue}deg)`, // counter the parent hue so labels stay legible
               }}
             >
               {a.label}
@@ -288,7 +258,6 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
                   padding: '2px 8px',
                   border: '2px solid var(--color-border)',
                   whiteSpace: 'nowrap',
-                  filter: `hue-rotate(-${a.hue}deg)`,
                 }}
               >
                 {a.toolHint}
@@ -301,7 +270,6 @@ export function TamagotchiView({ projectName, terminals }: Props): React.JSX.Ele
                   top: '-30px',
                   right: '-10px',
                   fontSize: '24px',
-                  filter: `hue-rotate(-${a.hue}deg)`,
                   animation: 'tama-wave 1s ease-in-out',
                 }}
               >

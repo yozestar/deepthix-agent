@@ -39,6 +39,8 @@ export interface UseTerminalsResult {
   forProject: (projectId: string | null) => TerminalEntry[];
   /** Re-spawn every persisted claude session for the project (idempotent). */
   resumeProject: (projectId: string) => Promise<void>;
+  /** Rename a session — updates label in memory + persisted store. */
+  rename: (id: string, label: string) => void;
 }
 
 function dispatchWebviewMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -214,8 +216,30 @@ export function useTerminals(): UseTerminalsResult {
     [terminals],
   );
 
+  const rename = useCallback((id: string, label: string): void => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    let projectId: string | null = null;
+    setTerminals((prev) =>
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        projectId = t.projectId;
+        return { ...t, label: trimmed };
+      }),
+    );
+    terminalsRef.current = terminalsRef.current.map((t) =>
+      t.id === id ? { ...t, label: trimmed } : t,
+    );
+    if (projectId) persistProjectSessions(projectId);
+    // Notify the office (TamagotchiView) that this character has a new name.
+    const entry = terminalsRef.current.find((t) => t.id === id);
+    if (entry?.kind === 'claude') {
+      dispatchWebviewMessage({ type: 'agentRenamed', id: entry.agentId, name: trimmed });
+    }
+  }, [persistProjectSessions]);
+
   return useMemo(
-    () => ({ terminals, activeId, setActive, open, close, forProject, resumeProject }),
-    [terminals, activeId, open, close, forProject, resumeProject],
+    () => ({ terminals, activeId, setActive, open, close, forProject, resumeProject, rename }),
+    [terminals, activeId, open, close, forProject, resumeProject, rename],
   );
 }

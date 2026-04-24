@@ -17,6 +17,8 @@ export function BottomPanel({ terminals, projectId }: Props): React.JSX.Element 
   const effectiveActive: string | null = visible.some((t) => t.id === terminals.activeId)
     ? terminals.activeId
     : (visible[0]?.id ?? null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
   const [height, setHeight] = useState<number>(() => {
     const stored = Number(localStorage.getItem(STORAGE_KEY));
     return Number.isFinite(stored) && stored >= MIN_HEIGHT ? stored : DEFAULT_HEIGHT;
@@ -103,24 +105,60 @@ export function BottomPanel({ terminals, projectId }: Props): React.JSX.Element 
       >
         {visible.map((t) => {
           const isActive = t.id === effectiveActive;
+          const isEditing = editingId === t.id;
           return (
-            <button
+            <div
               key={t.id}
-              onClick={() => terminals.setActive(t.id)}
+              onClick={() => !isEditing && terminals.setActive(t.id)}
+              onDoubleClick={() => {
+                setEditingId(t.id);
+                setEditingValue(t.label);
+              }}
               style={{
                 padding: '6px 12px',
                 background: isActive ? 'var(--color-accent)' : 'transparent',
                 color: isActive ? 'var(--color-bg-dark)' : 'inherit',
                 border: '2px solid var(--color-border)',
-                cursor: 'pointer',
+                cursor: isEditing ? 'text' : 'pointer',
                 fontFamily: 'var(--font-pixel)',
                 fontSize: '11px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
               }}
+              title="Double-click to rename"
             >
-              {t.label}
+              {isEditing ? (
+                <input
+                  autoFocus
+                  value={editingValue}
+                  onChange={(e) => setEditingValue(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  onBlur={() => {
+                    terminals.rename(t.id, editingValue);
+                    setEditingId(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      terminals.rename(t.id, editingValue);
+                      setEditingId(null);
+                    } else if (e.key === 'Escape') {
+                      setEditingId(null);
+                    }
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'inherit',
+                    fontFamily: 'var(--font-pixel)',
+                    fontSize: '11px',
+                    width: `${Math.max(60, editingValue.length * 8)}px`,
+                    outline: 'none',
+                  }}
+                />
+              ) : (
+                <span>{t.label}</span>
+              )}
               <span
                 role="button"
                 tabIndex={0}
@@ -133,7 +171,7 @@ export function BottomPanel({ terminals, projectId }: Props): React.JSX.Element 
               >
                 ×
               </span>
-            </button>
+            </div>
           );
         })}
       </div>
