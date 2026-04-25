@@ -10,22 +10,26 @@ import {
   TERMINAL_FONT_SIZE_MAX,
   TERMINAL_FONT_SIZE_MIN,
 } from '../constants';
-import type { TerminalSettings } from '../hooks/useTerminals';
+import type { GlobalConfig } from '../hooks/useGlobalConfig';
 import { ptyResize, ptyWrite } from '../tauri/commands';
 import { onPtyData, type PtyDataEvent } from '../tauri/events';
 
 interface Props {
   termId: string;
   visible: boolean;
-  /** Per-session font / line-height settings (Phase 10). */
-  settings: TerminalSettings;
+  /**
+   * Global terminal settings (Phase 11). Promoted from per-session — every
+   * tab now reads from the same `~/.deepthix/config.json`-backed hook so
+   * font/zoom changes apply uniformly.
+   */
+  settings: GlobalConfig;
   /**
    * Called when the user changes settings *from inside the terminal*
    * (Cmd+=/Cmd+-/Cmd+0 keyboard shortcuts). The parent persists the new
-   * value into `useTerminals.updateSettings`, which flows back into our
+   * value into `useGlobalConfig.update`, which flows back into our
    * `settings` prop and triggers the live-update effect.
    */
-  onSettingsChange: (partial: Partial<TerminalSettings>) => void;
+  onSettingsChange: (partial: Partial<GlobalConfig>) => void;
 }
 
 function clampFontSize(n: number): number {
@@ -46,7 +50,7 @@ export function TerminalTab({
   // Stash the latest settings + onSettingsChange so the keydown handler
   // (registered once at mount) always sees the current values without
   // having to re-bind every render.
-  const settingsRef = useRef<TerminalSettings>(settings);
+  const settingsRef = useRef<GlobalConfig>(settings);
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
@@ -63,9 +67,9 @@ export function TerminalTab({
     }
     console.debug('[Deepthix][TerminalTab] mount', {
       termId,
-      fontSize: settingsRef.current.fontSize,
-      fontFamily: settingsRef.current.fontFamily,
-      lineHeight: settingsRef.current.lineHeight,
+      fontSize: settingsRef.current.terminalFontSize,
+      fontFamily: settingsRef.current.terminalFontFamily,
+      lineHeight: settingsRef.current.terminalLineHeight,
     });
     // xterm renders to canvas → CSS vars don't resolve there. Read the
     // computed --color-bg from :root so the terminal background matches the
@@ -73,9 +77,9 @@ export function TerminalTab({
     const rootStyle = getComputedStyle(document.documentElement);
     const bgColor = rootStyle.getPropertyValue('--color-bg').trim() || TERMINAL_DEFAULT_BG;
     const term = new Terminal({
-      fontSize: settingsRef.current.fontSize,
-      fontFamily: settingsRef.current.fontFamily,
-      lineHeight: settingsRef.current.lineHeight,
+      fontSize: settingsRef.current.terminalFontSize,
+      fontFamily: settingsRef.current.terminalFontFamily,
+      lineHeight: settingsRef.current.terminalLineHeight,
       theme: { background: bgColor },
       convertEol: true,
     });
@@ -104,11 +108,13 @@ export function TerminalTab({
     });
     resizeObserver.observe(el);
 
-    // Per-session keyboard shortcuts. Only fire when xterm has focus —
-    // xterm puts focus on the .xterm-helper-textarea (a hidden textarea
-    // it owns), so we attach to the container and check `el.contains(target)`.
-    // This keeps Cmd+= / Cmd+- / Cmd+0 from hijacking other inputs (e.g.
-    // the SessionsPane rename textbox or any sidebar search).
+    // Keyboard shortcuts. Only fire when xterm has focus — xterm puts focus
+    // on the .xterm-helper-textarea (a hidden textarea it owns), so we
+    // attach to the container and check `el.contains(target)`. This keeps
+    // Cmd+= / Cmd+- / Cmd+0 from hijacking other inputs (e.g. the
+    // SessionsPane rename textbox or any sidebar search). The handler
+    // mutates the GLOBAL config, so every other open terminal also rescales
+    // — this is intentional in Phase 11.
     const containerEl: HTMLDivElement = el;
     function onKeyDown(ev: KeyboardEvent): void {
       // metaKey = Command on macOS. The app is macOS-only so we don't
@@ -120,26 +126,26 @@ export function TerminalTab({
       // because shifted `=` produces `+` on US layouts; we accept either.
       if (ev.key === '=' || ev.key === '+') {
         ev.preventDefault();
-        const next = clampFontSize(settingsRef.current.fontSize + 1);
-        if (next !== settingsRef.current.fontSize) {
+        const next = clampFontSize(settingsRef.current.terminalFontSize + 1);
+        if (next !== settingsRef.current.terminalFontSize) {
           console.debug('[Deepthix][TerminalTab] shortcut font+ ', { termId, next });
-          onSettingsChangeRef.current({ fontSize: next });
+          onSettingsChangeRef.current({ terminalFontSize: next });
         }
         return;
       }
       if (ev.key === '-') {
         ev.preventDefault();
-        const next = clampFontSize(settingsRef.current.fontSize - 1);
-        if (next !== settingsRef.current.fontSize) {
+        const next = clampFontSize(settingsRef.current.terminalFontSize - 1);
+        if (next !== settingsRef.current.terminalFontSize) {
           console.debug('[Deepthix][TerminalTab] shortcut font- ', { termId, next });
-          onSettingsChangeRef.current({ fontSize: next });
+          onSettingsChangeRef.current({ terminalFontSize: next });
         }
         return;
       }
       if (ev.key === '0') {
         ev.preventDefault();
         console.debug('[Deepthix][TerminalTab] shortcut font reset', { termId });
-        onSettingsChangeRef.current({ fontSize: TERMINAL_DEFAULT_FONT_SIZE });
+        onSettingsChangeRef.current({ terminalFontSize: TERMINAL_DEFAULT_FONT_SIZE });
       }
     }
     el.addEventListener('keydown', onKeyDown);
@@ -175,24 +181,30 @@ export function TerminalTab({
     }
   }, [termId]);
 
-  // Live-update the existing xterm instance when the user changes settings
-  // (toolbar buttons or keyboard shortcuts). After mutating term.options,
-  // call fit() so xterm recomputes char dims and resize the pty so the
-  // shell sees the new geometry.
+  // Live-update the existing xterm instance when the global config changes
+  // (settings pane controls or keyboard shortcuts). After mutating
+  // term.options, call fit() so xterm recomputes char dims and resize the
+  // pty so the shell sees the new geometry.
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
     console.debug('[Deepthix][TerminalTab] apply settings', {
       termId,
-      fontSize: settings.fontSize,
-      fontFamily: settings.fontFamily,
-      lineHeight: settings.lineHeight,
+      fontSize: settings.terminalFontSize,
+      fontFamily: settings.terminalFontFamily,
+      lineHeight: settings.terminalLineHeight,
     });
-    term.options.fontSize = settings.fontSize;
-    term.options.fontFamily = settings.fontFamily;
-    term.options.lineHeight = settings.lineHeight;
+    term.options.fontSize = settings.terminalFontSize;
+    term.options.fontFamily = settings.terminalFontFamily;
+    term.options.lineHeight = settings.terminalLineHeight;
     safeFit();
-  }, [termId, settings.fontSize, settings.fontFamily, settings.lineHeight, safeFit]);
+  }, [
+    termId,
+    settings.terminalFontSize,
+    settings.terminalFontFamily,
+    settings.terminalLineHeight,
+    safeFit,
+  ]);
 
   // When this tab becomes visible (display:none → block), the ResizeObserver
   // might not fire. Run a few delayed fits so the xterm dims reflect the

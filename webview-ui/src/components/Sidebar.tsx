@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { UseFileTreeResult } from '../hooks/useFileTree';
 import type { UseProjectsResult } from '../hooks/useProjects';
+import type { TerminalEntry } from '../hooks/useTerminals';
 import { FileTree } from './FileTree';
 import { ProjectList } from './ProjectList';
 
@@ -18,9 +19,22 @@ interface Props {
    * the file as a sub-tab.
    */
   onFileClick?: (path: string) => void;
+  /** All terminals across every project — feeds the per-project status dot. */
+  terminals: TerminalEntry[];
+  /** Switches the right pane to the SettingsPane. */
+  onOpenSettings: () => void;
+  /** True when the parent's mode is `'settings'` (highlights the button). */
+  settingsActive: boolean;
 }
 
-export function Sidebar({ projects, fileTree, onFileClick }: Props): React.JSX.Element {
+export function Sidebar({
+  projects,
+  fileTree,
+  onFileClick,
+  terminals,
+  onOpenSettings,
+  settingsActive,
+}: Props): React.JSX.Element {
   const [width, setWidth] = useState<number>(() => {
     const stored = Number(localStorage.getItem(STORAGE_KEY));
     return Number.isFinite(stored) && stored >= MIN_WIDTH ? stored : DEFAULT_WIDTH;
@@ -81,6 +95,9 @@ export function Sidebar({ projects, fileTree, onFileClick }: Props): React.JSX.E
           onRemove={(id) => void projects.removeProject(id)}
           onRename={(id, name) => void projects.renameProject(id, name)}
           onOpenFolder={() => void projects.openAndAddProject()}
+          terminals={terminals}
+          onOpenSettings={onOpenSettings}
+          settingsActive={settingsActive}
         />
         <div
           style={{

@@ -3,11 +3,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ProcessPane, SessionsPane } from './components/BottomPanel';
 import { FilesPane } from './components/FilesPane';
 import { MemoryPane } from './components/MemoryPane';
+import { OverviewPane } from './components/OverviewPane';
+import { SettingsPane } from './components/SettingsPane';
 import { Sidebar } from './components/Sidebar';
 import { TamagotchiView } from './components/TamagotchiView';
 import { type Mode, TopTabs } from './components/TopTabs';
 import { Welcome } from './components/Welcome';
 import { useFileTree } from './hooks/useFileTree';
+import { useGlobalConfig } from './hooks/useGlobalConfig';
 import { useOpenFiles } from './hooks/useOpenFiles';
 import { useProjects } from './hooks/useProjects';
 import { useTerminals } from './hooks/useTerminals';
@@ -16,22 +19,29 @@ import { setActiveProjectId, setActiveProjectPath, setOnOpenTerminal } from './t
 
 const MODE_STORAGE_KEY = 'deepthix.mode';
 
+const VALID_MODES: ReadonlyArray<Mode> = [
+  'overview',
+  'sessions',
+  'process',
+  'memory',
+  'files',
+  'settings',
+];
+
 function App(): React.JSX.Element {
   const projects = useProjects();
   const fileTree = useFileTree(projects.activeProject?.path ?? null);
   const terminals = useTerminals();
   const openFiles = useOpenFiles(projects.activeProjectId);
+  // Global app config (font/zoom for terminals, etc) — lives in
+  // ~/.deepthix/config.json. Loaded once at boot, mutations debounce-write.
+  const globalConfig = useGlobalConfig();
 
   // Top-level mode: which content fills the right pane.
   const [mode, setMode] = useState<Mode>(() => {
     const stored = localStorage.getItem(MODE_STORAGE_KEY);
-    if (
-      stored === 'sessions' ||
-      stored === 'process' ||
-      stored === 'memory' ||
-      stored === 'files'
-    ) {
-      return stored;
+    if (stored && (VALID_MODES as readonly string[]).includes(stored)) {
+      return stored as Mode;
     }
     return 'sessions';
   });
@@ -45,6 +55,7 @@ function App(): React.JSX.Element {
     activeProjectPath: projects.activeProject?.path ?? null,
     terminalsCount: terminals.terminals.length,
     mode,
+    globalConfigLoaded: globalConfig.loaded,
   });
 
   // Keep the postMessage bridge in sync with the active project (used by
@@ -129,6 +140,11 @@ function App(): React.JSX.Element {
     [openFiles],
   );
 
+  const onOpenSettings = useCallback((): void => {
+    console.debug('[Deepthix][App] open settings');
+    setMode('settings');
+  }, []);
+
   return (
     <div
       style={{
@@ -138,7 +154,14 @@ function App(): React.JSX.Element {
         background: 'var(--color-bg)',
       }}
     >
-      <Sidebar projects={projects} fileTree={fileTree} onFileClick={onSidebarFileClick} />
+      <Sidebar
+        projects={projects}
+        fileTree={fileTree}
+        onFileClick={onSidebarFileClick}
+        terminals={terminals.terminals}
+        onOpenSettings={onOpenSettings}
+        settingsActive={mode === 'settings'}
+      />
       <div
         style={{
           flex: 1,
@@ -156,8 +179,14 @@ function App(): React.JSX.Element {
           mode={mode}
           onChangeMode={setMode}
         />
-        {/* Right-pane body: depends on whether a project is open + which mode. */}
-        {!hasProjects ? (
+        {/* Right-pane body: depends on whether a project is open + which mode.
+            Settings + Overview are project-agnostic so they render even when
+            no project is open. */}
+        {mode === 'settings' ? (
+          <SettingsPane globalConfig={globalConfig} />
+        ) : mode === 'overview' ? (
+          <OverviewPane terminals={terminals} projects={projects} onChangeMode={setMode} />
+        ) : !hasProjects ? (
           <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
         ) : mode === 'sessions' ? (
           <>
@@ -221,7 +250,12 @@ function App(): React.JSX.Element {
                 </button>
               </div>
             </div>
-            <SessionsPane terminals={terminals} projectId={projects.activeProjectId} />
+            <SessionsPane
+              terminals={terminals}
+              projectId={projects.activeProjectId}
+              globalConfig={globalConfig.config}
+              updateGlobalConfig={globalConfig.update}
+            />
           </>
         ) : mode === 'process' ? (
           <ProcessPane projectPath={projects.activeProject?.path ?? null} />

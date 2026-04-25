@@ -158,6 +158,30 @@ export async function writeGlobalMemory(content: string): Promise<void> {
   return await invoke<void>('write_global_memory', { content });
 }
 
+// ─── Global config (Phase 11) ─────────────────────────────────────────────
+
+/**
+ * Mirror of Rust `commands::config::GlobalConfig`. All fields are optional —
+ * the frontend supplies defaults from `webview-ui/src/constants.ts` when
+ * a value is missing. Replaces the per-session font/zoom fields previously
+ * carried in `PersistedSession`.
+ */
+export interface GlobalConfigPayload {
+  terminal_font_size?: number | null;
+  terminal_font_family?: string | null;
+  terminal_line_height?: number | null;
+}
+
+export async function readGlobalConfig(): Promise<GlobalConfigPayload> {
+  log('readGlobalConfig');
+  return await invoke<GlobalConfigPayload>('read_global_config');
+}
+
+export async function writeGlobalConfig(config: GlobalConfigPayload): Promise<void> {
+  log('writeGlobalConfig', config);
+  return await invoke<void>('write_global_config', { config });
+}
+
 // ─── Files pane (Phase 6) ─────────────────────────────────────────────────
 
 /** Read a UTF-8 text file. Caller should have validated kind+size first. */

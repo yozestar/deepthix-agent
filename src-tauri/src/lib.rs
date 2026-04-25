@@ -60,6 +60,8 @@ pub fn run() {
             commands::memory::write_project_memory,
             commands::memory::read_global_memory,
             commands::memory::write_global_memory,
+            commands::config::read_global_config,
+            commands::config::write_global_config,
         ])
         .setup(|_app| {
             tracing::info!(target: "deepthix::boot", "tauri setup complete");

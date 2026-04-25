@@ -1,8 +1,12 @@
 // Top header bar for the right pane: project name on the left, mode tabs
-// (Sessions / Process / Memory / Files) on the right. The active mode controls
-// which content App.tsx mounts in the rest of the right pane.
+// (Overview / Sessions / Files / Process / Memory) on the right. The active
+// mode controls which content App.tsx mounts in the rest of the right pane.
+//
+// `'settings'` is part of the `Mode` union but intentionally NOT shown in
+// the top tab strip — the SETTINGS button at the top of the sidebar
+// switches into it instead.
 
-export type Mode = 'sessions' | 'process' | 'memory' | 'files';
+export type Mode = 'overview' | 'sessions' | 'process' | 'memory' | 'files' | 'settings';
 
 interface Props {
   projectName: string | null;
@@ -10,7 +14,14 @@ interface Props {
   onChangeMode: (m: Mode) => void;
 }
 
-const MODES: ReadonlyArray<Mode> = ['sessions', 'process', 'memory', 'files'];
+/** Visible top-tab modes, in display order. `'settings'` is filtered out. */
+const VISIBLE_MODES: ReadonlyArray<Mode> = [
+  'overview',
+  'sessions',
+  'files',
+  'process',
+  'memory',
+];
 
 export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.Element {
   return (
@@ -54,7 +65,7 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
 
       {/* Right: mode tabs */}
       <div style={{ display: 'flex', gap: '6px' }}>
-        {MODES.map((m) => {
+        {VISIBLE_MODES.map((m) => {
           const active = m === mode;
           return (
             <button

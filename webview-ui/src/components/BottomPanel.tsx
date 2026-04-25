@@ -2,48 +2,45 @@
 // App.tsx can mount the chosen one directly:
 //
 //   • SessionsPane  — per-session sub-tabs + xterm content (resizable bottom area)
-//   • BrowserPane   — Chrome launcher (URL + viewport buttons + Open in Chrome)
 //   • ProcessPane   — list project node-ish processes with kill buttons
 //
 // The 3 mode tabs themselves used to live here at the top of the panel; they
 // have moved up to the App-level top header bar. This file no longer renders
 // any tab strip — it only renders content panes.
+//
+// Phase 11: per-session terminal settings have been promoted to a single
+// global config (`useGlobalConfig`). The inline SettingsToolbar that used
+// to sit at the right end of the sub-tab strip is gone; users edit the
+// global font/zoom from the Sidebar's SETTINGS pane.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import {
-  TERMINAL_FONT_FAMILY_PRESETS,
-  TERMINAL_FONT_SIZE_MAX,
-  TERMINAL_FONT_SIZE_MIN,
-  TERMINAL_LINE_HEIGHT_MAX,
-  TERMINAL_LINE_HEIGHT_MIN,
-  TERMINAL_LINE_HEIGHT_STEP,
-} from '../constants';
-import type { TerminalSettings, UseTerminalsResult } from '../hooks/useTerminals';
+import { useAgentStatus } from '../hooks/useAgentStatus';
+import type { GlobalConfig } from '../hooks/useGlobalConfig';
+import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
 import {
   killProcess as cmdKillProcess,
   listProcesses as cmdListProcesses,
   type ProcessInfo,
 } from '../tauri/commands';
+import { StatusDot } from './StatusDot';
 import { TerminalTab } from './TerminalTab';
 
 const MIN_HEIGHT = 160;
 const DEFAULT_HEIGHT = 320;
 const STORAGE_KEY = 'deepthix.bottomPanelHeight';
 
-/** Round a line-height value to step precision (avoids 1.0500000001 jitter). */
-function quantizeLineHeight(n: number): number {
-  const stepped = Math.round(n / TERMINAL_LINE_HEIGHT_STEP) * TERMINAL_LINE_HEIGHT_STEP;
-  return Math.min(TERMINAL_LINE_HEIGHT_MAX, Math.max(TERMINAL_LINE_HEIGHT_MIN, stepped));
-}
-
 // ─────────────────────────────────────────────────────────────────────────
-// Sessions pane — sub-tabs + xterm content (per-session) + resizable height
+// Sessions pane — sub-tabs + xterm content + resizable height
 // ─────────────────────────────────────────────────────────────────────────
 
 interface SessionsPaneProps {
   terminals: UseTerminalsResult;
   projectId: string | null;
+  /** Global terminal config passed through to every TerminalTab (Phase 11). */
+  globalConfig: GlobalConfig;
+  /** Mutator for the global config — also wired into TerminalTab keyboard shortcuts. */
+  updateGlobalConfig: (partial: Partial<GlobalConfig>) => void;
 }
 
 /**
@@ -52,26 +49,18 @@ interface SessionsPaneProps {
  * persisted across reloads (localStorage). Returns null when there are no
  * visible sessions, so the tamagotchi can use the full main area.
  */
-export function SessionsPane({ terminals, projectId }: SessionsPaneProps): React.JSX.Element | null {
+export function SessionsPane({
+  terminals,
+  projectId,
+  globalConfig,
+  updateGlobalConfig,
+}: SessionsPaneProps): React.JSX.Element | null {
   const visible = terminals.forProject(projectId);
   const effectiveActive: string | null = visible.some((t) => t.id === terminals.activeId)
     ? terminals.activeId
     : (visible[0]?.id ?? null);
 
-  // Active session settings — drives the inline toolbar at the right end of
-  // the sub-tab strip. Falls back to undefined when no session is active.
-  const activeEntry = effectiveActive
-    ? visible.find((t) => t.id === effectiveActive) ?? null
-    : null;
-  const activeSettings: TerminalSettings | null = activeEntry ? activeEntry.settings : null;
-
-  const onSettingsChange = useCallback(
-    (id: string, partial: Partial<TerminalSettings>): void => {
-      console.debug('[Deepthix][SessionsPane] settings change', { id, partial });
-      terminals.updateSettings(id, partial);
-    },
-    [terminals],
-  );
+  const agentStatus = useAgentStatus();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
@@ -165,9 +154,10 @@ export function SessionsPane({ terminals, projectId }: SessionsPaneProps): React
           flexShrink: 0,
         }}
       >
-        {visible.map((t) => {
+        {visible.map((t: TerminalEntry) => {
           const isActive = t.id === effectiveActive;
           const isEditing = editingId === t.id;
+          const status = t.kind === 'claude' ? agentStatus.status(t.agentId) : 'absent';
           return (
             <div
               key={t.id}
@@ -190,6 +180,14 @@ export function SessionsPane({ terminals, projectId }: SessionsPaneProps): React
               }}
               title="Double-click to rename"
             >
+              {/* Status dot before each label (Phase 11). Hidden for shells
+                  since their `status` is always 'absent'. */}
+              {t.kind === 'claude' && (
+                <StatusDot
+                  status={status}
+                  title={`${t.label} — ${status}`}
+                />
+              )}
               {isEditing ? (
                 <input
                   autoFocus
@@ -234,17 +232,6 @@ export function SessionsPane({ terminals, projectId }: SessionsPaneProps): React
             </div>
           );
         })}
-
-        {/* Per-session settings toolbar (Phase 10). Right-aligned inside
-            the sub-tab strip via marginLeft:auto. Only shown when a
-            session is active; mutations flow back via updateSettings →
-            TerminalTab live-update + persistence. */}
-        {activeEntry && activeSettings && (
-          <SettingsToolbar
-            settings={activeSettings}
-            onChange={(partial) => onSettingsChange(activeEntry.id, partial)}
-          />
-        )}
       </div>
 
       {/* xterm content (one node per terminal, hidden via display:none for inactive). */}
@@ -262,162 +249,12 @@ export function SessionsPane({ terminals, projectId }: SessionsPaneProps): React
             <TerminalTab
               termId={t.id}
               visible={t.id === effectiveActive}
-              settings={t.settings}
-              onSettingsChange={(partial) => onSettingsChange(t.id, partial)}
+              settings={globalConfig}
+              onSettingsChange={updateGlobalConfig}
             />
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Per-session terminal settings toolbar (Phase 10)
-// ─────────────────────────────────────────────────────────────────────────
-
-interface SettingsToolbarProps {
-  settings: TerminalSettings;
-  onChange: (partial: Partial<TerminalSettings>) => void;
-}
-
-/**
- * Compact inline toolbar shown at the right end of the sub-tab strip.
- * Three controls:
- *   • font size  (− value +) — clamps to TERMINAL_FONT_SIZE_MIN/MAX
- *   • font family (<select>) — preset list from constants
- *   • line height (− value +) — quantized to TERMINAL_LINE_HEIGHT_STEP
- */
-function SettingsToolbar({ settings, onChange }: SettingsToolbarProps): React.JSX.Element {
-  const bumpFont = useCallback(
-    (delta: number) => {
-      const next = Math.min(
-        TERMINAL_FONT_SIZE_MAX,
-        Math.max(TERMINAL_FONT_SIZE_MIN, settings.fontSize + delta),
-      );
-      if (next !== settings.fontSize) onChange({ fontSize: next });
-    },
-    [onChange, settings.fontSize],
-  );
-
-  const bumpLineHeight = useCallback(
-    (delta: number) => {
-      const next = quantizeLineHeight(settings.lineHeight + delta);
-      if (Math.abs(next - settings.lineHeight) > 1e-6) onChange({ lineHeight: next });
-    },
-    [onChange, settings.lineHeight],
-  );
-
-  const buttonStyle: React.CSSProperties = {
-    width: '24px',
-    minWidth: '24px',
-    height: '24px',
-    padding: 0,
-    background: 'transparent',
-    color: 'inherit',
-    border: '2px solid var(--color-border)',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-pixel)',
-    fontSize: '13px',
-    lineHeight: 1,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  };
-  const valueStyle: React.CSSProperties = {
-    minWidth: '32px',
-    textAlign: 'center',
-    fontFamily: 'var(--font-pixel)',
-    fontSize: '12px',
-    opacity: 0.8,
-  };
-
-  return (
-    <div
-      style={{
-        marginLeft: 'auto',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '4px',
-        padding: '0 4px',
-        fontFamily: 'var(--font-pixel)',
-        fontSize: '12px',
-      }}
-    >
-      <span style={{ opacity: 0.6, marginRight: '4px' }}>size</span>
-      <button
-        type="button"
-        onClick={() => bumpFont(-1)}
-        style={buttonStyle}
-        title="Decrease font size (Cmd -)"
-        aria-label="Decrease font size"
-      >
-        −
-      </button>
-      <span style={valueStyle} aria-label="Current font size">
-        {settings.fontSize}
-      </span>
-      <button
-        type="button"
-        onClick={() => bumpFont(+1)}
-        style={buttonStyle}
-        title="Increase font size (Cmd =)"
-        aria-label="Increase font size"
-      >
-        +
-      </button>
-
-      <span style={{ opacity: 0.6, marginLeft: '8px', marginRight: '4px' }}>font</span>
-      <select
-        value={settings.fontFamily}
-        onChange={(e) => onChange({ fontFamily: e.target.value })}
-        style={{
-          background: 'var(--color-bg-dark)',
-          color: 'inherit',
-          border: '2px solid var(--color-border)',
-          padding: '2px 4px',
-          fontFamily: 'var(--font-pixel)',
-          fontSize: '12px',
-          height: '24px',
-          cursor: 'pointer',
-        }}
-        title="Terminal font family"
-      >
-        {/* Show the current value as an extra option if it doesn't match
-            any preset (e.g. older persisted custom value), so the dropdown
-            never displays a blank label. */}
-        {!TERMINAL_FONT_FAMILY_PRESETS.some((p) => p.value === settings.fontFamily) && (
-          <option value={settings.fontFamily}>(custom)</option>
-        )}
-        {TERMINAL_FONT_FAMILY_PRESETS.map((p) => (
-          <option key={p.value} value={p.value}>
-            {p.label}
-          </option>
-        ))}
-      </select>
-
-      <span style={{ opacity: 0.6, marginLeft: '8px', marginRight: '4px' }}>line</span>
-      <button
-        type="button"
-        onClick={() => bumpLineHeight(-TERMINAL_LINE_HEIGHT_STEP)}
-        style={buttonStyle}
-        title="Decrease line height"
-        aria-label="Decrease line height"
-      >
-        −
-      </button>
-      <span style={valueStyle} aria-label="Current line height">
-        {settings.lineHeight.toFixed(2)}
-      </span>
-      <button
-        type="button"
-        onClick={() => bumpLineHeight(+TERMINAL_LINE_HEIGHT_STEP)}
-        style={buttonStyle}
-        title="Increase line height"
-        aria-label="Increase line height"
-      >
-        +
-      </button>
     </div>
   );
 }
