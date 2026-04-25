@@ -26,11 +26,21 @@ import {
 } from '../tauri/commands';
 import { applyTheme, DEFAULT_THEME_ID } from '../themes';
 
-/** Push the chosen font family into --font-pixel so every UI element using
- *  `var(--font-pixel)` (sidebar, tabs, modals, etc.) follows the user's pick.
- *  The terminal continues to read settings.terminalFontFamily directly. */
+/** Push the chosen font family into --font-pixel AND inject a high-priority
+ *  global override. Tailwind v4 inlines `@theme` values into the generated
+ *  utility classes (e.g. `.font-pixel { font-family: 'FS Pixel Sans', ... }`)
+ *  so a plain CSS-variable override doesn't reach those classes. The injected
+ *  `* { font-family: ... !important }` rule wins over both. The xterm canvas
+ *  renderer is unaffected (it sets fontFamily via JS API). */
 function applyAppFont(family: string): void {
   document.documentElement.style.setProperty('--font-pixel', family);
+  let style = document.getElementById('deepthix-font-override') as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'deepthix-font-override';
+    document.head.appendChild(style);
+  }
+  style.textContent = `* { font-family: ${family} !important; }`;
 }
 
 /** Resolved global config — every field is concrete (no `null` / `undefined`). */
