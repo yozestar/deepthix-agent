@@ -82,6 +82,12 @@ export interface PersistedSession {
   cwd: string;
   skip_permissions: boolean;
   created_at_ms: number;
+  /** Per-session terminal font size (px). Optional for backward compat. */
+  font_size?: number | null;
+  /** Per-session terminal font family CSS string. Optional for backward compat. */
+  font_family?: string | null;
+  /** Per-session terminal line-height multiplier (1.0–1.6). Optional. */
+  line_height?: number | null;
 }
 
 export async function saveSessions(projectId: string, sessions: PersistedSession[]): Promise<void> {

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  TERMINAL_DEFAULT_FONT_FAMILY,
+  TERMINAL_DEFAULT_FONT_SIZE,
+  TERMINAL_DEFAULT_LINE_HEIGHT,
+} from '../constants';
+import {
   killTerminal as cmdKillTerminal,
   loadSessions as cmdLoadSessions,
   type PersistedSession,
@@ -10,6 +15,26 @@ import {
 } from '../tauri/commands';
 import { onAgentJsonlLine } from '../tauri/events';
 import { parseRecord } from '../transcriptParser';
+
+/**
+ * Per-session terminal customization. Stored alongside the rest of the
+ * `TerminalEntry` and persisted into `sessions.json` so reload restores
+ * the user's font/zoom choices for every claude session independently.
+ */
+export interface TerminalSettings {
+  /** Font size in CSS pixels. Clamped 8..32 by callers. */
+  fontSize: number;
+  /** CSS font-family list applied to the xterm canvas. */
+  fontFamily: string;
+  /** Line-height multiplier (1.0–1.6). 1.0 = xterm default. */
+  lineHeight: number;
+}
+
+export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
+  fontSize: TERMINAL_DEFAULT_FONT_SIZE,
+  fontFamily: TERMINAL_DEFAULT_FONT_FAMILY,
+  lineHeight: TERMINAL_DEFAULT_LINE_HEIGHT,
+};
 
 export interface TerminalEntry {
   id: string;
@@ -21,6 +46,8 @@ export interface TerminalEntry {
   projectId: string;
   /** Spawned with --dangerously-skip-permissions; preserved on resume. */
   skipPermissions: boolean;
+  /** Per-session font/line-height customization (Phase 10). */
+  settings: TerminalSettings;
 }
 
 export interface UseTerminalsResult {
@@ -34,7 +61,11 @@ export interface UseTerminalsResult {
     cwd: string,
     kind?: TerminalKind,
     label?: string,
-    opts?: { skipPermissions?: boolean; resumeSessionId?: string },
+    opts?: {
+      skipPermissions?: boolean;
+      resumeSessionId?: string;
+      settings?: Partial<TerminalSettings>;
+    },
   ) => Promise<TerminalEntry | null>;
   close: (id: string) => Promise<void>;
   /** Returns terminals scoped to one project. */
@@ -43,6 +74,12 @@ export interface UseTerminalsResult {
   resumeProject: (projectId: string) => Promise<void>;
   /** Rename a session — updates label in memory + persisted store. */
   rename: (id: string, label: string) => void;
+  /**
+   * Patch a session's terminal settings. The TerminalTab observes the new
+   * settings via props (re-renders + applies to xterm + re-fits the pty),
+   * and the change is persisted to `sessions.json`.
+   */
+  updateSettings: (id: string, partial: Partial<TerminalSettings>) => void;
 }
 
 function dispatchWebviewMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -111,7 +148,14 @@ export function useTerminals(): UseTerminalsResult {
           cwd: t.cwd,
           skip_permissions: t.skipPermissions,
           created_at_ms: Date.now(),
+          font_size: t.settings.fontSize,
+          font_family: t.settings.fontFamily,
+          line_height: t.settings.lineHeight,
         }));
+      console.debug('[Deepthix][useTerminals] persistProjectSessions', {
+        projectId,
+        count: sessions.length,
+      });
       void cmdSaveSessions(projectId, sessions).catch((err) => {
         console.error('[Deepthix][useTerminals] persistProjectSessions failed', err);
       });
@@ -125,12 +169,23 @@ export function useTerminals(): UseTerminalsResult {
       cwd: string,
       kind: TerminalKind = 'shell',
       label?: string,
-      opts?: { skipPermissions?: boolean; resumeSessionId?: string },
+      opts?: {
+        skipPermissions?: boolean;
+        resumeSessionId?: string;
+        settings?: Partial<TerminalSettings>;
+      },
     ): Promise<TerminalEntry | null> => {
       console.debug('[Deepthix][useTerminals] open', { projectId, cwd, kind, label, opts });
       try {
-        const result = await cmdSpawnTerminal(cwd, kind, undefined, undefined, opts);
+        const result = await cmdSpawnTerminal(cwd, kind, undefined, undefined, {
+          skipPermissions: opts?.skipPermissions,
+          resumeSessionId: opts?.resumeSessionId,
+        });
         const agentId = nextAgentIdRef.current++;
+        const settings: TerminalSettings = {
+          ...DEFAULT_TERMINAL_SETTINGS,
+          ...(opts?.settings ?? {}),
+        };
         const entry: TerminalEntry = {
           id: result.id,
           label: label ?? `${kind === 'claude' ? 'session' : 'shell'}-${agentId}`,
@@ -140,6 +195,7 @@ export function useTerminals(): UseTerminalsResult {
           sessionId: result.session_id,
           projectId,
           skipPermissions: opts?.skipPermissions ?? false,
+          settings,
         };
         console.debug('[Deepthix][useTerminals] opened', entry);
         setTerminals((prev) => [...prev, entry]);
@@ -184,9 +240,16 @@ export function useTerminals(): UseTerminalsResult {
         // claude resumes from the existing JSONL transcript when given the same
         // --session-id; if the JSONL is gone, claude starts a fresh session
         // under that id (still useful — keeps the same identifier).
+        const settingsOverride: Partial<TerminalSettings> = {};
+        if (typeof s.font_size === 'number') settingsOverride.fontSize = s.font_size;
+        if (typeof s.font_family === 'string' && s.font_family.length > 0) {
+          settingsOverride.fontFamily = s.font_family;
+        }
+        if (typeof s.line_height === 'number') settingsOverride.lineHeight = s.line_height;
         await open(projectId, s.cwd, 'claude', s.label, {
           skipPermissions: s.skip_permissions,
           resumeSessionId: s.session_id,
+          settings: settingsOverride,
         });
       }
     },
@@ -241,8 +304,40 @@ export function useTerminals(): UseTerminalsResult {
     }
   }, [persistProjectSessions]);
 
+  const updateSettings = useCallback(
+    (id: string, partial: Partial<TerminalSettings>): void => {
+      console.debug('[Deepthix][useTerminals] updateSettings', { id, partial });
+      let projectId: string | null = null;
+      let kind: TerminalKind | null = null;
+      setTerminals((prev) =>
+        prev.map((t) => {
+          if (t.id !== id) return t;
+          projectId = t.projectId;
+          kind = t.kind;
+          return { ...t, settings: { ...t.settings, ...partial } };
+        }),
+      );
+      terminalsRef.current = terminalsRef.current.map((t) =>
+        t.id === id ? { ...t, settings: { ...t.settings, ...partial } } : t,
+      );
+      // Only claude sessions are persisted (shells aren't saved to sessions.json).
+      if (projectId && kind === 'claude') persistProjectSessions(projectId);
+    },
+    [persistProjectSessions],
+  );
+
   return useMemo(
-    () => ({ terminals, activeId, setActive, open, close, forProject, resumeProject, rename }),
-    [terminals, activeId, open, close, forProject, resumeProject, rename],
+    () => ({
+      terminals,
+      activeId,
+      setActive,
+      open,
+      close,
+      forProject,
+      resumeProject,
+      rename,
+      updateSettings,
+    }),
+    [terminals, activeId, open, close, forProject, resumeProject, rename, updateSettings],
   );
 }
