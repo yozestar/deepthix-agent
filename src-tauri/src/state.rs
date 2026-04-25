@@ -75,6 +75,20 @@ impl AppState {
         Ok(true)
     }
 
+    /// Rename a project by id. Returns true if a project was updated, false
+    /// if no project matched the id.
+    pub fn rename(&self, id: &str, name: String) -> std::io::Result<bool> {
+        let mut state = self.inner.lock().unwrap();
+        let Some(project) = state.projects.iter_mut().find(|p| p.id == id) else {
+            tracing::warn!(target: "deepthix::state", %id, "rename: id not found");
+            return Ok(false);
+        };
+        tracing::info!(target: "deepthix::state", %id, old = %project.name, new = %name, "rename");
+        project.name = name;
+        self.write_locked(&state)?;
+        Ok(true)
+    }
+
     /// Remove a project. If it was active, active becomes None.
     pub fn remove(&self, id: &str) -> std::io::Result<bool> {
         let mut state = self.inner.lock().unwrap();
@@ -167,6 +181,33 @@ mod tests {
     fn switch_unknown_id_returns_false() {
         let (_dir, state) = fixture();
         let ok = state.switch("nonexistent").unwrap();
+        assert!(!ok);
+    }
+
+    #[test]
+    fn rename_changes_name_and_persists() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("projects.json");
+        let project_dir = tempdir().unwrap();
+        let id = {
+            let state = AppState::load(path.clone()).unwrap();
+            let p = state.add(project_dir.path().to_path_buf()).unwrap();
+            let ok = state.rename(&p.id, "My Renamed Project".to_string()).unwrap();
+            assert!(ok, "rename returned true on existing id");
+            assert_eq!(state.snapshot().projects[0].name, "My Renamed Project");
+            p.id
+        };
+        // Reload from disk to verify persistence.
+        let state = AppState::load(path).unwrap();
+        let snap = state.snapshot();
+        let p = snap.projects.iter().find(|p| p.id == id).unwrap();
+        assert_eq!(p.name, "My Renamed Project");
+    }
+
+    #[test]
+    fn rename_unknown_id_returns_false() {
+        let (_dir, state) = fixture();
+        let ok = state.rename("nonexistent", "whatever".to_string()).unwrap();
         assert!(!ok);
     }
 

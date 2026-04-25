@@ -5,6 +5,7 @@ import {
   listProjects as cmdListProjects,
   openFolder as cmdOpenFolder,
   removeProject as cmdRemoveProject,
+  renameProject as cmdRenameProject,
   switchProject as cmdSwitchProject,
 } from '../tauri/commands';
 import { onProjectSwitched } from '../tauri/events';
@@ -20,6 +21,7 @@ export interface UseProjectsResult {
   openAndAddProject: () => Promise<Project | null>;
   switchProject: (id: string) => Promise<void>;
   removeProject: (id: string) => Promise<void>;
+  renameProject: (id: string, name: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -103,6 +105,18 @@ export function useProjects(): UseProjectsResult {
     }
   }, [refresh]);
 
+  const renameProject = useCallback(async (id: string, name: string): Promise<void> => {
+    setError(null);
+    try {
+      await cmdRenameProject(id, name);
+      await refresh();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Deepthix][useProjects] renameProject failed', msg);
+      setError(msg);
+    }
+  }, [refresh]);
+
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
 
   return {
@@ -114,6 +128,7 @@ export function useProjects(): UseProjectsResult {
     openAndAddProject,
     switchProject,
     removeProject,
+    renameProject,
     refresh,
   };
 }

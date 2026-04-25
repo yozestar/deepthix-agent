@@ -1,4 +1,5 @@
 mod commands;
+mod jsonl_watcher;
 mod log;
 mod pty;
 mod state;
@@ -28,12 +29,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .manage(crate::pty::TerminalManager::new())
+        .manage(crate::commands::terminals::WatcherRegistry::default())
         .invoke_handler(tauri::generate_handler![
             commands::projects::open_folder,
             commands::projects::add_project,
             commands::projects::list_projects,
             commands::projects::switch_project,
             commands::projects::remove_project,
+            commands::projects::rename_project,
             commands::fs::list_dir,
             commands::layout::save_layout,
             commands::layout::load_layout,
@@ -41,6 +44,15 @@ pub fn run() {
             commands::terminals::pty_write,
             commands::terminals::pty_resize,
             commands::terminals::kill_terminal,
+            commands::sessions::save_sessions,
+            commands::sessions::load_sessions,
+            commands::processes::list_processes,
+            commands::processes::kill_process,
+            commands::chrome::open_chrome,
+            commands::memory::read_project_memory,
+            commands::memory::write_project_memory,
+            commands::memory::read_global_memory,
+            commands::memory::write_global_memory,
         ])
         .setup(|_app| {
             tracing::info!(target: "deepthix::boot", "tauri setup complete");

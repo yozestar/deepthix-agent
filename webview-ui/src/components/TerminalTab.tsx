@@ -1,7 +1,7 @@
 import 'xterm/css/xterm.css';
 
 import { FitAddon } from '@xterm/addon-fit';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Terminal } from 'xterm';
 
 import { TERMINAL_DEFAULT_BG } from '../constants';
@@ -70,16 +70,50 @@ export function TerminalTab({ termId, visible }: Props): React.JSX.Element {
     };
   }, [termId]);
 
-  useEffect(() => {
-    if (visible && fitRef.current && termRef.current) {
-      requestAnimationFrame(() => {
-        fitRef.current?.fit();
-        if (termRef.current) {
-          void ptyResize(termId, termRef.current.cols, termRef.current.rows);
-        }
-      });
+  // Safe fit: xterm's FitAddon throws if called before the renderer has
+  // initialized (visible-from-hidden race). Catch and retry a few times.
+  const safeFit = useCallback((): void => {
+    const fit = fitRef.current;
+    const term = termRef.current;
+    if (!fit || !term) return;
+    const el = term.element;
+    if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return;
+    try {
+      fit.fit();
+      if (term.cols > 0 && term.rows > 0) {
+        void ptyResize(termId, term.cols, term.rows);
+      }
+    } catch (e) {
+      console.debug('[Deepthix][TerminalTab] fit deferred', e);
     }
-  }, [visible, termId]);
+  }, [termId]);
+
+  // When this tab becomes visible (display:none → block), the ResizeObserver
+  // might not fire. Run a few delayed fits so the xterm dims reflect the
+  // laid-out container, and sync the new size back to the pty.
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    const tries = [50, 150, 400];
+    const timers = tries.map((ms) =>
+      setTimeout(() => {
+        if (!cancelled) safeFit();
+      }, ms),
+    );
+    return () => {
+      cancelled = true;
+      for (const t of timers) clearTimeout(t);
+    };
+  }, [visible, safeFit]);
+
+  // Re-fit on every window resize (BottomPanel resize handle drags also fire it).
+  useEffect(() => {
+    function onWindowResize(): void {
+      if (visible) safeFit();
+    }
+    window.addEventListener('resize', onWindowResize);
+    return () => window.removeEventListener('resize', onWindowResize);
+  }, [visible, safeFit]);
 
   return (
     <div

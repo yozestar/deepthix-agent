@@ -1,24 +1,129 @@
+// Mode panes for the right-pane content area. Each pane is exported so
+// App.tsx can mount the chosen one directly:
+//
+//   • SessionsPane  — per-session sub-tabs + xterm content (resizable bottom area)
+//   • BrowserPane   — Chrome launcher (URL + viewport buttons + Open in Chrome)
+//   • ProcessPane   — list project node-ish processes with kill buttons
+//
+// The 3 mode tabs themselves used to live here at the top of the panel; they
+// have moved up to the App-level top header bar. This file no longer renders
+// any tab strip — it only renders content panes.
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import type { UseTerminalsResult } from '../hooks/useTerminals';
+import {
+  killProcess as cmdKillProcess,
+  listProcesses as cmdListProcesses,
+  type ProcessInfo,
+} from '../tauri/commands';
 import { TerminalTab } from './TerminalTab';
 
-interface Props {
+const MIN_HEIGHT = 160;
+const DEFAULT_HEIGHT = 320;
+const STORAGE_KEY = 'deepthix.bottomPanelHeight';
+
+// ─────────────────────────────────────────────────────────────────────────
+// Sessions pane — sub-tabs + xterm content (per-session) + resizable height
+// ─────────────────────────────────────────────────────────────────────────
+
+interface SessionsPaneProps {
   terminals: UseTerminalsResult;
+  projectId: string | null;
 }
 
-export function BottomPanel({ terminals }: Props): React.JSX.Element | null {
-  if (terminals.terminals.length === 0) return null;
+/**
+ * Bottom resizable area for the Sessions mode: per-session sub-tabs at the
+ * top + the xterm content for the active session below. The height is
+ * persisted across reloads (localStorage). Returns null when there are no
+ * visible sessions, so the tamagotchi can use the full main area.
+ */
+export function SessionsPane({ terminals, projectId }: SessionsPaneProps): React.JSX.Element | null {
+  const visible = terminals.forProject(projectId);
+  const effectiveActive: string | null = visible.some((t) => t.id === terminals.activeId)
+    ? terminals.activeId
+    : (visible[0]?.id ?? null);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+
+  const [height, setHeight] = useState<number>(() => {
+    const stored = Number(localStorage.getItem(STORAGE_KEY));
+    return Number.isFinite(stored) && stored >= MIN_HEIGHT ? stored : DEFAULT_HEIGHT;
+  });
+  const draggingRef = useRef(false);
+  const startYRef = useRef(0);
+  const startHRef = useRef(0);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, String(height));
+  }, [height]);
+
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent): void => {
+      e.preventDefault();
+      draggingRef.current = true;
+      startYRef.current = e.clientY;
+      startHRef.current = height;
+      document.body.style.cursor = 'ns-resize';
+      document.body.style.userSelect = 'none';
+      console.debug('[Deepthix][SessionsPane] resize start', { height });
+    },
+    [height],
+  );
+
+  useEffect(() => {
+    function onMove(e: MouseEvent): void {
+      if (!draggingRef.current) return;
+      const dy = startYRef.current - e.clientY;
+      const next = Math.max(MIN_HEIGHT, Math.min(window.innerHeight - 100, startHRef.current + dy));
+      setHeight(next);
+    }
+    function onUp(): void {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      console.debug('[Deepthix][SessionsPane] resize end');
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  // When there are no visible sessions, hide the panel entirely so the
+  // tamagotchi gets the whole main area.
+  if (visible.length === 0) return null;
+
   return (
     <div
       style={{
-        height: '300px',
-        borderTop: '2px solid var(--color-border)',
+        height: `${height}px`,
         background: 'var(--color-bg)',
         display: 'flex',
         flexDirection: 'column',
         fontFamily: 'var(--font-pixel)',
         flexShrink: 0,
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
+      {/* Resize handle */}
+      <div
+        onMouseDown={onMouseDown}
+        title="Drag to resize terminal area"
+        style={{
+          height: '6px',
+          cursor: 'ns-resize',
+          background: 'var(--color-border)',
+          flexShrink: 0,
+        }}
+      />
+
+      {/* Per-session sub-tab strip */}
       <div
         style={{
           display: 'flex',
@@ -31,26 +136,60 @@ export function BottomPanel({ terminals }: Props): React.JSX.Element | null {
           flexShrink: 0,
         }}
       >
-        {terminals.terminals.map((t) => {
-          const isActive = t.id === terminals.activeId;
+        {visible.map((t) => {
+          const isActive = t.id === effectiveActive;
+          const isEditing = editingId === t.id;
           return (
-            <button
+            <div
               key={t.id}
-              onClick={() => terminals.setActive(t.id)}
+              onClick={() => !isEditing && terminals.setActive(t.id)}
+              onDoubleClick={() => {
+                setEditingId(t.id);
+                setEditingValue(t.label);
+              }}
               style={{
                 padding: '6px 12px',
                 background: isActive ? 'var(--color-accent)' : 'transparent',
                 color: isActive ? 'var(--color-bg-dark)' : 'inherit',
                 border: '2px solid var(--color-border)',
-                cursor: 'pointer',
+                cursor: isEditing ? 'text' : 'pointer',
                 fontFamily: 'var(--font-pixel)',
-                fontSize: '11px',
+                fontSize: '13px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
               }}
+              title="Double-click to rename"
             >
-              {t.label}
+              {isEditing ? (
+                <input
+                  autoFocus
+                  value={editingValue}
+                  onChange={(e) => setEditingValue(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  onBlur={() => {
+                    terminals.rename(t.id, editingValue);
+                    setEditingId(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      terminals.rename(t.id, editingValue);
+                      setEditingId(null);
+                    } else if (e.key === 'Escape') setEditingId(null);
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'inherit',
+                    fontFamily: 'var(--font-pixel)',
+                    fontSize: '13px',
+                    width: `${Math.max(60, editingValue.length * 8)}px`,
+                    outline: 'none',
+                  }}
+                />
+              ) : (
+                <span>{t.label}</span>
+              )}
               <span
                 role="button"
                 tabIndex={0}
@@ -63,24 +202,157 @@ export function BottomPanel({ terminals }: Props): React.JSX.Element | null {
               >
                 ×
               </span>
-            </button>
+            </div>
           );
         })}
       </div>
+
+      {/* xterm content (one node per terminal, hidden via display:none for inactive). */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {/* Mount EVERY terminal so xterm scrollback survives project switches. */}
         {terminals.terminals.map((t) => (
           <div
             key={t.id}
             style={{
               position: 'absolute',
               inset: 0,
-              display: t.id === terminals.activeId ? 'block' : 'none',
+              display: t.id === effectiveActive ? 'block' : 'none',
             }}
           >
-            <TerminalTab termId={t.id} visible={t.id === terminals.activeId} />
+            <TerminalTab termId={t.id} visible={t.id === effectiveActive} />
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Process pane — list project node servers + kill / restart
+// ─────────────────────────────────────────────────────────────────────────
+
+interface ProcessPaneProps {
+  projectPath: string | null;
+}
+
+export function ProcessPane({ projectPath }: ProcessPaneProps): React.JSX.Element {
+  const [procs, setProcs] = useState<ProcessInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async (): Promise<void> => {
+    if (!projectPath) {
+      setProcs([]);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await cmdListProcesses(projectPath);
+      console.debug('[Deepthix][ProcessPane] refreshed', { count: list.length });
+      setProcs(list);
+    } catch (e) {
+      console.error('[Deepthix][ProcessPane] refresh failed', e);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [projectPath]);
+
+  useEffect(() => {
+    void refresh();
+    const id = setInterval(() => void refresh(), 4000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  const onKill = useCallback(
+    async (pid: number) => {
+      try {
+        await cmdKillProcess(pid);
+        console.info('[Deepthix][ProcessPane] killed', { pid });
+        await refresh();
+      } catch (e) {
+        console.error('[Deepthix][ProcessPane] kill failed', e);
+      }
+    },
+    [refresh],
+  );
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        overflow: 'auto',
+        padding: '8px',
+        fontSize: '13px',
+        background: 'var(--color-bg)',
+        fontFamily: 'var(--font-pixel)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+        <button
+          onClick={() => void refresh()}
+          disabled={loading}
+          style={{
+            padding: '4px 12px',
+            background: 'transparent',
+            color: 'inherit',
+            border: '2px solid var(--color-border)',
+            cursor: 'pointer',
+            fontFamily: 'var(--font-pixel)',
+            fontSize: '13px',
+          }}
+        >
+          ⟳ refresh
+        </button>
+        <span style={{ opacity: 0.6 }}>
+          {projectPath ? `${procs.length} processes related to ${projectPath}` : 'No project open.'}
+        </span>
+      </div>
+      {error && <div style={{ color: 'var(--color-danger)', padding: '4px' }}>{error}</div>}
+      {procs.length === 0 && !loading && projectPath && (
+        <div style={{ opacity: 0.6, padding: '6px' }}>
+          No matching processes. Auto-refresh every 4s.
+        </div>
+      )}
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <tbody>
+          {procs.map((p) => (
+            <tr key={p.pid} style={{ borderBottom: '1px solid var(--color-border)' }}>
+              <td style={{ padding: '4px 6px', width: '70px', opacity: 0.7 }}>{p.pid}</td>
+              <td
+                style={{
+                  padding: '4px 6px',
+                  fontFamily: 'var(--font-pixel), Menlo, monospace',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '0',
+                }}
+                title={p.command}
+              >
+                {p.command}
+              </td>
+              <td style={{ padding: '4px 6px', textAlign: 'right' }}>
+                <button
+                  onClick={() => void onKill(p.pid)}
+                  style={{
+                    padding: '2px 8px',
+                    background: 'var(--color-danger)',
+                    color: 'var(--color-bg-dark)',
+                    border: '2px solid var(--color-border)',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-pixel)',
+                    fontSize: '12px',
+                  }}
+                >
+                  KILL
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
