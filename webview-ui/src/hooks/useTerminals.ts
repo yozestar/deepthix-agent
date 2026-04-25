@@ -19,6 +19,8 @@ export interface TerminalEntry {
   agentId: number;
   sessionId: string | null;
   projectId: string;
+  /** Spawned with --dangerously-skip-permissions; preserved on resume. */
+  skipPermissions: boolean;
 }
 
 export interface UseTerminalsResult {
@@ -107,7 +109,7 @@ export function useTerminals(): UseTerminalsResult {
           session_id: t.sessionId as string,
           label: t.label,
           cwd: t.cwd,
-          skip_permissions: false, // we don't currently surface this back; resume always asks fresh
+          skip_permissions: t.skipPermissions,
           created_at_ms: Date.now(),
         }));
       void cmdSaveSessions(projectId, sessions).catch((err) => {
@@ -137,6 +139,7 @@ export function useTerminals(): UseTerminalsResult {
           agentId,
           sessionId: result.session_id,
           projectId,
+          skipPermissions: opts?.skipPermissions ?? false,
         };
         console.debug('[Deepthix][useTerminals] opened', entry);
         setTerminals((prev) => [...prev, entry]);
