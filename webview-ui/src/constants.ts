@@ -153,3 +153,38 @@ export const TEAM_ROLE_COLOR = '#66aaff';
 // Mirror of --color-bg in index.css; used as a fallback if the CSS var
 // can't be resolved at terminal init time.
 export const TERMINAL_DEFAULT_BG = '#1e1e2e';
+
+// ── Per-session terminal customization (Phase 10) ─────────────────────
+// Defaults applied to a brand-new claude session. Overridden per-session
+// via the SessionsPane settings toolbar and persisted to sessions.json.
+export const TERMINAL_DEFAULT_FONT_SIZE = 13;
+export const TERMINAL_DEFAULT_FONT_FAMILY = 'Menlo, monospace';
+export const TERMINAL_DEFAULT_LINE_HEIGHT = 1.0;
+export const TERMINAL_FONT_SIZE_MIN = 8;
+export const TERMINAL_FONT_SIZE_MAX = 32;
+export const TERMINAL_LINE_HEIGHT_MIN = 1.0;
+export const TERMINAL_LINE_HEIGHT_MAX = 1.6;
+export const TERMINAL_LINE_HEIGHT_STEP = 0.05;
+/**
+ * Font family presets shown in the per-session settings dropdown. Each
+ * value is a CSS font-family list — the selected entry is applied as-is
+ * to the xterm instance (xterm only consults the first installed family,
+ * so we always include `Menlo, monospace` as a tail fallback inline).
+ *
+ * The first entry (`Default`) maps to the project's pixel font + Menlo
+ * fallback (the current pre-Phase-10 behavior). Picking `var(--font-pixel)`
+ * is meaningless inside xterm's canvas — Menlo wins as the fallback —
+ * but kept for parity with the design spec so users can reset by name.
+ */
+export const TERMINAL_FONT_FAMILY_PRESETS: ReadonlyArray<{ label: string; value: string }> = [
+  { label: 'Menlo', value: 'Menlo, monospace' },
+  { label: 'Monaco', value: 'Monaco, monospace' },
+  { label: 'Courier New', value: '"Courier New", Menlo, monospace' },
+  { label: 'JetBrains Mono', value: '"JetBrains Mono", Menlo, monospace' },
+  { label: 'Fira Code', value: '"Fira Code", Menlo, monospace' },
+  { label: 'Source Code Pro', value: '"Source Code Pro", Menlo, monospace' },
+  { label: 'Cascadia Code', value: '"Cascadia Code", Menlo, monospace' },
+  { label: 'IBM Plex Mono', value: '"IBM Plex Mono", Menlo, monospace' },
+  { label: 'Hack', value: 'Hack, Menlo, monospace' },
+  { label: 'Pixel (project)', value: 'var(--font-pixel), Menlo, monospace' },
+];
