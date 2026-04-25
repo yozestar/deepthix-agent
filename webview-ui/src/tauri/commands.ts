@@ -151,3 +151,60 @@ export async function writeGlobalMemory(content: string): Promise<void> {
   log('writeGlobalMemory', { bytes: content.length });
   return await invoke<void>('write_global_memory', { content });
 }
+
+// ─── Files pane (Phase 6) ─────────────────────────────────────────────────
+
+/** Read a UTF-8 text file. Caller should have validated kind+size first. */
+export async function readFile(path: string): Promise<string> {
+  log('readFile', { path });
+  return await invoke<string>('read_file', { path });
+}
+
+/** Overwrite a text file with `content`. */
+export async function writeFile(path: string, content: string): Promise<void> {
+  log('writeFile', { path, bytes: content.length });
+  return await invoke<void>('write_file', { path, content });
+}
+
+export type FileKind = 'text' | 'image' | 'video' | 'pdf' | 'unknown';
+
+/** Classify a file by extension so the UI knows how to render it. */
+export async function fileKind(path: string): Promise<FileKind> {
+  log('fileKind', { path });
+  return await invoke<FileKind>('file_kind', { path });
+}
+
+/** Returns the file size in bytes, used for the "large file" warning gate. */
+export async function fileSize(path: string): Promise<number> {
+  log('fileSize', { path });
+  return await invoke<number>('file_size', { path });
+}
+
+export interface FileBytes {
+  b64: string;
+  mime: string;
+}
+
+/** Read a binary file and return base64 + MIME for direct rendering. */
+export async function readFileBytesBase64(path: string): Promise<FileBytes> {
+  log('readFileBytesBase64', { path });
+  const [b64, mime] = await invoke<[string, string]>('read_file_bytes_base64', { path });
+  return { b64, mime };
+}
+
+export interface PersistedOpenFile {
+  path: string;
+}
+
+export async function saveOpenFiles(
+  projectId: string,
+  files: PersistedOpenFile[],
+): Promise<void> {
+  log('saveOpenFiles', { projectId, count: files.length });
+  return await invoke<void>('save_open_files', { projectId, files });
+}
+
+export async function loadOpenFiles(projectId: string): Promise<PersistedOpenFile[]> {
+  log('loadOpenFiles', { projectId });
+  return await invoke<PersistedOpenFile[]>('load_open_files', { projectId });
+}

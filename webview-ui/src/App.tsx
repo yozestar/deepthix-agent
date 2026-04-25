@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ProcessPane, SessionsPane } from './components/BottomPanel';
+import { FilesPane } from './components/FilesPane';
 import { MemoryPane } from './components/MemoryPane';
 import { Sidebar } from './components/Sidebar';
 import { TamagotchiView } from './components/TamagotchiView';
 import { type Mode, TopTabs } from './components/TopTabs';
 import { Welcome } from './components/Welcome';
 import { useFileTree } from './hooks/useFileTree';
+import { useOpenFiles } from './hooks/useOpenFiles';
 import { useProjects } from './hooks/useProjects';
 import { useTerminals } from './hooks/useTerminals';
 import { isTauriRuntime } from './runtime';
@@ -18,11 +20,17 @@ function App(): React.JSX.Element {
   const projects = useProjects();
   const fileTree = useFileTree(projects.activeProject?.path ?? null);
   const terminals = useTerminals();
+  const openFiles = useOpenFiles(projects.activeProjectId);
 
   // Top-level mode: which content fills the right pane.
   const [mode, setMode] = useState<Mode>(() => {
     const stored = localStorage.getItem(MODE_STORAGE_KEY);
-    if (stored === 'sessions' || stored === 'process' || stored === 'memory') {
+    if (
+      stored === 'sessions' ||
+      stored === 'process' ||
+      stored === 'memory' ||
+      stored === 'files'
+    ) {
       return stored;
     }
     return 'sessions';
@@ -110,6 +118,17 @@ function App(): React.JSX.Element {
     void terminals.open(projectId, cwd, 'claude', undefined, { skipPermissions: skipPerms });
   };
 
+  // Sidebar file-tree click → switch to Files mode + open the file. Used by
+  // both the sidebar's `onFileClick` handler and as a shared API.
+  const onSidebarFileClick = useCallback(
+    (path: string): void => {
+      console.debug('[Deepthix][App] sidebar file click', { path });
+      openFiles.open(path);
+      setMode('files');
+    },
+    [openFiles],
+  );
+
   return (
     <div
       style={{
@@ -119,7 +138,7 @@ function App(): React.JSX.Element {
         background: 'var(--color-bg)',
       }}
     >
-      <Sidebar projects={projects} fileTree={fileTree} />
+      <Sidebar projects={projects} fileTree={fileTree} onFileClick={onSidebarFileClick} />
       <div
         style={{
           flex: 1,
@@ -206,8 +225,14 @@ function App(): React.JSX.Element {
           </>
         ) : mode === 'process' ? (
           <ProcessPane projectPath={projects.activeProject?.path ?? null} />
-        ) : (
+        ) : mode === 'memory' ? (
           <MemoryPane projectPath={projects.activeProject?.path ?? null} />
+        ) : (
+          <FilesPane
+            projectPath={projects.activeProject?.path ?? null}
+            fileTree={fileTree}
+            openFiles={openFiles}
+          />
         )}
       </div>
     </div>

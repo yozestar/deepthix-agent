@@ -12,9 +12,15 @@ const STORAGE_KEY = 'deepthix.sidebarWidth';
 interface Props {
   projects: UseProjectsResult;
   fileTree: UseFileTreeResult;
+  /**
+   * Optional. Forwarded to the FileTree: clicking a file in the sidebar tree
+   * fires this callback. App.tsx uses it to switch to Files mode and open
+   * the file as a sub-tab.
+   */
+  onFileClick?: (path: string) => void;
 }
 
-export function Sidebar({ projects, fileTree }: Props): React.JSX.Element {
+export function Sidebar({ projects, fileTree, onFileClick }: Props): React.JSX.Element {
   const [width, setWidth] = useState<number>(() => {
     const stored = Number(localStorage.getItem(STORAGE_KEY));
     return Number.isFinite(stored) && stored >= MIN_WIDTH ? stored : DEFAULT_WIDTH;
@@ -83,7 +89,7 @@ export function Sidebar({ projects, fileTree }: Props): React.JSX.Element {
             margin: '0',
           }}
         />
-        <FileTree tree={fileTree} />
+        <FileTree tree={fileTree} onFileClick={onFileClick} />
       </div>
       <div
         onMouseDown={onMouseDown}
