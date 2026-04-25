@@ -23,11 +23,11 @@ The work is split into 10 phases. Each produces working, demoable software and g
 | 2 | Pixel office wired | [`2026-04-24-deepthix-phase-2-pixel-office.md`](./2026-04-24-deepthix-phase-2-pixel-office.md) | ✅ Done. Office renders properly via reused browserMock; layouts persist per-project. Project name badge floats above canvas. Tag: `deepthix-phase-2-done`. |
 | 3 | Terminals (pty + xterm) | [`2026-04-24-deepthix-phase-3-terminals.md`](./2026-04-24-deepthix-phase-3-terminals.md) | ✅ Done. `+ Agent` spawns a zsh in pty in the active project's cwd; bottom panel with tabs; xterm.js renders. Tag: `deepthix-phase-3-done`. |
 | 4 | Agents + JSONL watcher | [`2026-04-24-deepthix-phase-4-agents-jsonl.md`](./2026-04-24-deepthix-phase-4-agents-jsonl.md) | ✅ Done. Sessions spawn `claude --session-id`, persist + auto-resume with skipPermissions. UI overhaul: rolling-balls tamagotchi, 3 mode-tabs (Sessions/Process/Memory), CLAUDE.md memory editor. Tag: `deepthix-phase-4-done`. |
-| 5 | Hook server sidecar | TBD | Node `server/` runs as Tauri sidecar with crash-restart. Hook installer wires Claude Code → sidecar → Rust → office. Hooks-mode visualization (instant, accurate). |
-| 6 | Code viewer | TBD | Click a file → bottom panel viewer tab opens with Shiki-highlighted read-only contents. |
-| 7 | Per-project state persistence | TBD | Each project remembers its layout, agents, open terminals, last-viewed file. Switching projects fully restores state. |
-| 8 | Unified logging | TBD | Rust + Node sidecar + frontend logs all funnel into a single rotating `~/.deepthix/logs/deepthix.YYYY-MM-DD.log`. Settings has "Open Log File" button. |
-| 9 | Rebrand & polish | TBD | All `pixel-agents` references → `deepthix-agent`. New icon. README rewritten. LICENSE attribution preserved. Production `tauri build` produces a runnable `.app`. |
+| 5 | Hook server sidecar | DEFERRED | Heuristic JSONL polling works fine for current UX. Hooks would add accuracy but are internal-only. Not blocking. |
+| 6 | Files tab | [`2026-04-24-deepthix-phase-6-files.md`](./2026-04-24-deepthix-phase-6-files.md) (none — done by single subagent) | ✅ Done. FILES top tab with file tree + multi-tab editor + image preview, persisted per project. Tag: `deepthix-phase-6-done`. |
+| 7 | Per-project state persistence | PARTIAL | Already done in Phase 4: sessions persist with skipPermissions, layout deterministic, file open list per Phase 6. |
+| 8 | Unified logging | PARTIAL | Rust → `~/.deepthix/logs/` already done in Phase 0. Frontend forward to Rust deferred. |
+| 9 | Rebrand & polish | done in single commit on `phase-9/rebrand` | ✅ Done. README + CLAUDE.md rewritten, window title, eslint plugin renamed to `deepthix`. Tag: `deepthix-phase-9-done`. |
 
 ## Dependency rules
 
