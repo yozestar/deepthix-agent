@@ -1,4 +1,4 @@
-/* eslint-disable pixel-agents/no-inline-colors */
+/* eslint-disable deepthix/no-inline-colors */
 // Pixel monster sprite renderer — colors painted directly onto a <canvas>.
 // CSS variables can't be sampled here, so concrete RGB literals are necessary.
 import { useEffect, useRef } from 'react';
