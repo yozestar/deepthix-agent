@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { type AgentStatus, useAgentStatus } from '../hooks/useAgentStatus';
 import type { TerminalEntry } from '../hooks/useTerminals';
+import { PixelBrain } from './PixelBrain';
 import { StatusDot } from './StatusDot';
 
 // ── Deterministic hash + RNG ─────────────────────────────────────────────
@@ -315,7 +316,7 @@ function BallView({
   status: AgentStatus;
   onClick: (e: React.MouseEvent) => void;
 }): React.JSX.Element {
-  const { x, y, rotation, look, label, speech, active } = ball;
+  const { x, y, label, speech, active } = ball;
   return (
     <div
       onClick={onClick}
@@ -365,61 +366,19 @@ function BallView({
           {speech}
         </div>
       )}
-      {/* Ball — circle div with rolling rotation. The pattern is drawn via
-          a child div so it counter-rotates only when needed (not currently). */}
+      {/* Brain illustration — pulses with synapses when active. We don't
+          rotate it (a brain rolling looks weird); we only do a tiny vertical
+          float. */}
       <div
         style={{
           width: '100%',
           height: '100%',
-          borderRadius: '50%',
-          background: `radial-gradient(circle at 35% 30%, color-mix(in srgb, ${look.bodyColor} 70%, white) 0%, ${look.bodyColor} 50%, color-mix(in srgb, ${look.bodyColor} 60%, black) 100%)`,
-          border: '3px solid #0a0a14',
-          boxShadow: active
-            ? `0 0 0 4px var(--color-accent), 4px 6px 0 rgba(0,0,0,0.45)`
-            : `4px 6px 0 rgba(0,0,0,0.45)`,
           position: 'relative',
-          transform: `rotate(${rotation}deg)`,
-          overflow: 'hidden',
+          transform: active ? 'scale(1.05)' : 'scale(1)',
+          transition: 'transform 0.3s ease-out',
         }}
       >
-        {look.pattern === 'stripe' && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '40%',
-              left: '-10%',
-              width: '120%',
-              height: '20%',
-              background: look.accentColor,
-              border: '2px solid #0a0a14',
-            }}
-          />
-        )}
-        {look.pattern === 'dot' && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              width: '32%',
-              height: '32%',
-              transform: 'translate(-50%, -50%)',
-              borderRadius: '50%',
-              background: look.accentColor,
-              border: '2px solid #0a0a14',
-            }}
-          />
-        )}
-        {look.pattern === 'swirl' && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: '15%',
-              borderRadius: '50%',
-              border: `4px dashed ${look.accentColor}`,
-            }}
-          />
-        )}
+        <PixelBrain seed={ball.seed} size={RADIUS * 2} active={active} />
       </div>
       {/* Label below the ball, NOT rotated. */}
       <div
