@@ -26,6 +26,13 @@ import {
 } from '../tauri/commands';
 import { applyTheme, DEFAULT_THEME_ID } from '../themes';
 
+/** Push the chosen font family into --font-pixel so every UI element using
+ *  `var(--font-pixel)` (sidebar, tabs, modals, etc.) follows the user's pick.
+ *  The terminal continues to read settings.terminalFontFamily directly. */
+function applyAppFont(family: string): void {
+  document.documentElement.style.setProperty('--font-pixel', family);
+}
+
 /** Resolved global config — every field is concrete (no `null` / `undefined`). */
 export interface GlobalConfig {
   /** Font size in CSS pixels. Clamped 8..32 by callers. */
@@ -108,6 +115,7 @@ export function useGlobalConfig(): UseGlobalConfigResult {
         console.info('[Deepthix][useGlobalConfig] loaded', resolved);
         latestRef.current = resolved;
         applyTheme(resolved.themeId);
+        applyAppFont(resolved.terminalFontFamily);
         setConfig(resolved);
         setLoaded(true);
       })
@@ -145,6 +153,9 @@ export function useGlobalConfig(): UseGlobalConfigResult {
       latestRef.current = next;
       if (partial.themeId && partial.themeId !== prev.themeId) {
         applyTheme(next.themeId);
+      }
+      if (partial.terminalFontFamily && partial.terminalFontFamily !== prev.terminalFontFamily) {
+        applyAppFont(next.terminalFontFamily);
       }
       return next;
     });
