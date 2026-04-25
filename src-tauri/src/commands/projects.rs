@@ -26,7 +26,17 @@ pub fn add_project(state: State<'_, AppState>, path: PathBuf) -> Result<Project,
         format!("cannot canonicalize {}: {}", path.display(), e)
     })?;
     tracing::debug!(target: "deepthix::commands", ?path, ?canonical, "canonicalized");
-    state.add(canonical).map_err(|e| e.to_string())
+    let project = state.add(canonical.clone()).map_err(|e| e.to_string())?;
+    // Best-effort: ensure CLAUDE.md teaches the dashboard convention.
+    // Failing here (e.g. read-only FS) must not block adding the project.
+    if let Err(e) = crate::claude_md::inject_into_project(&canonical) {
+        tracing::warn!(
+            target: "deepthix::commands",
+            ?canonical, error = %e,
+            "inject CLAUDE.md dashboard block failed (project still added)",
+        );
+    }
+    Ok(project)
 }
 
 #[tauri::command]

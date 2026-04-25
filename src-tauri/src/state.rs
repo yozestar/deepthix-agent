@@ -116,6 +116,13 @@ fn project_hash(path: &Path) -> u64 {
     hasher.finish()
 }
 
+/// Public form of the project-id computation. Same input → same id, so
+/// pty.rs can derive the dashboard path from the spawn cwd without having
+/// to plumb the id through every call site.
+pub fn project_id_for_path(path: &Path) -> String {
+    format!("{:x}", project_hash(path))
+}
+
 fn now_unix_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

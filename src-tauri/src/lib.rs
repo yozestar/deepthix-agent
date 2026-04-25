@@ -1,3 +1,4 @@
+mod claude_md;
 mod commands;
 mod jsonl_watcher;
 mod log;
@@ -24,6 +25,26 @@ pub fn run() {
             std::process::exit(1);
         }
     };
+
+    // Migration: ensure every PRE-EXISTING project's CLAUDE.md teaches the
+    // dashboard convention. New projects get this on add (commands/projects.rs);
+    // this loop catches everything that was added before that wiring existed.
+    // Best-effort — any per-project failure is logged and skipped.
+    for project in app_state.snapshot().projects {
+        match claude_md::inject_into_project(&project.path) {
+            Ok(true) => tracing::info!(
+                target: "deepthix::boot",
+                id = %project.id, name = %project.name, path = ?project.path,
+                "CLAUDE.md dashboard block injected/updated",
+            ),
+            Ok(false) => {} // already up to date
+            Err(e) => tracing::warn!(
+                target: "deepthix::boot",
+                id = %project.id, name = %project.name, error = %e,
+                "CLAUDE.md inject failed for existing project (skipping)",
+            ),
+        }
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

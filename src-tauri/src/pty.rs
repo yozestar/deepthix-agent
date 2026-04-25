@@ -240,9 +240,39 @@ impl TerminalManager {
         if skip_permissions {
             cmd.arg("--dangerously-skip-permissions");
         }
-        cmd.cwd(cwd);
+        cmd.cwd(&cwd);
         for (k, v) in std::env::vars() {
             cmd.env(k, v);
+        }
+
+        // Expose the per-session dashboard path so claude can write to it
+        // without needing the user to copy/paste from the OVERVIEW pane.
+        // The path is computed the same way as the JS Tauri command —
+        // ~/.deepthix/projects/<project-id>/dashboards/<session-id>.html —
+        // so what claude writes shows up immediately in the iframe.
+        let project_id = crate::state::project_id_for_path(&cwd);
+        if let Ok(home) = std::env::var("HOME") {
+            let dashboard_path = std::path::PathBuf::from(home)
+                .join(".deepthix")
+                .join("projects")
+                .join(&project_id)
+                .join("dashboards")
+                .join(format!("{session_id}.html"));
+            // Make sure the parent dir exists so claude's first Write
+            // doesn't fail with ENOENT — the JS-side commands also create
+            // it, but claude may write before any UI poll has happened.
+            if let Some(parent) = dashboard_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let dashboard_path_str = dashboard_path.to_string_lossy().into_owned();
+            tracing::debug!(
+                target: "deepthix::pty",
+                %id, %session_id, %dashboard_path_str,
+                "injecting DEEPTHIX_DASHBOARD_PATH",
+            );
+            cmd.env("DEEPTHIX_DASHBOARD_PATH", dashboard_path_str);
+            cmd.env("DEEPTHIX_SESSION_ID", &session_id);
+            cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
         }
 
         let child = pair
