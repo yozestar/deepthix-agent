@@ -84,8 +84,22 @@ export function TerminalTab({
       fontSize: settingsRef.current.terminalFontSize,
       fontFamily: settingsRef.current.terminalFontFamily,
       lineHeight: settingsRef.current.terminalLineHeight,
+      letterSpacing: 0,
       theme: { background: bgColor },
-      convertEol: true,
+      // false: claude code (Ink-based TUI) sends its own \r\n sequences and
+      // performs absolute cursor positioning — converting bare \n to \r\n
+      // double-shifts the cursor and corrupts the input box border on
+      // redraws (this was producing the visible "split prompt" rows).
+      convertEol: false,
+      // Bar cursor matches what Ink expects, and blinking ensures we always
+      // see WHERE the input is (the static block was disappearing on
+      // certain redraws because xterm assumed it owned the cursor cell).
+      cursorStyle: 'bar',
+      cursorBlink: true,
+      // Re-affirm canvas-renderer defaults so a stale option from an HMR
+      // patch can't leave us with a broken renderer.
+      allowTransparency: false,
+      scrollback: 5000,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
