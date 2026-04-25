@@ -24,6 +24,9 @@ pub struct GlobalConfig {
     /// Line-height multiplier applied to xterm (1.0–1.6). None → default.
     #[serde(default)]
     pub terminal_line_height: Option<f32>,
+    /// Theme id (color palette). None → frontend default.
+    #[serde(default)]
+    pub theme_id: Option<String>,
 }
 
 #[tauri::command]
@@ -75,6 +78,7 @@ mod tests {
             terminal_font_size: Some(14),
             terminal_font_family: Some("Menlo, monospace".into()),
             terminal_line_height: Some(1.2),
+            theme_id: Some("dracula".into()),
         };
         let json = serde_json::to_string(&c).unwrap();
         assert!(json.contains("terminal_font_size"));

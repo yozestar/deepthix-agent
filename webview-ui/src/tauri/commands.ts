@@ -170,6 +170,7 @@ export interface GlobalConfigPayload {
   terminal_font_size?: number | null;
   terminal_font_family?: string | null;
   terminal_line_height?: number | null;
+  theme_id?: string | null;
 }
 
 export async function readGlobalConfig(): Promise<GlobalConfigPayload> {

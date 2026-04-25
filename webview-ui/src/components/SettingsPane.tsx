@@ -19,6 +19,7 @@ import {
   TERMINAL_LINE_HEIGHT_STEP,
 } from '../constants';
 import type { UseGlobalConfigResult } from '../hooks/useGlobalConfig';
+import { THEMES } from '../themes';
 
 interface Props {
   globalConfig: UseGlobalConfigResult;
@@ -138,6 +139,45 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
           <code style={{ fontFamily: 'var(--font-pixel)' }}>Cmd -</code> /{' '}
           <code style={{ fontFamily: 'var(--font-pixel)' }}>Cmd 0</code> from inside any
           terminal also adjusts the global font size.
+        </div>
+      </Section>
+
+      {/* THEME section */}
+      <Section title="THEME" subtitle="Pre-built color packs that look good together. Live preview.">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
+          {THEMES.map((t) => {
+            const active = t.id === config.themeId;
+            return (
+              <button
+                key={t.id}
+                onClick={() => update({ themeId: t.id })}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  padding: '10px',
+                  background: t.colors['color-bg-dark'],
+                  border: `2px solid ${active ? t.colors['color-accent'] : t.colors['color-border']}`,
+                  boxShadow: active ? `4px 4px 0 ${t.colors['color-accent']}` : `2px 2px 0 ${t.colors['color-border']}`,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-pixel)',
+                  color: t.colors['color-text'],
+                  textAlign: 'left',
+                  fontSize: '13px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                  <span>{t.name}</span>
+                  {active && <span style={{ fontSize: '11px', opacity: 0.7 }}>●</span>}
+                </div>
+                <div style={{ display: 'flex', gap: '4px', height: '14px' }}>
+                  {['color-bg', 'color-accent', 'color-status-success', 'color-danger', 'color-warning'].map((k) => (
+                    <span key={k} style={{ flex: 1, background: t.colors[k], border: `1px solid ${t.colors['color-border']}` }} />
+                  ))}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </Section>
 

@@ -24,6 +24,7 @@ import {
   readGlobalConfig as cmdReadGlobalConfig,
   writeGlobalConfig as cmdWriteGlobalConfig,
 } from '../tauri/commands';
+import { applyTheme, DEFAULT_THEME_ID } from '../themes';
 
 /** Resolved global config — every field is concrete (no `null` / `undefined`). */
 export interface GlobalConfig {
@@ -33,12 +34,15 @@ export interface GlobalConfig {
   terminalFontFamily: string;
   /** Line-height multiplier (1.0–1.6). 1.0 = xterm default. */
   terminalLineHeight: number;
+  /** Theme id — drives the live :root CSS variables. */
+  themeId: string;
 }
 
 export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   terminalFontSize: TERMINAL_DEFAULT_FONT_SIZE,
   terminalFontFamily: TERMINAL_DEFAULT_FONT_FAMILY,
   terminalLineHeight: TERMINAL_DEFAULT_LINE_HEIGHT,
+  themeId: DEFAULT_THEME_ID,
 };
 
 export interface UseGlobalConfigResult {
@@ -66,6 +70,10 @@ function payloadToConfig(payload: GlobalConfigPayload | null | undefined): Globa
       typeof payload?.terminal_line_height === 'number'
         ? payload.terminal_line_height
         : DEFAULT_GLOBAL_CONFIG.terminalLineHeight,
+    themeId:
+      typeof payload?.theme_id === 'string' && payload.theme_id.length > 0
+        ? payload.theme_id
+        : DEFAULT_GLOBAL_CONFIG.themeId,
   };
 }
 
@@ -75,6 +83,7 @@ function configToPayload(config: GlobalConfig): GlobalConfigPayload {
     terminal_font_size: config.terminalFontSize,
     terminal_font_family: config.terminalFontFamily,
     terminal_line_height: config.terminalLineHeight,
+    theme_id: config.themeId,
   };
 }
 
@@ -98,6 +107,7 @@ export function useGlobalConfig(): UseGlobalConfigResult {
         const resolved = payloadToConfig(payload);
         console.info('[Deepthix][useGlobalConfig] loaded', resolved);
         latestRef.current = resolved;
+        applyTheme(resolved.themeId);
         setConfig(resolved);
         setLoaded(true);
       })
@@ -133,6 +143,9 @@ export function useGlobalConfig(): UseGlobalConfigResult {
     setConfig((prev) => {
       const next: GlobalConfig = { ...prev, ...partial };
       latestRef.current = next;
+      if (partial.themeId && partial.themeId !== prev.themeId) {
+        applyTheme(next.themeId);
+      }
       return next;
     });
     if (debounceRef.current) clearTimeout(debounceRef.current);
