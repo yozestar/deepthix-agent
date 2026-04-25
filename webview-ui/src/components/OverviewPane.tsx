@@ -8,7 +8,7 @@
 // the same `agentToolStart`/`agentToolDone`/`agentToolClear` window events
 // the office canvas uses.
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { UseProjectsResult } from '../hooks/useProjects';
@@ -145,6 +145,7 @@ export function OverviewPane({ terminals, projects, onChangeMode }: Props): Reac
               isActive={g.projectId === projects.activeProjectId}
               status={agentStatus.status}
               onPickSession={onPickSession}
+              onUpdateNotes={terminals.updateNotes}
             />
           ))}
         </div>
@@ -162,6 +163,7 @@ interface GroupViewProps {
   isActive: boolean;
   status: ReturnType<typeof useAgentStatus>['status'];
   onPickSession: (t: TerminalEntry) => void;
+  onUpdateNotes: (id: string, notes: string) => void;
 }
 
 function ProjectGroupView({
@@ -169,6 +171,7 @@ function ProjectGroupView({
   isActive,
   status,
   onPickSession,
+  onUpdateNotes,
 }: GroupViewProps): React.JSX.Element {
   const anyWorking = group.sessions.some((s) => status(s.agentId) === 'working');
   const projectStatus = anyWorking ? 'working' : 'idle';
@@ -228,11 +231,12 @@ function ProjectGroupView({
 
       {/* Brain cards grid — seed matches TamagotchiView (`projectId#idx`) so
           colors stay consistent across panes. Label is the PROJECT name (per
-          user request) instead of the session label. */}
+          user request) instead of the session label. Each card has its own
+          editable notes area so the user can pin per-session context. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
           gap: '12px',
         }}
       >
@@ -244,6 +248,7 @@ function ProjectGroupView({
             projectName={group.projectName}
             status={status(s.agentId)}
             onClick={() => onPickSession(s)}
+            onUpdateNotes={onUpdateNotes}
           />
         ))}
       </div>
@@ -263,9 +268,13 @@ interface CardProps {
   projectName: string;
   status: 'idle' | 'working' | 'absent';
   onClick: () => void;
+  /** Persist the textarea content (debounced 500ms by the card itself). */
+  onUpdateNotes: (id: string, notes: string) => void;
 }
 
 const BRAIN_SIZE = 88;
+/** Quiet-window before flushing notes to disk — keeps disk churn modest while typing. */
+const NOTES_DEBOUNCE_MS = 500;
 
 function SessionCard({
   terminal,
@@ -273,53 +282,137 @@ function SessionCard({
   projectName,
   status,
   onClick,
+  onUpdateNotes,
 }: CardProps): React.JSX.Element {
   const active = status === 'working';
+
+  // Local mirror of the persisted notes so typing stays responsive — we
+  // re-seed from props if the underlying entry's notes changes from outside
+  // (e.g. another pane edits it; or resume hydrates the field).
+  const [draft, setDraft] = useState<string>(terminal.notes);
+  const lastPropsNotesRef = useRef<string>(terminal.notes);
+  useEffect(() => {
+    if (terminal.notes !== lastPropsNotesRef.current) {
+      lastPropsNotesRef.current = terminal.notes;
+      setDraft(terminal.notes);
+    }
+  }, [terminal.notes]);
+
+  // Debounce persist so we don't write to disk on every keystroke. The
+  // timer is reset on each change; on unmount we flush so the user doesn't
+  // lose the trailing edit.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onUpdateRef = useRef(onUpdateNotes);
+  useEffect(() => {
+    onUpdateRef.current = onUpdateNotes;
+  }, [onUpdateNotes]);
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        // Final flush of whatever's in draft. Reading via ref-stale closure
+        // is fine: the latest value lives in the *latest* unmount cycle's
+        // closure, which is what runs.
+        onUpdateRef.current(terminal.id, draft);
+      }
+    };
+    // We intentionally only flush on unmount; the deps are stable enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onTextChange = (next: string): void => {
+    setDraft(next);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      onUpdateRef.current(terminal.id, next);
+    }, NOTES_DEBOUNCE_MS);
+  };
+
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick();
-        }
-      }}
       style={{
-        cursor: 'pointer',
-        padding: '12px 10px',
+        padding: '10px',
         background: active ? 'var(--color-bg-dark)' : 'transparent',
         border: '2px solid var(--color-border)',
         boxShadow: 'var(--shadow-pixel)',
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
         gap: '8px',
         fontFamily: 'var(--font-pixel)',
         position: 'relative',
       }}
-      title={`${projectName} — ${terminal.label} (click to focus)`}
+      title={`${projectName} — ${terminal.label}`}
     >
       {/* Status dot pinned top-right so it doesn't compete with the brain. */}
       <div style={{ position: 'absolute', top: 6, right: 6 }}>
         <StatusDot status={status} title={status} />
       </div>
 
-      <PixelBrain seed={seed} size={BRAIN_SIZE} active={active} />
-
-      <span
-        style={{
-          fontSize: '13px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          maxWidth: '100%',
-          textAlign: 'center',
+      {/* Brain + label. The header IS the click-target — typing in the
+          notes textarea below should NOT focus the session, otherwise every
+          keystroke kicks the user out of the editor. */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
         }}
+        style={{
+          cursor: 'pointer',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '6px',
+        }}
+        title="Click to focus this session"
       >
-        {projectName}
-      </span>
+        <PixelBrain seed={seed} size={BRAIN_SIZE} active={active} />
+        <span
+          style={{
+            fontSize: '13px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            maxWidth: '100%',
+            textAlign: 'center',
+          }}
+        >
+          {projectName}
+        </span>
+      </div>
+
+      {/* Per-session free-form notes. Auto-persisted 500ms after the last
+          keystroke; resilient across app restarts (saved alongside the
+          session id in `~/.deepthix/projects/<pid>/sessions.json`). */}
+      <textarea
+        value={draft}
+        onChange={(e) => onTextChange(e.target.value)}
+        // Don't let clicks inside the textarea bubble up to the parent
+        // header's onClick (which would switch sessions and steal focus).
+        onClick={(e) => e.stopPropagation()}
+        placeholder="notes…"
+        rows={4}
+        style={{
+          width: '100%',
+          resize: 'vertical',
+          minHeight: '60px',
+          maxHeight: '200px',
+          padding: '6px 8px',
+          background: 'var(--color-bg-dark)',
+          color: 'var(--color-text)',
+          border: '2px solid var(--color-border)',
+          fontFamily: 'var(--font-pixel)',
+          fontSize: '12px',
+          lineHeight: 1.4,
+          outline: 'none',
+          boxSizing: 'border-box',
+        }}
+      />
     </div>
   );
 }

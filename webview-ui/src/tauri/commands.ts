@@ -88,6 +88,8 @@ export interface PersistedSession {
   font_family?: string | null;
   /** Per-session terminal line-height multiplier (1.0–1.6). Optional. */
   line_height?: number | null;
+  /** Free-form per-session notes shown on the Overview card. Optional. */
+  notes?: string | null;
 }
 
 export async function saveSessions(projectId: string, sessions: PersistedSession[]): Promise<void> {

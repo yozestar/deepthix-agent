@@ -30,6 +30,8 @@ export interface TerminalEntry {
   projectId: string;
   /** Spawned with --dangerously-skip-permissions; preserved on resume. */
   skipPermissions: boolean;
+  /** Free-form per-session notes shown in the OVERVIEW tab. Defaults to ''. */
+  notes: string;
 }
 
 export interface UseTerminalsResult {
@@ -46,6 +48,8 @@ export interface UseTerminalsResult {
     opts?: {
       skipPermissions?: boolean;
       resumeSessionId?: string;
+      /** Restored OVERVIEW notes — used by `resumeProject` to seed the entry without round-tripping through persist. */
+      initialNotes?: string;
     },
   ) => Promise<TerminalEntry | null>;
   close: (id: string) => Promise<void>;
@@ -55,6 +59,8 @@ export interface UseTerminalsResult {
   resumeProject: (projectId: string) => Promise<void>;
   /** Rename a session — updates label in memory + persisted store. */
   rename: (id: string, label: string) => void;
+  /** Update the per-session OVERVIEW notes — debounced-persisted at the call site. */
+  updateNotes: (id: string, notes: string) => void;
 }
 
 function dispatchWebviewMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -125,6 +131,7 @@ export function useTerminals(): UseTerminalsResult {
           cwd: t.cwd,
           skip_permissions: t.skipPermissions,
           created_at_ms: Date.now(),
+          notes: t.notes || null,
         }));
       console.debug('[Deepthix][useTerminals] persistProjectSessions', {
         projectId,
@@ -146,6 +153,7 @@ export function useTerminals(): UseTerminalsResult {
       opts?: {
         skipPermissions?: boolean;
         resumeSessionId?: string;
+        initialNotes?: string;
       },
     ): Promise<TerminalEntry | null> => {
       console.debug('[Deepthix][useTerminals] open', { projectId, cwd, kind, label, opts });
@@ -164,6 +172,7 @@ export function useTerminals(): UseTerminalsResult {
           sessionId: result.session_id,
           projectId,
           skipPermissions: opts?.skipPermissions ?? false,
+          notes: opts?.initialNotes ?? '',
         };
         console.debug('[Deepthix][useTerminals] opened', entry);
         setTerminals((prev) => [...prev, entry]);
@@ -211,6 +220,7 @@ export function useTerminals(): UseTerminalsResult {
         await open(projectId, s.cwd, 'claude', s.label, {
           skipPermissions: s.skip_permissions,
           resumeSessionId: s.session_id,
+          initialNotes: s.notes ?? '',
         });
       }
     },
@@ -251,6 +261,27 @@ export function useTerminals(): UseTerminalsResult {
     [terminals],
   );
 
+  // Per-session OVERVIEW notes. The OverviewPane debounces calls so we get
+  // one persist per ~500ms-quiet-window, not one per keystroke. We still
+  // update local state synchronously so the textarea stays responsive.
+  const updateNotes = useCallback(
+    (id: string, notes: string): void => {
+      let projectId: string | null = null;
+      setTerminals((prev) =>
+        prev.map((t) => {
+          if (t.id !== id) return t;
+          projectId = t.projectId;
+          return { ...t, notes };
+        }),
+      );
+      terminalsRef.current = terminalsRef.current.map((t) =>
+        t.id === id ? { ...t, notes } : t,
+      );
+      if (projectId) persistProjectSessions(projectId);
+    },
+    [persistProjectSessions],
+  );
+
   const rename = useCallback((id: string, label: string): void => {
     const trimmed = label.trim();
     if (!trimmed) return;
@@ -283,7 +314,8 @@ export function useTerminals(): UseTerminalsResult {
       forProject,
       resumeProject,
       rename,
+      updateNotes,
     }),
-    [terminals, activeId, open, close, forProject, resumeProject, rename],
+    [terminals, activeId, open, close, forProject, resumeProject, rename, updateNotes],
   );
 }

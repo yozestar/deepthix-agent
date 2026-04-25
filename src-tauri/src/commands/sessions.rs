@@ -26,6 +26,12 @@ pub struct PersistedSession {
     pub font_family: Option<String>,
     #[serde(default)]
     pub line_height: Option<f32>,
+    /// Free-form per-session notes shown in the OVERVIEW tab. Lets the user
+    /// pin important context (campaign id, blockers, env vars, etc.) next
+    /// to the brain so they don't have to dig through scrollback to find
+    /// it. `#[serde(default)]` so older `sessions.json` still deserializes.
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 #[tauri::command]
