@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { listDir } from '../tauri/commands';
 import type { FileEntry } from '../tauri/types';
@@ -22,6 +22,14 @@ export function useFileTree(rootPath: string | null): UseFileTreeResult {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Mirror `root` in a ref so the toggle handler can decide synchronously
+  // whether a node still needs its children loaded — without waiting for
+  // React to flush the setRoot updater.
+  const rootRef = useRef<FileTreeNode | null>(null);
+  useEffect(() => {
+    rootRef.current = root;
+  }, [root]);
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!rootPath) {
@@ -64,18 +72,17 @@ export function useFileTree(rootPath: string | null): UseFileTreeResult {
       }
       return next;
     });
-    // Mark the target as loading (immutable update along the path).
-    let needsLoad = false;
+    // Decide synchronously whether we need to fetch children by reading the
+    // current tree from the ref (setRoot updaters flush async, so the previous
+    // implementation's `let needsLoad = false` race-condition'd to false).
+    const target = rootRef.current ? findNode(rootRef.current, path) : null;
+    if (!target || !target.is_dir || target.children !== undefined) return;
+    // Mark loading via an immutable updater so the spinner shows.
     setRoot((prev) => {
       if (!prev) return prev;
-      const updated = updateNode(prev, path, (node) => {
-        if (!node.is_dir || node.children !== undefined) return node;
-        needsLoad = true;
-        return { ...node, loading: true };
-      });
+      const updated = updateNode(prev, path, (node) => ({ ...node, loading: true }));
       return updated ?? prev;
     });
-    if (!needsLoad) return;
     try {
       const children = await listDir(path);
       setRoot((prev) => {
@@ -125,6 +132,17 @@ function updateNode(
       newChildren[i] = updatedChild;
       return { ...node, children: newChildren };
     }
+  }
+  return null;
+}
+
+/** Find a node by path (synchronous, read-only). Returns null if absent. */
+function findNode(root: FileTreeNode, path: string): FileTreeNode | null {
+  if (root.path === path) return root;
+  if (!root.children) return null;
+  for (const child of root.children) {
+    const hit = findNode(child, path);
+    if (hit) return hit;
   }
   return null;
 }
