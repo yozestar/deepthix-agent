@@ -13,6 +13,7 @@ import { useMemo } from 'react';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { UseProjectsResult } from '../hooks/useProjects';
 import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
+import { PixelBrain } from './PixelBrain';
 import { StatusDot } from './StatusDot';
 import type { Mode } from './TopTabs';
 
@@ -225,18 +226,22 @@ function ProjectGroupView({
         </span>
       </div>
 
-      {/* Cards grid */}
+      {/* Brain cards grid — seed matches TamagotchiView (`projectId#idx`) so
+          colors stay consistent across panes. Label is the PROJECT name (per
+          user request) instead of the session label. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-          gap: '8px',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+          gap: '12px',
         }}
       >
-        {group.sessions.map((s) => (
+        {group.sessions.map((s, idx) => (
           <SessionCard
             key={s.id}
             terminal={s}
+            seed={`${s.projectId}#${idx}`}
+            projectName={group.projectName}
             status={status(s.agentId)}
             onClick={() => onPickSession(s)}
           />
@@ -252,11 +257,24 @@ function ProjectGroupView({
 
 interface CardProps {
   terminal: TerminalEntry;
+  /** Stable color/look hash — matches the brain in TamagotchiView. */
+  seed: string;
+  /** Shown as the card label (replaces the session label per user request). */
+  projectName: string;
   status: 'idle' | 'working' | 'absent';
   onClick: () => void;
 }
 
-function SessionCard({ terminal, status, onClick }: CardProps): React.JSX.Element {
+const BRAIN_SIZE = 88;
+
+function SessionCard({
+  terminal,
+  seed,
+  projectName,
+  status,
+  onClick,
+}: CardProps): React.JSX.Element {
+  const active = status === 'working';
   return (
     <div
       role="button"
@@ -270,54 +288,38 @@ function SessionCard({ terminal, status, onClick }: CardProps): React.JSX.Elemen
       }}
       style={{
         cursor: 'pointer',
-        padding: '8px 10px',
-        background: status === 'working' ? 'var(--color-bg-dark)' : 'transparent',
+        padding: '12px 10px',
+        background: active ? 'var(--color-bg-dark)' : 'transparent',
         border: '2px solid var(--color-border)',
         boxShadow: 'var(--shadow-pixel)',
         display: 'flex',
         flexDirection: 'column',
-        gap: '4px',
+        alignItems: 'center',
+        gap: '8px',
         fontFamily: 'var(--font-pixel)',
+        position: 'relative',
       }}
-      title={`${terminal.label} — click to focus this session`}
+      title={`${projectName} — ${terminal.label} (click to focus)`}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <StatusDot status={status} />
-        <span
-          style={{
-            fontSize: '13px',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            flex: 1,
-          }}
-        >
-          {terminal.label}
-        </span>
+      {/* Status dot pinned top-right so it doesn't compete with the brain. */}
+      <div style={{ position: 'absolute', top: 6, right: 6 }}>
+        <StatusDot status={status} title={status} />
       </div>
-      <div
+
+      <PixelBrain seed={seed} size={BRAIN_SIZE} active={active} />
+
+      <span
         style={{
-          fontSize: '11px',
-          opacity: 0.55,
+          fontSize: '13px',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-        }}
-        title={terminal.cwd}
-      >
-        {terminal.cwd}
-      </div>
-      <div
-        style={{
-          fontSize: '11px',
-          opacity: 0.7,
-          marginTop: '2px',
-          color:
-            status === 'working' ? 'var(--color-warning)' : 'var(--color-status-success)',
+          maxWidth: '100%',
+          textAlign: 'center',
         }}
       >
-        {status === 'working' ? '● working' : status === 'idle' ? '○ idle' : '— inactive'}
-      </div>
+        {projectName}
+      </span>
     </div>
   );
 }
