@@ -278,6 +278,37 @@ export function TerminalTab({
     }
     el.addEventListener('keydown', onKeyDown);
 
+    // Wheel scroll: claude code (and any TUI using mouse-tracking mode 1000+)
+    // tells xterm to forward wheel events as escape codes to the application,
+    // which means xterm's built-in viewport scrolling never fires. We catch
+    // wheel events in the CAPTURE phase, scroll the buffer ourselves, and
+    // preventDefault so xterm's mouse-mode handler doesn't also send them
+    // downstream. ~3 lines per notch matches macOS terminal feel; deltaMode
+    // === 1 (line) and deltaMode === 2 (page) are unusual but handled.
+    function onWheel(ev: WheelEvent): void {
+      if (!termRef.current) return;
+      // deltaMode 0 = pixels, 1 = lines, 2 = pages
+      let lines: number;
+      if (ev.deltaMode === 1) {
+        lines = ev.deltaY;
+      } else if (ev.deltaMode === 2) {
+        lines = ev.deltaY * (termRef.current.rows ?? 24);
+      } else {
+        // Pixels — divide by approximate row height. ~16px per row at 13px
+        // font is close enough; the user feel is what matters, not precision.
+        lines = ev.deltaY / 16;
+      }
+      // Round AWAY from zero so a tiny wheel nudge always moves at least 1
+      // line (otherwise sub-row deltas silently no-op and the user assumes
+      // scroll is broken).
+      const rounded = lines >= 0 ? Math.ceil(lines) : Math.floor(lines);
+      if (rounded === 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      termRef.current.scrollLines(rounded);
+    }
+    el.addEventListener('wheel', onWheel, { capture: true, passive: false });
+
     return () => {
       console.debug('[Deepthix][TerminalTab] unmount', { termId });
       clearInterval(autosaveTimer);
@@ -304,6 +335,7 @@ export function TerminalTab({
       unlisten?.();
       resizeObserver.disconnect();
       el.removeEventListener('keydown', onKeyDown);
+      el.removeEventListener('wheel', onWheel, { capture: true } as EventListenerOptions);
       term.dispose();
       serializeRef.current = null;
     };
