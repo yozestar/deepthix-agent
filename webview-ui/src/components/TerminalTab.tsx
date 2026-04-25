@@ -197,7 +197,17 @@ export function TerminalTab({
     term.options.fontSize = settings.terminalFontSize;
     term.options.fontFamily = settings.terminalFontFamily;
     term.options.lineHeight = settings.terminalLineHeight;
-    safeFit();
+    // xterm caches char metrics for the canvas renderer; force a refit + full
+    // refresh so the new font/size actually paints. Without this, fontFamily
+    // changes silently re-cache but keep using the old glyph atlas.
+    requestAnimationFrame(() => {
+      safeFit();
+      try {
+        term.refresh(0, term.rows - 1);
+      } catch (e) {
+        console.debug('[Deepthix][TerminalTab] refresh after settings change failed', e);
+      }
+    });
   }, [
     termId,
     settings.terminalFontSize,
