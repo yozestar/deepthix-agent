@@ -130,6 +130,40 @@ export async function clearTerminalScrollback(
   return await invoke<void>('clear_terminal_scrollback', { projectId, sessionId });
 }
 
+/** Absolute path to the per-session dashboard HTML file (used in placeholder). */
+export async function dashboardPath(projectId: string, sessionId: string): Promise<string> {
+  log('dashboardPath', { projectId, sessionId });
+  return await invoke<string>('dashboard_path', { projectId, sessionId });
+}
+
+/** Read the per-session dashboard HTML; returns null if the file doesn't exist yet. */
+export async function readSessionDashboard(
+  projectId: string,
+  sessionId: string,
+): Promise<string | null> {
+  // Intentionally not logging — we poll this every few seconds and the noise
+  // would drown out everything else in the console.
+  return await invoke<string | null>('read_session_dashboard', { projectId, sessionId });
+}
+
+/** Write the per-session dashboard HTML (atomic via .tmp + rename). */
+export async function writeSessionDashboard(
+  projectId: string,
+  sessionId: string,
+  html: string,
+): Promise<void> {
+  log('writeSessionDashboard', { projectId, sessionId, bytes: html.length });
+  return await invoke<void>('write_session_dashboard', { projectId, sessionId, html });
+}
+
+/** mtime of the dashboard file in epoch ms (0 if missing). Cheap polling probe. */
+export async function dashboardMtimeMs(
+  projectId: string,
+  sessionId: string,
+): Promise<number> {
+  return await invoke<number>('dashboard_mtime_ms', { projectId, sessionId });
+}
+
 export interface ProcessInfo {
   pid: number;
   command: string;

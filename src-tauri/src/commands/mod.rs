@@ -1,5 +1,6 @@
 pub mod chrome;
 pub mod config;
+pub mod dashboard;
 pub mod fs;
 pub mod layout;
 pub mod memory;
