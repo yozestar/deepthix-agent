@@ -46,6 +46,10 @@ export function TerminalTab({
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  // Holds the latest `safeFit` callback so the mount-time ResizeObserver
+  // (registered ONCE) can call the most recent version without depending
+  // on it through React deps and re-creating the terminal.
+  const safeFitRef = useRef<() => void>(() => {});
 
   // Stash the latest settings + onSettingsChange so the keydown handler
   // (registered once at mount) always sees the current values without
@@ -86,7 +90,14 @@ export function TerminalTab({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
-    fit.fit();
+    // The xterm canvas renderer initializes lazily — the first fit() can
+    // throw `_renderer.value.dimensions` is undefined. Swallow it; the
+    // subsequent ResizeObserver / visibility effects will retry.
+    try {
+      fit.fit();
+    } catch (e) {
+      console.debug('[Deepthix][TerminalTab] initial fit deferred', e);
+    }
     termRef.current = term;
     fitRef.current = fit;
 
@@ -102,9 +113,13 @@ export function TerminalTab({
     });
 
     const resizeObserver = new ResizeObserver(() => {
-      if (!fitRef.current || !termRef.current) return;
-      fitRef.current.fit();
-      void ptyResize(termId, termRef.current.cols, termRef.current.rows);
+      // Use safeFit so that fit() failures (xterm renderer not yet
+      // initialized — common when this terminal is hidden via display:none
+      // and another panel triggers a layout) don't leave us stuck at the
+      // pre-resize geometry. Without try/catch the thrown
+      // `_renderer.value.dimensions` would short-circuit the observer
+      // callback and the terminal would silently keep its old size.
+      safeFitRef.current();
     });
     resizeObserver.observe(el);
 
@@ -175,11 +190,25 @@ export function TerminalTab({
       fit.fit();
       if (term.cols > 0 && term.rows > 0) {
         void ptyResize(termId, term.cols, term.rows);
+        // Newer claude-code redraws when it sees a SIGWINCH; nudge the
+        // canvas renderer too so any rows previously left blank past the
+        // old fit height get repainted from the scrollback buffer.
+        try {
+          term.refresh(0, term.rows - 1);
+        } catch (e) {
+          console.debug('[Deepthix][TerminalTab] post-fit refresh failed', e);
+        }
       }
     } catch (e) {
       console.debug('[Deepthix][TerminalTab] fit deferred', e);
     }
   }, [termId]);
+
+  // Mirror the latest safeFit into the ref so the mount-time observer can
+  // reach it without depending on it through React deps.
+  useEffect(() => {
+    safeFitRef.current = safeFit;
+  }, [safeFit]);
 
   // Live-update the existing xterm instance when the global config changes
   // (settings pane controls or keyboard shortcuts). After mutating
