@@ -1,4 +1,4 @@
-/* eslint-disable pixel-agents/no-inline-colors */
+/* eslint-disable deepthix/no-inline-colors */
 // Tamagotchi-style "rolling balls" world: each claude session is a colored
 // ball that drifts, collides elastically with the others, and is clickable
 // to focus its terminal session in the BottomPanel.

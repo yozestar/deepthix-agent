@@ -1,7 +1,7 @@
 import typescriptEslint from 'typescript-eslint';
 import eslintConfigPrettier from 'eslint-config-prettier';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
-import pixelAgentsPlugin from './eslint-rules/pixel-agents-rules.mjs';
+import deepthixPlugin from './eslint-rules/pixel-agents-rules.mjs';
 
 export default [
   {
@@ -11,7 +11,7 @@ export default [
     plugins: {
       '@typescript-eslint': typescriptEslint.plugin,
       'simple-import-sort': simpleImportSort,
-      'pixel-agents': pixelAgentsPlugin,
+      deepthix: deepthixPlugin,
     },
 
     languageOptions: {
@@ -34,7 +34,7 @@ export default [
       'no-throw-literal': 'error',
       'simple-import-sort/imports': 'error',
       'simple-import-sort/exports': 'error',
-      'pixel-agents/no-inline-colors': 'error',
+      'deepthix/no-inline-colors': 'error',
     },
   },
   eslintConfigPrettier,

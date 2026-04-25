@@ -1,4 +1,4 @@
-/* eslint-disable pixel-agents/no-inline-colors */
+/* eslint-disable deepthix/no-inline-colors */
 // 2D SVG companion blob with expressive faces. Body color/shape are seeded
 // from a string (so each project gets a stable look). Emotion changes the
 // face: eyes, mouth, eyebrows.
