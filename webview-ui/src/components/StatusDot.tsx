@@ -1,6 +1,6 @@
 // Square pixel dot used everywhere a session/project status indicator is
 // shown (sub-tabs, sidebar, overview cards, ball overlays). No animation —
-// the colour just toggles between green (idle), red (working), or
+// the colour just toggles between green (working), red (idle), or
 // transparent (absent / no agents).
 //
 // Stays a simple inline-block so callers can drop it inline next to text
@@ -19,9 +19,9 @@ interface Props {
 export function StatusDot({ status, size = 8, title }: Props): React.JSX.Element {
   const background =
     status === 'working'
-      ? 'var(--color-danger)'
+      ? 'var(--color-status-success)'
       : status === 'idle'
-        ? 'var(--color-status-success)'
+        ? 'var(--color-danger)'
         : 'transparent';
   return (
     <span
