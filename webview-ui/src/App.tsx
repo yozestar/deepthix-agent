@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { BrowserPane, ProcessPane, SessionsPane } from './components/BottomPanel';
+import { ProcessPane, SessionsPane } from './components/BottomPanel';
 import { MemoryPane } from './components/MemoryPane';
 import { Sidebar } from './components/Sidebar';
 import { TamagotchiView } from './components/TamagotchiView';
@@ -22,12 +22,7 @@ function App(): React.JSX.Element {
   // Top-level mode: which content fills the right pane.
   const [mode, setMode] = useState<Mode>(() => {
     const stored = localStorage.getItem(MODE_STORAGE_KEY);
-    if (
-      stored === 'sessions' ||
-      stored === 'browser' ||
-      stored === 'process' ||
-      stored === 'memory'
-    ) {
+    if (stored === 'sessions' || stored === 'process' || stored === 'memory') {
       return stored;
     }
     return 'sessions';
@@ -209,8 +204,6 @@ function App(): React.JSX.Element {
             </div>
             <SessionsPane terminals={terminals} projectId={projects.activeProjectId} />
           </>
-        ) : mode === 'browser' ? (
-          <BrowserPane terminals={terminals} projectId={projects.activeProjectId} />
         ) : mode === 'process' ? (
           <ProcessPane projectPath={projects.activeProject?.path ?? null} />
         ) : (
