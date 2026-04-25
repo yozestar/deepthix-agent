@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
+import { useAgentStatus } from '../hooks/useAgentStatus';
+import type { TerminalEntry } from '../hooks/useTerminals';
 import type { Project } from '../tauri/types';
+import { StatusDot } from './StatusDot';
 
 interface Props {
   projects: Project[];
@@ -9,6 +12,17 @@ interface Props {
   onRemove: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onOpenFolder: () => void;
+  /**
+   * All terminals across every project (Phase 11). Used to compute the
+   * per-project aggregate status dot — `working` if any of its claude
+   * sessions is using a tool, `idle` if any session exists, `absent`
+   * (no dot) if the project has no sessions yet.
+   */
+  terminals: TerminalEntry[];
+  /** Click handler for the SETTINGS button at the top of the sidebar. */
+  onOpenSettings: () => void;
+  /** True when the parent's `mode === 'settings'` so we can highlight the button. */
+  settingsActive: boolean;
 }
 
 export function ProjectList({
@@ -18,12 +32,29 @@ export function ProjectList({
   onRemove,
   onRename,
   onOpenFolder,
+  terminals,
+  onOpenSettings,
+  settingsActive,
 }: Props): React.JSX.Element {
   // Inline rename state — mirrors the SessionsPane sub-tab rename pattern in
   // BottomPanel.tsx: double-click to enter edit mode, Enter saves, Escape
   // cancels, blur saves.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
+
+  const agentStatus = useAgentStatus();
+
+  // Pre-bucket terminals by project so we don't re-scan the array N×M times.
+  const sessionsByProject = useMemo(() => {
+    const map = new Map<string, TerminalEntry[]>();
+    for (const t of terminals) {
+      if (t.kind !== 'claude') continue;
+      const arr = map.get(t.projectId);
+      if (arr) arr.push(t);
+      else map.set(t.projectId, [t]);
+    }
+    return map;
+  }, [terminals]);
 
   const commitRename = (id: string, original: string): void => {
     const trimmed = editingValue.trim();
@@ -49,6 +80,32 @@ export function ProjectList({
         fontFamily: 'var(--font-pixel)',
       }}
     >
+      {/* SETTINGS button (Phase 11). Sits above the PROJECTS section so
+          it's always reachable; switches the right pane to the SettingsPane. */}
+      <button
+        type="button"
+        onClick={onOpenSettings}
+        style={{
+          padding: '6px 8px',
+          marginBottom: '6px',
+          background: settingsActive ? 'var(--color-accent)' : 'transparent',
+          color: settingsActive ? 'var(--color-bg-dark)' : 'inherit',
+          border: '2px solid var(--color-border)',
+          boxShadow: 'var(--shadow-pixel)',
+          cursor: 'pointer',
+          fontSize: '13px',
+          fontFamily: 'var(--font-pixel)',
+          letterSpacing: '0.06em',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+        }}
+        title="Edit global terminal & app settings"
+      >
+        <span aria-hidden>⚙</span>
+        <span>SETTINGS</span>
+      </button>
+
       <div
         style={{
           fontSize: '12px',
@@ -67,6 +124,15 @@ export function ProjectList({
       {projects.map((p) => {
         const isActive = p.id === activeProjectId;
         const isEditing = editingId === p.id;
+        const sessions = sessionsByProject.get(p.id) ?? [];
+        // Aggregate status: working if ANY session is working, idle if ANY
+        // session exists at all, absent (no dot) if there are no sessions.
+        const projectStatus =
+          sessions.length === 0
+            ? 'absent'
+            : sessions.some((s) => agentStatus.status(s.agentId) === 'working')
+              ? 'working'
+              : 'idle';
         return (
           <div
             key={p.id}
@@ -97,8 +163,14 @@ export function ProjectList({
             }}
             title={isEditing ? 'Editing name' : `${p.path}\n(double-click to rename)`}
           >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', overflow: 'hidden', flex: 1 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', flex: 1 }}>
               <span style={{ opacity: isActive ? 1 : 0 }}>●</span>
+              {/* Aggregate status dot per project (Phase 11). Empty span when
+                  status is 'absent' so spacing stays consistent. */}
+              <StatusDot
+                status={projectStatus}
+                title={`${p.name} — ${projectStatus === 'absent' ? 'no sessions' : projectStatus}`}
+              />
               {isEditing ? (
                 <input
                   autoFocus

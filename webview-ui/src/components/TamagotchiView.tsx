@@ -5,7 +5,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { type AgentStatus, useAgentStatus } from '../hooks/useAgentStatus';
 import type { TerminalEntry } from '../hooks/useTerminals';
+import { StatusDot } from './StatusDot';
 
 // ── Deterministic hash + RNG ─────────────────────────────────────────────
 function hashString(s: string): number {
@@ -68,6 +70,10 @@ export function TamagotchiView({ terminals, onSelectSession }: Props): React.JSX
   const containerRef = useRef<HTMLDivElement>(null);
   const [balls, setBalls] = useState<Map<number, Ball>>(new Map());
   const [size, setSize] = useState({ w: 800, h: 600 });
+  // Shared status hook — also subscribes to agentToolStart/Done/Clear, but
+  // unlike the local `active` flag below it survives across other panes
+  // and is the source of truth for the corner status dot overlay.
+  const agentStatus = useAgentStatus();
 
   // Track container size so physics stays inside the visible area.
   useEffect(() => {
@@ -273,7 +279,12 @@ export function TamagotchiView({ terminals, onSelectSession }: Props): React.JSX
       }}
     >
       {Array.from(balls.values()).map((b) => (
-        <BallView key={b.id} ball={b} onClick={(e) => onBallClick(b, e)} />
+        <BallView
+          key={b.id}
+          ball={b}
+          status={agentStatus.status(b.id)}
+          onClick={(e) => onBallClick(b, e)}
+        />
       ))}
       {balls.size === 0 && (
         <div
@@ -297,9 +308,11 @@ export function TamagotchiView({ terminals, onSelectSession }: Props): React.JSX
 // ── Single ball renderer ─────────────────────────────────────────────────
 function BallView({
   ball,
+  status,
   onClick,
 }: {
   ball: Ball;
+  status: AgentStatus;
   onClick: (e: React.MouseEvent) => void;
 }): React.JSX.Element {
   const { x, y, rotation, look, label, speech, active } = ball;
@@ -317,6 +330,20 @@ function BallView({
       }}
       title={`${label} — click to focus`}
     >
+      {/* Top-right corner status dot — green when idle, red when working
+          (Phase 11). Position is outside the ball's circular boundary so it
+          doesn't visually fight the patterns / accent rings. */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          zIndex: 2,
+          pointerEvents: 'none',
+        }}
+      >
+        <StatusDot status={status} size={10} title={`${label} — ${status}`} />
+      </div>
       {speech && (
         <div
           style={{
