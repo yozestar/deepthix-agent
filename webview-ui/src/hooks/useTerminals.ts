@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  clearTerminalScrollback as cmdClearTerminalScrollback,
   killTerminal as cmdKillTerminal,
   loadSessions as cmdLoadSessions,
   type PersistedSession,
@@ -231,6 +232,14 @@ export function useTerminals(): UseTerminalsResult {
     if (entry?.kind === 'claude') {
       dispatchWebviewMessage({ type: 'agentClosed', id: entry.agentId });
       if (projectId) persistProjectSessions(projectId);
+      // The conversation is gone (claude pty was killed) → drop the saved
+      // scrollback so it doesn't leak disk after the user reopens the app.
+      // Best-effort: a failure here is fine, the file just stays orphaned.
+      if (projectId && entry.sessionId) {
+        void cmdClearTerminalScrollback(projectId, entry.sessionId).catch((e) => {
+          console.warn('[Deepthix][useTerminals] clear scrollback failed', e);
+        });
+      }
     }
   }, [persistProjectSessions]);
 

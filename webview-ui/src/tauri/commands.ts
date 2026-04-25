@@ -100,6 +100,34 @@ export async function loadSessions(projectId: string): Promise<PersistedSession[
   return await invoke<PersistedSession[]>('load_sessions', { projectId });
 }
 
+/** Persist the xterm-serialized scrollback for `sessionId` to disk. */
+export async function saveTerminalScrollback(
+  projectId: string,
+  sessionId: string,
+  content: string,
+): Promise<void> {
+  log('saveTerminalScrollback', { projectId, sessionId, bytes: content.length });
+  return await invoke<void>('save_terminal_scrollback', { projectId, sessionId, content });
+}
+
+/** Load previously-saved scrollback for `sessionId`. Returns null if none exists. */
+export async function loadTerminalScrollback(
+  projectId: string,
+  sessionId: string,
+): Promise<string | null> {
+  log('loadTerminalScrollback', { projectId, sessionId });
+  return await invoke<string | null>('load_terminal_scrollback', { projectId, sessionId });
+}
+
+/** Best-effort delete of the saved scrollback (called when a session is closed). */
+export async function clearTerminalScrollback(
+  projectId: string,
+  sessionId: string,
+): Promise<void> {
+  log('clearTerminalScrollback', { projectId, sessionId });
+  return await invoke<void>('clear_terminal_scrollback', { projectId, sessionId });
+}
+
 export interface ProcessInfo {
   pid: number;
   command: string;

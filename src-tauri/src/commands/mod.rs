@@ -6,5 +6,6 @@ pub mod memory;
 pub mod open_files;
 pub mod processes;
 pub mod projects;
+pub mod scrollback;
 pub mod sessions;
 pub mod terminals;

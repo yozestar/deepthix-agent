@@ -251,6 +251,8 @@ export function SessionsPane({
               visible={t.id === effectiveActive}
               settings={globalConfig}
               onSettingsChange={updateGlobalConfig}
+              projectId={t.projectId}
+              sessionId={t.sessionId}
             />
           </div>
         ))}

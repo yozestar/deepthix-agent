@@ -1,6 +1,7 @@
 import 'xterm/css/xterm.css';
 
 import { FitAddon } from '@xterm/addon-fit';
+import { SerializeAddon } from '@xterm/addon-serialize';
 import { useCallback, useEffect, useRef } from 'react';
 import { Terminal } from 'xterm';
 
@@ -11,7 +12,12 @@ import {
   TERMINAL_FONT_SIZE_MIN,
 } from '../constants';
 import type { GlobalConfig } from '../hooks/useGlobalConfig';
-import { ptyResize, ptyWrite } from '../tauri/commands';
+import {
+  loadTerminalScrollback,
+  ptyResize,
+  ptyWrite,
+  saveTerminalScrollback,
+} from '../tauri/commands';
 import { onPtyData, type PtyDataEvent } from '../tauri/events';
 
 interface Props {
@@ -30,7 +36,22 @@ interface Props {
    * `settings` prop and triggers the live-update effect.
    */
   onSettingsChange: (partial: Partial<GlobalConfig>) => void;
+  /**
+   * Owning project — used as the parent dir for the saved scrollback file.
+   * Required when `sessionId` is set.
+   */
+  projectId: string;
+  /**
+   * Claude session id (claude `--resume` UUID). When present, scrollback is
+   * loaded on mount + saved on unmount + saved every 30s, so reopening the
+   * app shows the previous conversation. `null` for plain shells (no resume
+   * concept → no point persisting their buffer).
+   */
+  sessionId: string | null;
 }
+
+/** How often to flush the live scrollback to disk while the terminal is mounted. */
+const SCROLLBACK_AUTOSAVE_MS = 30_000;
 
 function clampFontSize(n: number): number {
   if (!Number.isFinite(n)) return TERMINAL_DEFAULT_FONT_SIZE;
@@ -42,10 +63,23 @@ export function TerminalTab({
   visible,
   settings,
   onSettingsChange,
+  projectId,
+  sessionId,
 }: Props): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const serializeRef = useRef<SerializeAddon | null>(null);
+  // Latest projectId/sessionId in a ref so the autosave timer + unmount
+  // effect (registered ONCE at mount) always read the current values.
+  const projectIdRef = useRef(projectId);
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    projectIdRef.current = projectId;
+  }, [projectId]);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
   // Holds the latest `safeFit` callback so the mount-time ResizeObserver
   // (registered ONCE) can call the most recent version without depending
   // on it through React deps and re-creating the terminal.
@@ -102,7 +136,9 @@ export function TerminalTab({
       scrollback: 5000,
     });
     const fit = new FitAddon();
+    const serialize = new SerializeAddon();
     term.loadAddon(fit);
+    term.loadAddon(serialize);
     term.open(el);
     // The xterm canvas renderer initializes lazily — the first fit() can
     // throw `_renderer.value.dimensions` is undefined. Swallow it; the
@@ -114,17 +150,80 @@ export function TerminalTab({
     }
     termRef.current = term;
     fitRef.current = fit;
+    serializeRef.current = serialize;
 
     const writeDisposable = term.onData((data) => {
       void ptyWrite(termId, data);
     });
 
+    // Restore saved scrollback BEFORE pty data starts streaming. Buffer any
+    // events that arrive while the load is in flight so we don't lose the
+    // first few lines from the resumed claude session, then flush them
+    // after the historical buffer has been written.
+    let restored = sessionId == null; // shells (no sessionId) skip restore
+    const buffered: string[] = [];
+
     let unlisten: (() => void) | null = null;
     void onPtyData((e: PtyDataEvent) => {
-      if (e.id === termId) term.write(e.data);
+      if (e.id !== termId) return;
+      if (!restored) {
+        buffered.push(e.data);
+      } else {
+        term.write(e.data);
+      }
     }).then((fn) => {
       unlisten = fn;
     });
+
+    if (sessionId) {
+      void loadTerminalScrollback(projectId, sessionId)
+        .then((content) => {
+          if (content && content.length > 0) {
+            console.info('[Deepthix][TerminalTab] restored scrollback', {
+              termId,
+              sessionId,
+              bytes: content.length,
+            });
+            term.write(content);
+            // Visual marker so users see WHERE the resumed buffer ends and
+            // the live session continues.
+            term.write('\r\n\x1b[2m── resumed ──\x1b[0m\r\n');
+          }
+        })
+        .catch((err) => {
+          console.warn('[Deepthix][TerminalTab] scrollback restore failed', err);
+        })
+        .finally(() => {
+          restored = true;
+          // Flush anything that arrived while we were loading.
+          if (buffered.length > 0) {
+            console.debug('[Deepthix][TerminalTab] flushing buffered pty data', {
+              termId,
+              chunks: buffered.length,
+            });
+            for (const chunk of buffered) term.write(chunk);
+            buffered.length = 0;
+          }
+        });
+    }
+
+    // Periodic best-effort save while the terminal is open. The 30s
+    // interval keeps disk churn modest even with several active sessions
+    // while still bounding worst-case data loss to half a minute.
+    const autosaveTimer = setInterval(() => {
+      const sid = sessionIdRef.current;
+      const pid = projectIdRef.current;
+      const ser = serializeRef.current;
+      if (!sid || !ser) return;
+      try {
+        const content = ser.serialize();
+        void saveTerminalScrollback(pid, sid, content).catch((err) => {
+          console.warn('[Deepthix][TerminalTab] autosave failed', err);
+        });
+      } catch (err) {
+        console.warn('[Deepthix][TerminalTab] serialize during autosave failed', err);
+      }
+    }, SCROLLBACK_AUTOSAVE_MS);
 
     const resizeObserver = new ResizeObserver(() => {
       // Use safeFit so that fit() failures (xterm renderer not yet
@@ -181,15 +280,43 @@ export function TerminalTab({
 
     return () => {
       console.debug('[Deepthix][TerminalTab] unmount', { termId });
+      clearInterval(autosaveTimer);
+      // Final synchronous-ish save BEFORE we dispose xterm — once disposed
+      // the serialize addon can't read the buffer anymore.
+      const sid = sessionIdRef.current;
+      const pid = projectIdRef.current;
+      if (sid) {
+        try {
+          const content = serialize.serialize();
+          console.info('[Deepthix][TerminalTab] saving scrollback on unmount', {
+            termId,
+            sessionId: sid,
+            bytes: content.length,
+          });
+          void saveTerminalScrollback(pid, sid, content).catch((err) => {
+            console.warn('[Deepthix][TerminalTab] unmount save failed', err);
+          });
+        } catch (err) {
+          console.warn('[Deepthix][TerminalTab] unmount serialize failed', err);
+        }
+      }
       writeDisposable.dispose();
       unlisten?.();
       resizeObserver.disconnect();
       el.removeEventListener('keydown', onKeyDown);
       term.dispose();
+      serializeRef.current = null;
     };
     // termId is stable per-session; settings are intentionally NOT in deps
     // here — we don't want to tear down + re-create the xterm instance
     // every time the user hits +/-. Live updates run in the next effect.
+    //
+    // We intentionally exclude `projectId` and `sessionId` from deps too:
+    // they're stable for the life of a terminal entry (claude resumes use
+    // the same session id and live under the same project), and reading
+    // them through refs lets the autosave timer + unmount handler always
+    // see the current values without rebuilding the xterm instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [termId]);
 
   // Safe fit: xterm's FitAddon throws if called before the renderer has
