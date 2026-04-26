@@ -115,6 +115,11 @@ pub fn transcribe_audio(
     let _cleanup = TmpCleanup(vec![raw.clone(), wav.clone(), txt.clone()]);
 
     std::fs::write(&raw, &bytes).map_err(|e| format!("write raw audio: {e}"))?;
+    tracing::info!(
+        target: "deepthix::voice",
+        ?raw, raw_bytes = bytes.len(), %ext,
+        "wrote raw audio",
+    );
 
     // ffmpeg: convert to 16 kHz mono pcm_s16le wav (whisper's native format).
     let ff = Command::new(&ffmpeg)
@@ -130,9 +135,26 @@ pub fn transcribe_audio(
         .output()
         .map_err(|e| format!("ffmpeg spawn: {e}"))?;
     if !ff.status.success() {
+        tracing::error!(
+            target: "deepthix::voice",
+            stderr = %String::from_utf8_lossy(&ff.stderr).trim(),
+            "ffmpeg failed",
+        );
         return Err(format!(
             "ffmpeg failed: {}",
             String::from_utf8_lossy(&ff.stderr).trim()
+        ));
+    }
+    let wav_size = std::fs::metadata(&wav).map(|m| m.len()).unwrap_or(0);
+    tracing::info!(
+        target: "deepthix::voice",
+        wav_bytes = wav_size,
+        ?wav,
+        "ffmpeg ok — wav written",
+    );
+    if wav_size < 1024 {
+        return Err(format!(
+            "audio too short / empty after conversion ({wav_size} bytes WAV). Hold ⌘M longer or check your mic."
         ));
     }
 
@@ -154,9 +176,24 @@ pub fn transcribe_audio(
     } else {
         cmd.args(["-l", "auto"]);
     }
+    tracing::info!(
+        target: "deepthix::voice",
+        whisper = ?whisper,
+        model = ?model,
+        wav = ?wav,
+        lang = ?lang,
+        "running whisper-cli",
+    );
     let w = cmd
         .output()
         .map_err(|e| format!("whisper-cli spawn: {e}"))?;
+    tracing::info!(
+        target: "deepthix::voice",
+        code = ?w.status.code(),
+        stderr = %String::from_utf8_lossy(&w.stderr).trim(),
+        stdout_len = w.stdout.len(),
+        "whisper-cli returned",
+    );
     // whisper.cpp's Metal backend has a known crash in
     // ggml_metal_device_free during process exit (`ggml_abort` in
     // libggml-metal.dylib at __cxa_finalize). The transcript is
