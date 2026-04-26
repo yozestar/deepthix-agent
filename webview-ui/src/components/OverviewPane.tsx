@@ -523,9 +523,6 @@ function DashboardPlaceholder({ path, error }: PlaceholderProps): React.JSX.Elem
         overflow: 'auto',
       }}
     >
-      <div style={{ fontSize: '12px', color: 'var(--color-text)' }}>
-        Dashboard space — empty.
-      </div>
       <div>
         Tell this session to write its important data as HTML to:
       </div>
