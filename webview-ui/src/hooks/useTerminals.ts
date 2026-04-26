@@ -137,17 +137,16 @@ export function useTerminals(): UseTerminalsResult {
     };
   }, []);
 
-  // Periodic JSONL-mtime poll. The pty/event chain is the FAST path
-  // (sub-frame latency on activity) but it's fragile — it depends on
-  // TerminalTab being mounted, ptyActivity being dispatched before the
-  // terminals ref settles, etc. The mtime poll is the SLOW reliable
-  // path: every 2s, for every claude session, we stat its JSONL file
-  // and dispatch agentJsonlActivity if mtime moved since the last
-  // probe. This guarantees the working dot turns green within ~2s of
-  // any actual activity, even when the event chain breaks.
+  // Periodic JSONL-size poll. Every 2s, for every claude session, we
+  // stat its JSONL file. If the SIZE grew since the last probe, claude
+  // wrote new data → fire agentJsonlActivity → status dot turns green.
+  // We deliberately ignore mtime-only changes: claude touches its JSONL
+  // for heartbeats / metadata updates without writing real content, and
+  // a pure mtime check produced false-positive working flashes when the
+  // user wasn't doing anything.
   useEffect(() => {
     let cancelled = false;
-    const lastMtime = new Map<number, number>(); // agentId → last seen mtime
+    const lastSize = new Map<number, number>(); // agentId → last seen size_bytes
     const tick = async (): Promise<void> => {
       if (cancelled) return;
       const claudeTerms = terminalsRef.current.filter(
@@ -156,18 +155,18 @@ export function useTerminals(): UseTerminalsResult {
       await Promise.all(
         claudeTerms.map(async (t) => {
           try {
-            const mtime = await cmdJsonlMtimeMs(t.cwd, t.sessionId as string);
-            if (mtime <= 0) return;
-            const prev = lastMtime.get(t.agentId);
-            // First observation: just record the mtime, don't fire the
-            // working signal — the file may be days old at app start
-            // and the agent is clearly idle right now.
+            const stat = await cmdJsonlMtimeMs(t.cwd, t.sessionId as string);
+            if (stat.size_bytes <= 0) return;
+            const prev = lastSize.get(t.agentId);
+            // First observation: record the size, don't fire — the file
+            // may be days old at app start and the agent is clearly
+            // idle right now.
             if (prev === undefined) {
-              lastMtime.set(t.agentId, mtime);
+              lastSize.set(t.agentId, stat.size_bytes);
               return;
             }
-            if (mtime > prev) {
-              lastMtime.set(t.agentId, mtime);
+            if (stat.size_bytes > prev) {
+              lastSize.set(t.agentId, stat.size_bytes);
               dispatchWebviewMessage({ type: 'agentJsonlActivity', id: t.agentId });
             }
           } catch {

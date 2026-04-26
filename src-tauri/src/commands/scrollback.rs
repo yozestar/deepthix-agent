@@ -77,11 +77,22 @@ pub fn load_terminal_scrollback(
     }
 }
 
-/// mtime (epoch ms) of the JSONL transcript file for a claude session,
-/// or 0 if absent. Cheap stat call — used by the frontend's "is this
-/// session working right now?" heuristic. Rolling forward = activity.
+#[derive(serde::Serialize)]
+pub struct JsonlStat {
+    /// File size in bytes. 0 if missing.
+    pub size_bytes: u64,
+    /// Last-modified epoch ms. 0 if missing.
+    pub mtime_ms: u64,
+}
+
+/// Stat (size + mtime) of the JSONL transcript file for a claude session.
+/// Frontend's "is this session working?" heuristic uses SIZE growth, not
+/// mtime — claude touches its JSONL on resume / heartbeat / metadata
+/// updates without writing new content, and a pure mtime check produced
+/// false-positive working flashes when the user wasn't doing anything.
+/// New bytes = real activity.
 #[tauri::command]
-pub fn jsonl_mtime_ms(project_cwd: String, session_id: String) -> Result<u64, String> {
+pub fn jsonl_mtime_ms(project_cwd: String, session_id: String) -> Result<JsonlStat, String> {
     let path =
         crate::jsonl_watcher::predict_jsonl_path(std::path::Path::new(&project_cwd), &session_id);
     match std::fs::metadata(&path) {
@@ -92,9 +103,15 @@ pub fn jsonl_mtime_ms(project_cwd: String, session_id: String) -> Result<u64, St
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|e| e.to_string())?
                 .as_millis() as u64;
-            Ok(mtime)
+            Ok(JsonlStat {
+                size_bytes: meta.len(),
+                mtime_ms: mtime,
+            })
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(JsonlStat {
+            size_bytes: 0,
+            mtime_ms: 0,
+        }),
         Err(e) => Err(e.to_string()),
     }
 }
