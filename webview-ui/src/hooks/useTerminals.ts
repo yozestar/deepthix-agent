@@ -94,6 +94,12 @@ export function useTerminals(): UseTerminalsResult {
         console.debug('[Deepthix][useTerminals] jsonl line for unknown terminal', e.id);
         return;
       }
+      // Raw activity ping — ANY JSONL line means claude is alive and
+      // doing something (thinking, streaming, tool I/O…). useAgentStatus
+      // listens for this and times-out to idle if nothing arrives for a
+      // few seconds. This catches "Synthesizing/thinking with high
+      // effort" phases that produce no tool_use events.
+      dispatchWebviewMessage({ type: 'agentJsonlActivity', id: agentId });
       const messages = parseRecord(agentId, e.line);
       for (const msg of messages) dispatchWebviewMessage(msg);
     })
