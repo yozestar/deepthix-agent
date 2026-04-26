@@ -7,6 +7,7 @@ import { OrchestratorPanel } from './components/OrchestratorPanel';
 import { OverviewPane } from './components/OverviewPane';
 import { SettingsPane } from './components/SettingsPane';
 import { Sidebar } from './components/Sidebar';
+import { SkillsPane } from './components/SkillsPane';
 import { TamagotchiView } from './components/TamagotchiView';
 import { type Mode, TopTabs } from './components/TopTabs';
 import { Welcome } from './components/Welcome';
@@ -26,6 +27,7 @@ const VALID_MODES: ReadonlyArray<Mode> = [
   'process',
   'memory',
   'files',
+  'skills',
   'settings',
 ];
 
@@ -317,6 +319,11 @@ function App(): React.JSX.Element {
                 fileTree={fileTree}
                 openFiles={openFiles}
               />
+            </ModeOverlay>
+          )}
+          {mode === 'skills' && (
+            <ModeOverlay>
+              <SkillsPane projectPath={projects.activeProject?.path ?? null} />
             </ModeOverlay>
           )}
         </div>

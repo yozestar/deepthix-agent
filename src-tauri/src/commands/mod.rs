@@ -9,6 +9,7 @@ pub mod processes;
 pub mod projects;
 pub mod scrollback;
 pub mod sessions;
+pub mod skills;
 pub mod terminals;
 pub mod usage;
 pub mod usage_snapshot;

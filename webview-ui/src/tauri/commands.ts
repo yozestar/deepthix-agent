@@ -325,6 +325,34 @@ export async function readClaudeUsageSnapshot(): Promise<UsageSnapshot> {
   return await invoke<UsageSnapshot>('read_claude_usage_snapshot');
 }
 
+export type SkillScope = 'global' | 'project' | 'plugin';
+
+export interface SkillInfo {
+  scope: SkillScope;
+  name: string;
+  description: string;
+  /** Absolute path to SKILL.md. */
+  path: string;
+  /** True if `disable-model-invocation: true` is set. */
+  disabled: boolean;
+  /** True if `user-invocable: false` is set (hidden from /menu). */
+  hidden_from_menu: boolean;
+  /** Plugin namespace (e.g. "superpowers") for plugin-scope skills. */
+  plugin: string | null;
+}
+
+/** Discover all claude code skills (global + project + plugins). */
+export async function listSkills(projectPath: string | null): Promise<SkillInfo[]> {
+  log('listSkills', { projectPath });
+  return await invoke<SkillInfo[]>('list_skills', { projectPath });
+}
+
+/** Toggle `disable-model-invocation` in a SKILL.md frontmatter. Refuses on plugin paths. */
+export async function setSkillEnabled(path: string, enabled: boolean): Promise<void> {
+  log('setSkillEnabled', { path, enabled });
+  return await invoke<void>('set_skill_enabled', { path, enabled });
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }
