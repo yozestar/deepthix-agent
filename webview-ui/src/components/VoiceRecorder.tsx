@@ -124,10 +124,15 @@ export function VoiceRecorder({ activeTermId }: Props): React.JSX.Element | null
         setState({ kind: 'error', message: 'no active terminal — focus a session first' });
         return;
       }
-      // Type the text into the terminal as if the user had typed it.
-      // We DON'T send a trailing \n — the user reads the transcript
-      // and decides when to submit (avoids surprise sends).
-      await ptyWrite(target, text);
+      // Wrap in bracketed-paste so Ink (claude code's TUI) recognises
+      // it as a single paste event and inserts it into the prompt
+      // instead of treating each char as a keypress (which Ink filters
+      // when the rate is too fast). \x1b[200~ ... \x1b[201~ is the
+      // standard sequence — every modern terminal + Ink-input handles
+      // it. Still no trailing \n: user reads + submits manually.
+      const PASTE_START = '\x1b[200~';
+      const PASTE_END = '\x1b[201~';
+      await ptyWrite(target, `${PASTE_START}${text}${PASTE_END}`);
       setState({ kind: 'idle' });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
