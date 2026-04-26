@@ -150,11 +150,26 @@ pub fn transcribe_audio(
     let w = cmd
         .output()
         .map_err(|e| format!("whisper-cli spawn: {e}"))?;
-    if !w.status.success() {
+    // whisper.cpp's Metal backend has a known crash in
+    // ggml_metal_device_free during process exit (`ggml_abort` in
+    // libggml-metal.dylib at __cxa_finalize). The transcript is
+    // written to disk BEFORE the crash, so we tolerate a non-zero
+    // exit and only error out when the .txt is missing or empty.
+    let txt_exists_and_nonempty = std::fs::metadata(&txt)
+        .map(|m| m.len() > 0)
+        .unwrap_or(false);
+    if !w.status.success() && !txt_exists_and_nonempty {
         return Err(format!(
             "whisper-cli failed: {}",
             String::from_utf8_lossy(&w.stderr).trim()
         ));
+    }
+    if !w.status.success() {
+        tracing::debug!(
+            target: "deepthix::voice",
+            code = ?w.status.code(),
+            "whisper-cli exited non-zero but transcript exists (likely Metal cleanup crash); using output",
+        );
     }
 
     let text = std::fs::read_to_string(&txt)
