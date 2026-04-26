@@ -137,10 +137,17 @@ pub fn transcribe_audio(
     }
 
     // whisper-cli: run the model, output a plain-text transcript next to the wav.
+    // -ng (no-gpu): we explicitly disable Metal because the Tauri webview is
+    // already holding a Metal device for WebGL/canvas rendering. Trying to
+    // allocate a second Metal context for whisper trips
+    // `ggml-metal-device.m:608: GGML_ASSERT([rsets->data count] == 0)`
+    // and the assert kills the subprocess before it writes anything.
+    // CPU is plenty fast for short voice prompts on Apple Silicon (~0.5s
+    // for 5s of audio with the base model).
     let mut cmd = Command::new(&whisper);
     cmd.arg("-m").arg(&model);
     cmd.arg(&wav);
-    cmd.args(["--no-prints", "--output-txt", "-of"]);
+    cmd.args(["-ng", "--no-prints", "--output-txt", "-of"]);
     cmd.arg(&stem);
     if let Some(l) = lang.as_deref() {
         cmd.args(["-l", l]);
