@@ -4,6 +4,7 @@ pub mod dashboard;
 pub mod fs;
 pub mod layout;
 pub mod memory;
+pub mod notifications;
 pub mod open_files;
 pub mod processes;
 pub mod projects;

@@ -376,6 +376,40 @@ export async function transcribeAudio(
   });
 }
 
+export type NotifKind = 'info' | 'success' | 'warn' | 'error';
+
+export interface NotificationRecord {
+  title: string;
+  body: string;
+  kind: NotifKind;
+  source: string;
+  ts_ms: number;
+}
+
+/** Publish a notification (in-app toast + macOS banner). Source defaults
+ *  to "webview" when omitted. */
+export async function notifyUser(args: {
+  title: string;
+  body?: string;
+  kind?: NotifKind;
+  source?: string;
+}): Promise<void> {
+  log('notify_user', { title: args.title, kind: args.kind ?? 'info' });
+  return await invoke<void>('notify_user', {
+    title: args.title,
+    body: args.body ?? null,
+    kind: args.kind ?? null,
+    source: args.source ?? null,
+  });
+}
+
+/** Pull recent notifications from disk on app startup. */
+export async function listRecentNotifications(
+  limit = 20,
+): Promise<NotificationRecord[]> {
+  return await invoke<NotificationRecord[]>('list_recent_notifications', { limit });
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }

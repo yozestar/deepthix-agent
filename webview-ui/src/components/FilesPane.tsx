@@ -30,7 +30,9 @@ import {
   readFileBytesBase64 as cmdReadFileBytes,
   writeFile as cmdWriteFile,
 } from '../tauri/commands';
+import { CodeEditor } from './CodeEditor';
 import { FileTree } from './FileTree';
+import { PdfViewer } from './PdfViewer';
 
 interface Props {
   projectPath: string | null;
@@ -683,26 +685,23 @@ function FileContent({
             {isSaving ? 'Saving…' : 'Save'}
           </button>
         </div>
-        <textarea
-          value={editValue ?? entry.content ?? ''}
-          onChange={(e) => onChange(e.target.value)}
-          spellCheck={false}
-          wrap="off"
+        <div
           style={{
             flex: 1,
-            resize: 'none',
-            border: 'none',
-            outline: 'none',
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
             background: 'var(--color-bg)',
-            color: 'var(--color-text)',
-            padding: '12px',
-            fontFamily: 'var(--font-pixel), Menlo, Consolas, monospace',
-            fontSize: '13px',
-            lineHeight: 1.5,
-            whiteSpace: 'pre',
-            tabSize: 2,
+            overflow: 'hidden',
           }}
-        />
+        >
+          <CodeEditor
+            path={path}
+            value={editValue ?? entry.content ?? ''}
+            onChange={onChange}
+            onSave={onSave}
+          />
+        </div>
       </div>
     );
   }
@@ -735,13 +734,7 @@ function FileContent({
     );
   }
   if (entry.kind === 'pdf' && entry.bytes) {
-    return (
-      <iframe
-        src={`data:${entry.bytes.mime};base64,${entry.bytes.b64}`}
-        title={basename(path)}
-        style={{ width: '100%', height: '100%', border: 'none' }}
-      />
-    );
+    return <PdfViewer base64={entry.bytes.b64} />;
   }
   if (entry.kind === 'video' && entry.bytes) {
     return (

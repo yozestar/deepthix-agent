@@ -10,6 +10,7 @@ import { Sidebar } from './components/Sidebar';
 import { SkillsPane } from './components/SkillsPane';
 import { TamagotchiView } from './components/TamagotchiView';
 import { type Mode, TopTabs } from './components/TopTabs';
+import { NotificationToasts } from './components/NotificationToasts';
 import { VoiceRecorder } from './components/VoiceRecorder';
 import { Welcome } from './components/Welcome';
 import { useFileTree } from './hooks/useFileTree';
@@ -352,6 +353,10 @@ function App(): React.JSX.Element {
           projectId: t.projectId,
         }))}
       />
+      {/* Top-right toast stack — driven by `deepthix-notification` events
+          from Tauri commands AND the JsonlWatcher on
+          ~/.deepthix/notifications.jsonl (which deepthix-mcp writes to). */}
+      <NotificationToasts />
     </div>
   );
 }

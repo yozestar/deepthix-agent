@@ -48,9 +48,13 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(app_state)
         .manage(crate::pty::TerminalManager::new())
         .manage(crate::commands::terminals::WatcherRegistry::default())
+        .manage(crate::commands::notifications::NotificationsWatcher(
+            std::sync::Mutex::new(None),
+        ))
         .invoke_handler(tauri::generate_handler![
             commands::projects::open_folder,
             commands::projects::add_project,
@@ -100,8 +104,13 @@ pub fn run() {
             commands::skills::list_skills,
             commands::skills::set_skill_enabled,
             commands::voice::transcribe_audio,
+            commands::notifications::notify_user,
+            commands::notifications::list_recent_notifications,
         ])
-        .setup(|_app| {
+        .setup(|app| {
+            // Spawn the notifications watcher tied to the app handle so it
+            // can emit events to the webview. Runs until app shutdown.
+            crate::commands::notifications::start_watcher(app.handle().clone());
             tracing::info!(target: "deepthix::boot", "tauri setup complete");
             Ok(())
         })

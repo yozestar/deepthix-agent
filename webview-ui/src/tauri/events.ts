@@ -48,3 +48,28 @@ export async function onAgentJsonlLine(
     handler(event.payload);
   });
 }
+
+export type NotifKind = 'info' | 'success' | 'warn' | 'error';
+
+export interface NotificationEvent {
+  title: string;
+  body: string;
+  kind: NotifKind;
+  source: string;
+  ts_ms: number;
+}
+
+/** Subscribe to notifications dispatched from anywhere — Tauri commands,
+ *  the deepthix-mcp sidecar, or the webview itself via notify_user. */
+export async function onNotification(
+  handler: (n: NotificationEvent) => void,
+): Promise<UnlistenFn> {
+  return await listen<NotificationEvent>('deepthix-notification', (event) => {
+    log('deepthix-notification', {
+      title: event.payload.title,
+      kind: event.payload.kind,
+      source: event.payload.source,
+    });
+    handler(event.payload);
+  });
+}

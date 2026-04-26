@@ -38,6 +38,34 @@ important data without scrolling through your terminal.
   of the file's mtime changing.
 - Show: current task, key facts the user asked you to track, blockers, what
   you need from them next. Aim for ~100 lines max so it stays glanceable.
+
+### Custom action buttons
+
+Any element in the dashboard with a `data-deepthix-action="..."` attribute
+becomes an interactive button that, when clicked, types the action label
+into THIS session's prompt and submits it. Use this to give the user one-click
+shortcuts for things they would otherwise have to type:
+
+```html
+<button data-deepthix-action="refresh meta ads dashboard">Refresh</button>
+<button data-deepthix-action="run health check on production">Health check</button>
+<button data-deepthix-action="show last 24h errors" data-deepthix-payload="prod">Errors (prod)</button>
+```
+
+Optional `data-deepthix-payload` is appended to the action with a single space.
+The shim wiring is injected automatically — no need to write `postMessage`
+yourself. Style buttons however you like; click handling is delegated.
+
+### Notifications
+
+Use the `mcp__deepthix-mcp__notify_user` tool to push a toast (and a macOS
+banner) to the user. Reserve it for things they actually need to react to —
+build done, tests failed, ambiguous decision. The user is watching multiple
+sessions; every notification interrupts whatever they're looking at.
+
+Args: `title` (required, ~5-8 words), `body` (optional one-line detail),
+`kind` (`info` | `success` | `warn` | `error`), `source` (free-form origin tag,
+ideally the session label so the user knows who fired it).
 "#;
     format!("{BEGIN}\n{body}{END}\n")
 }

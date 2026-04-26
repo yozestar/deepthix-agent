@@ -322,6 +322,62 @@ fn tool_read_notes(args: &Value) -> Result<Value, String> {
     }))
 }
 
+/// Append a single notification record to ~/.deepthix/notifications.jsonl.
+/// The Tauri app watches this file and turns each new line into an in-app
+/// toast + macOS banner. We don't try to surface the result back to claude
+/// — the user is the destination, claude just publishes.
+fn tool_notify_user(args: &Value) -> Result<Value, String> {
+    let title = args
+        .get("title")
+        .and_then(|v| v.as_str())
+        .ok_or("missing title")?
+        .trim()
+        .to_string();
+    if title.is_empty() {
+        return Err("title cannot be empty".into());
+    }
+    let body = args
+        .get("body")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let kind = args
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("info")
+        .to_string();
+    let source = args
+        .get("source")
+        .and_then(|v| v.as_str())
+        .unwrap_or("mcp")
+        .to_string();
+    let ts_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let record = json!({
+        "title": title,
+        "body": body,
+        "kind": kind,
+        "source": source,
+        "ts_ms": ts_ms,
+    });
+    let home = dirs::home_dir().ok_or("no home dir")?;
+    let path = home.join(".deepthix").join("notifications.jsonl");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    let line = serde_json::to_string(&record).map_err(|e| e.to_string())?;
+    writeln!(f, "{line}").map_err(|e| e.to_string())?;
+    Ok(json!({ "ok": true, "title": title, "kind": kind }))
+}
+
 // ─── Tools list (advertised via tools/list) ──────────────────────────────
 
 fn tools_definition() -> Value {
@@ -368,6 +424,20 @@ fn tools_definition() -> Value {
                 },
                 "required": ["session_id"]
             }
+        },
+        {
+            "name": "notify_user",
+            "description": "Push a notification to the user inside the Deepthix app (in-app toast + macOS notification banner). Use sparingly for events the user actually cares about — build done, tests failed, long-running task complete, ambiguous decision needs input. The user is watching multiple sessions; a notification interrupts whatever they're looking at, so each one should be worth that interruption.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "Short headline. ~5-8 words." },
+                    "body":  { "type": "string", "description": "Optional one-line detail. Empty if not useful." },
+                    "kind":  { "type": "string", "enum": ["info", "success", "warn", "error"], "description": "Severity hint. Drives toast colour. Default: info." },
+                    "source":{ "type": "string", "description": "Free-form origin tag (e.g. session label or task name). Helps the user know who fired this. Default: 'mcp'." }
+                },
+                "required": ["title"]
+            }
         }
     ])
 }
@@ -385,6 +455,7 @@ fn handle_tools_call(params: &Value) -> Result<Value, String> {
         "read_session_dashboard" => tool_read_dashboard(&args),
         "read_session_transcript" => tool_read_transcript(&args),
         "read_session_notes" => tool_read_notes(&args),
+        "notify_user" => tool_notify_user(&args),
         other => return Err(format!("unknown tool: {other}")),
     };
     match result {

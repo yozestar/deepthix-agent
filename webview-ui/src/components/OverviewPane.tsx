@@ -13,7 +13,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { UseProjectsResult } from '../hooks/useProjects';
 import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
-import { dashboardMtimeMs, readSessionDashboard } from '../tauri/commands';
+import {
+  dashboardMtimeMs,
+  ptyWrite,
+  readSessionDashboard,
+} from '../tauri/commands';
 import { PixelBrain } from './PixelBrain';
 import { StatusDot } from './StatusDot';
 import type { Mode } from './TopTabs';
@@ -266,6 +270,7 @@ function ProjectGroupView({
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <SessionDashboard
             key={activeSession.id}
+            termId={activeSession.id}
             projectId={activeSession.projectId}
             sessionId={activeSession.sessionId}
             seed={`${activeSession.projectId}#${activeIdx}`}
@@ -371,6 +376,8 @@ function SessionPill({
 // ─────────────────────────────────────────────────────────────────────────
 
 interface DashboardProps {
+  /** Terminal id (term-xxxxx) — what we ptyWrite button actions into. */
+  termId: string;
   projectId: string;
   sessionId: string | null;
   /** Brain seed for the empty-state preview. Stable per session. */
@@ -396,6 +403,7 @@ const EMPTY_BRAIN_SIZE = 96;
  * session to write to <path>" placeholder was redundant noise.
  */
 function SessionDashboard({
+  termId,
   projectId,
   sessionId,
   seed,
@@ -404,6 +412,40 @@ function SessionDashboard({
 }: DashboardProps): React.JSX.Element | null {
   const [html, setHtml] = useState<string | null>(null);
   const lastMtimeRef = useRef<number>(-1);
+
+  // Listen for postMessage events from the dashboard iframe. Buttons
+  // marked with `data-deepthix-action="..."` send their action label
+  // back here via the shim we inject into the dashboard HTML below.
+  // We forward the action as a typed string to the claude session's
+  // pty stdin — claude reads it the same as a user prompt.
+  useEffect(() => {
+    function onMessage(ev: MessageEvent): void {
+      // Sandboxed iframes have origin "null"; the message data shape
+      // is the only thing we trust.
+      const data = ev.data as unknown;
+      if (!data || typeof data !== 'object') return;
+      const msg = data as Record<string, unknown>;
+      if (msg.type !== 'deepthix-dashboard-action') return;
+      if (msg.termId !== termId) return; // not for this session's iframe
+      const action = typeof msg.action === 'string' ? msg.action.trim() : '';
+      const payload = typeof msg.payload === 'string' ? msg.payload : '';
+      if (!action) return;
+      // Compose the prompt we send to claude. payload is optional —
+      // most buttons just signal an intent ("refresh meta ads") with
+      // no extra arguments.
+      const prompt = payload ? `${action} ${payload}` : action;
+      console.info('[Deepthix][SessionDashboard] dashboard button →', {
+        termId,
+        prompt,
+      });
+      // Trailing \r so claude treats it as a submitted prompt.
+      void ptyWrite(termId, `${prompt}\r`).catch((err) => {
+        console.warn('[Deepthix][SessionDashboard] ptyWrite failed', err);
+      });
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [termId]);
 
   // Poll mtime and re-read the body only on change. Avoids re-rendering the
   // iframe on every tick (which would reset scroll/JS state inside it).
@@ -472,7 +514,11 @@ function SessionDashboard({
           // Render the file contents inline via srcdoc — gives the iframe a
           // null origin (sandboxed by default) and avoids needing a custom
           // asset:// protocol for a file that lives outside the app bundle.
-          srcDoc={html}
+          // We append a small shim script so any element with
+          // data-deepthix-action automatically posts the action label back
+          // to the parent — claude only has to write semantic markup, no
+          // postMessage boilerplate per dashboard.
+          srcDoc={withDashboardShim(html, termId)}
           // allow-scripts so claude can render charts / live counters; no
           // allow-same-origin so the iframe can't read parent state. No
           // allow-forms / allow-popups for the same reason.
@@ -524,4 +570,50 @@ function SessionDashboard({
       )}
     </div>
   );
+}
+
+/**
+ * Wrap the dashboard HTML with a tiny shim that turns any element with
+ * `data-deepthix-action="..."` into a button that posts its action back
+ * to the parent window. Claude only writes semantic markup:
+ *
+ *   <button data-deepthix-action="refresh meta ads">Refresh</button>
+ *   <button data-deepthix-action="run health check">Run check</button>
+ *
+ * On click, the shim posts:
+ *   { type: 'deepthix-dashboard-action', termId, action, payload }
+ *
+ * Optional `data-deepthix-payload` is forwarded as a free-form arg.
+ *
+ * The shim runs once at iframe load. Dashboards are re-rendered every
+ * time the source file changes (claude rewrites the HTML), so we don't
+ * need a MutationObserver — the shim re-attaches on every reload.
+ */
+function withDashboardShim(html: string, termId: string): string {
+  // termId is interpolated into a JS string — strip quote/backslash
+  // chars defensively even though Tauri-generated ids are alphanumeric+dashes.
+  const safeTermId = termId.replace(/['"\\]/g, '');
+  const shim = `
+<script>
+(function () {
+  var TERM = '${safeTermId}';
+  document.addEventListener('click', function (ev) {
+    var el = ev.target && ev.target.closest && ev.target.closest('[data-deepthix-action]');
+    if (!el) return;
+    ev.preventDefault();
+    var action = el.getAttribute('data-deepthix-action') || '';
+    var payload = el.getAttribute('data-deepthix-payload') || '';
+    parent.postMessage({
+      type: 'deepthix-dashboard-action',
+      termId: TERM,
+      action: action,
+      payload: payload,
+    }, '*');
+  }, false);
+})();
+</script>`;
+  if (html.includes('</body>')) {
+    return html.replace('</body>', `${shim}</body>`);
+  }
+  return html + shim;
 }
