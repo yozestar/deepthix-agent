@@ -23,15 +23,31 @@ type RecorderState =
   | { kind: 'transcribing' }
   | { kind: 'error'; message: string };
 
+interface TermSummary {
+  id: string;
+  label: string;
+  cwd: string;
+  kind: string;
+  projectId: string;
+}
+
 interface Props {
-  /** ID of the active terminal — what we ptyWrite the transcript into. */
+  /** Globally-active terminal id (last clicked across all projects). */
   activeTermId: string | null;
+  /** All terminals (filtered down to the active project below). */
+  terminals: TermSummary[];
+  /** Currently visible project — we only inject into terminals here. */
+  activeProjectId: string | null;
 }
 
 const HOTKEY_CODE = 'KeyM';
 const MIN_DURATION_MS = 250; // ignore accidental taps
 
-export function VoiceRecorder({ activeTermId }: Props): React.JSX.Element | null {
+export function VoiceRecorder({
+  activeTermId,
+  terminals,
+  activeProjectId,
+}: Props): React.JSX.Element | null {
   const [state, setState] = useState<RecorderState>({ kind: 'idle' });
   // Tick state pulses in `recording` so the visible duration counter
   // updates without us calling Date.now() during render (React's
@@ -53,6 +69,41 @@ export function VoiceRecorder({ activeTermId }: Props): React.JSX.Element | null
   useEffect(() => {
     activeTermIdRef.current = activeTermId;
   }, [activeTermId]);
+  const terminalsRef = useRef(terminals);
+  useEffect(() => {
+    terminalsRef.current = terminals;
+  }, [terminals]);
+  const activeProjectIdRef = useRef(activeProjectId);
+  useEffect(() => {
+    activeProjectIdRef.current = activeProjectId;
+  }, [activeProjectId]);
+
+  /**
+   * Resolve the terminal we should ptyWrite the transcript into.
+   *
+   * Order of preference:
+   *   1. The globally-active term, IF it's a claude session in the current
+   *      project (the user's last click is the strongest intent signal).
+   *   2. Any other claude session in the current project (single-session
+   *      projects: this is unambiguous; multi-session: pick first).
+   *   3. null → caller shows an "open / focus a claude session" error.
+   *
+   * `activeTermId` is global, so before this fix the voice could land in
+   * a session for an unrelated project the user wasn't even looking at —
+   * the bytes shipped, claude received them, but nothing visible to the
+   * user happened.
+   */
+  function resolveTarget(): TermSummary | null {
+    const projectId = activeProjectIdRef.current;
+    const all = terminalsRef.current;
+    if (!projectId) return null;
+    const inProject = all.filter(
+      (t) => t.projectId === projectId && t.kind === 'claude',
+    );
+    if (inProject.length === 0) return null;
+    const active = inProject.find((t) => t.id === activeTermIdRef.current);
+    return active ?? inProject[0];
+  }
 
   // MediaRecorder + chunks live in refs so the keyup handler can stop
   // them without React re-renders messing with the lifecycle.
@@ -115,21 +166,31 @@ export function VoiceRecorder({ activeTermId }: Props): React.JSX.Element | null
         chars: text.length,
         elapsedMs: result.elapsed_ms,
       });
-      const target = activeTermIdRef.current;
       if (!text) {
         console.info('[Deepthix][VoiceRecorder] empty transcript, nothing to inject');
         setState({ kind: 'idle' });
         return;
       }
-      if (!target) {
-        console.warn('[Deepthix][VoiceRecorder] no activeTermId — refusing to inject', {
+      const targetTerm = resolveTarget();
+      if (!targetTerm) {
+        console.warn('[Deepthix][VoiceRecorder] no claude session in active project', {
+          activeProjectId: activeProjectIdRef.current,
+          activeTermId: activeTermIdRef.current,
           chars: text.length,
         });
-        setState({ kind: 'error', message: 'no active terminal — focus a session first' });
+        setState({
+          kind: 'error',
+          message: 'no claude session in this project — open one first',
+        });
         return;
       }
-      console.info('[Deepthix][VoiceRecorder] V3 injecting char-by-char', {
+      const target = targetTerm.id;
+      console.info('[Deepthix][VoiceRecorder] V4 injecting char-by-char', {
         target,
+        targetLabel: targetTerm.label,
+        targetCwd: targetTerm.cwd,
+        targetProjectId: targetTerm.projectId,
+        wasGlobalActive: targetTerm.id === activeTermIdRef.current,
         chars: text.length,
         preview: text.slice(0, 60),
       });
@@ -167,13 +228,13 @@ export function VoiceRecorder({ activeTermId }: Props): React.JSX.Element | null
             await new Promise((r) => setTimeout(r, PER_CHAR_DELAY_MS));
           }
         }
-        console.info('[Deepthix][VoiceRecorder] V3 injection complete', {
+        console.info('[Deepthix][VoiceRecorder] V4 injection complete', {
           target,
           chars: chars.length,
         });
       } catch (writeErr) {
         const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
-        console.error('[Deepthix][VoiceRecorder] V3 ptyWrite failed', writeErr);
+        console.error('[Deepthix][VoiceRecorder] V4 ptyWrite failed', writeErr);
         setState({ kind: 'error', message: `pty write: ${msg}` });
         return;
       }

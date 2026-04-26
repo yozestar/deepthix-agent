@@ -341,7 +341,17 @@ function App(): React.JSX.Element {
       {/* Push-to-talk voice → terminal. Hold ⌘M to record, release to
           transcribe via local whisper.cpp + inject into the active
           terminal. Always mounted; renders nothing in idle state. */}
-      <VoiceRecorder activeTermId={terminals.activeId} />
+      <VoiceRecorder
+        activeTermId={terminals.activeId}
+        activeProjectId={projects.activeProjectId}
+        terminals={terminals.terminals.map((t) => ({
+          id: t.id,
+          label: t.label,
+          cwd: t.cwd,
+          kind: t.kind,
+          projectId: t.projectId,
+        }))}
+      />
     </div>
   );
 }
