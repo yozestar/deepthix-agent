@@ -117,22 +117,56 @@ export function VoiceRecorder({ activeTermId }: Props): React.JSX.Element | null
       });
       const target = activeTermIdRef.current;
       if (!text) {
+        console.info('[Deepthix][VoiceRecorder] empty transcript, nothing to inject');
         setState({ kind: 'idle' });
         return;
       }
       if (!target) {
+        console.warn('[Deepthix][VoiceRecorder] no activeTermId — refusing to inject', {
+          chars: text.length,
+        });
         setState({ kind: 'error', message: 'no active terminal — focus a session first' });
         return;
       }
-      // Wrap in bracketed-paste so Ink (claude code's TUI) recognises
-      // it as a single paste event and inserts it into the prompt
-      // instead of treating each char as a keypress (which Ink filters
-      // when the rate is too fast). \x1b[200~ ... \x1b[201~ is the
-      // standard sequence — every modern terminal + Ink-input handles
-      // it. Still no trailing \n: user reads + submits manually.
-      const PASTE_START = '\x1b[200~';
-      const PASTE_END = '\x1b[201~';
-      await ptyWrite(target, `${PASTE_START}${text}${PASTE_END}`);
+      console.info('[Deepthix][VoiceRecorder] injecting transcript', {
+        target,
+        chars: text.length,
+        preview: text.slice(0, 60),
+      });
+      // Bracketed-paste (\x1b[200~ ... \x1b[201~) does NOT work with
+      // claude code: its prompt is a custom Ink component using
+      // `useInput`, and Ink's parseKeypress doesn't recognise paste
+      // markers (only the new `usePaste` hook in Ink 7+ does, and
+      // claude code doesn't use it). Markers got reported as a noisy
+      // CSI keystroke and the payload was discarded.
+      // The de-facto fix (same one tmux uses) is to send the raw
+      // text in small chunks with a tiny gap so node-pty + Ink's
+      // stdin loop process each chunk cleanly. Caps:
+      //   - 64 bytes per chunk: well under the 1018-byte node-pty
+      //     macOS truncation threshold (microsoft/node-pty#726).
+      //   - 12 ms between chunks: empirically enough for Ink's input
+      //     queue to drain without making short transcripts feel slow.
+      // Still no trailing \n — user reads + submits manually.
+      try {
+        const CHUNK_SIZE = 64;
+        const CHUNK_DELAY_MS = 12;
+        for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+          const chunk = text.slice(i, i + CHUNK_SIZE);
+          await ptyWrite(target, chunk);
+          if (i + CHUNK_SIZE < text.length) {
+            await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS));
+          }
+        }
+        console.info('[Deepthix][VoiceRecorder] injection complete', {
+          target,
+          chars: text.length,
+        });
+      } catch (writeErr) {
+        const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+        console.error('[Deepthix][VoiceRecorder] ptyWrite failed', writeErr);
+        setState({ kind: 'error', message: `pty write: ${msg}` });
+        return;
+      }
       setState({ kind: 'idle' });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
