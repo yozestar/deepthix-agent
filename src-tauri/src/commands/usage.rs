@@ -27,6 +27,15 @@ const CLAUDE_CODE_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 /// rewriting the system credential store.
 static TOKEN_CACHE: Mutex<Option<CachedToken>> = Mutex::new(None);
 
+/// Backoff tracker for the refresh endpoint. Anthropic rate-limits
+/// /v1/oauth/token aggressively (verified: a handful of refresh
+/// attempts in a minute earn a 429 that lasts >10 minutes). We cache
+/// the last failure so we don't keep poking and extending the cooldown.
+static REFRESH_BACKOFF_UNTIL_MS: Mutex<u64> = Mutex::new(0);
+
+/// How long to wait after a 429 before re-attempting refresh.
+const REFRESH_BACKOFF_MS: u64 = 15 * 60 * 1000; // 15 minutes
+
 #[derive(Clone)]
 struct CachedToken {
     access_token: String,
@@ -384,6 +393,18 @@ fn refresh_access_token(refresh_token: &str) -> Result<CachedToken, String> {
     if refresh_token.is_empty() {
         return Err("no refresh_token available".to_string());
     }
+
+    // Honor the backoff window so a 429 doesn't get re-amplified by
+    // the UsagePane's polling loop.
+    let now = now_ms();
+    let backoff_until = *REFRESH_BACKOFF_UNTIL_MS.lock().unwrap();
+    if now < backoff_until {
+        let wait_min = (backoff_until - now) / 60_000;
+        return Err(format!(
+            "refresh in cooldown ({wait_min} min remaining after recent 429)"
+        ));
+    }
+
     let body = serde_json::json!({
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
@@ -418,6 +439,18 @@ fn refresh_access_token(refresh_token: &str) -> Result<CachedToken, String> {
     };
     let status_num: u16 = status.parse().unwrap_or(0);
     if !(200..300).contains(&status_num) {
+        // 429 → arm the backoff so we stop hammering and let the bucket
+        // recover. Anything else (4xx auth, 5xx server) we still log
+        // but don't backoff — an invalid refresh_token won't fix itself
+        // by waiting.
+        if status_num == 429 {
+            *REFRESH_BACKOFF_UNTIL_MS.lock().unwrap() = now_ms() + REFRESH_BACKOFF_MS;
+            tracing::warn!(
+                target: "deepthix::commands",
+                "refresh 429 — backing off for {} min",
+                REFRESH_BACKOFF_MS / 60_000,
+            );
+        }
         return Err(format!("refresh HTTP {status} — {}", resp_body.chars().take(200).collect::<String>()));
     }
 
@@ -474,10 +507,18 @@ fn current_access_token() -> Result<String, String> {
         keychain_age_min = (now.saturating_sub(keychain.expires_at_ms)) / 60_000,
         "claude oauth token expired; refreshing",
     );
-    let fresh = refresh_access_token(&keychain.refresh_token)?;
-    let token = fresh.access_token.clone();
-    *TOKEN_CACHE.lock().unwrap() = Some(fresh);
-    Ok(token)
+    match refresh_access_token(&keychain.refresh_token) {
+        Ok(fresh) => {
+            let token = fresh.access_token.clone();
+            *TOKEN_CACHE.lock().unwrap() = Some(fresh);
+            tracing::info!(target: "deepthix::commands", "claude oauth refresh ok");
+            Ok(token)
+        }
+        Err(e) => {
+            tracing::warn!(target: "deepthix::commands", error = %e, "claude oauth refresh failed");
+            Err(e)
+        }
+    }
 }
 
 /// One GET attempt against the usage endpoint with the supplied token.
