@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { ProcessPane, SessionsPane } from './components/BottomPanel';
 import { FilesPane } from './components/FilesPane';
@@ -89,21 +89,17 @@ function App(): React.JSX.Element {
   // existing JSONL parser in useTerminals already dispatches those events.
   // No additional bridging needed for the per-project visualization.
 
-  // On project switch, log + resume any persisted sessions for the new
-  // project. resumeProject is idempotent (no-op if sessions already loaded).
-  const lastActiveRef = useRef<string | null>(null);
+  // Auto-resume persisted sessions for EVERY known project — not just
+  // the active one. This way a user switching projects doesn't have to
+  // wait for the resume effect to fire on the new project, and sessions
+  // from background projects keep ticking (mtime poll, status dot)
+  // even when the user is looking at another one. resumeProject is
+  // idempotent so re-running on every project list change is cheap.
   useEffect(() => {
-    const newId = projects.activeProjectId;
-    if (lastActiveRef.current === newId) return;
-    console.debug('[Deepthix][App] active project changed', {
-      from: lastActiveRef.current,
-      to: newId,
-    });
-    lastActiveRef.current = newId;
-    if (newId) {
-      void terminals.resumeProject(newId);
+    for (const p of projects.projects) {
+      void terminals.resumeProject(p.id);
     }
-  }, [projects.activeProjectId, projects.activeProject?.path, terminals]);
+  }, [projects.projects, terminals]);
 
   // Tauri runtime indicator (compile-time presence check; logged once).
   useEffect(() => {
