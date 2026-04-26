@@ -74,10 +74,14 @@ impl Drop for JsonlWatcher {
 /// where `hash` = absolute project path with `/`, `\`, `:` replaced by `-`.
 pub fn predict_jsonl_path(project_cwd: &std::path::Path, session_id: &str) -> PathBuf {
     let raw = project_cwd.to_string_lossy();
+    // claude converts `/`, `\`, `:` AND `.` to `-` when hashing the
+    // project path. Missing the `.` means we mis-predict the JSONL path
+    // for any cwd containing a dot (e.g. ~/.deepthix/orchestrator) and
+    // the resume code thinks the transcript doesn't exist.
     let hash: String = raw
         .chars()
         .map(|c| match c {
-            '/' | '\\' | ':' => '-',
+            '/' | '\\' | ':' | '.' => '-',
             other => other,
         })
         .collect();

@@ -190,18 +190,18 @@ impl TerminalManager {
 
         tracing::info!(target: "deepthix::pty", %id, ?cwd, %session_id, cols, rows, skip_permissions, resuming, "spawn_claude");
 
-        // Claude creates ~/.claude/session-env/<uuid>/ as a lock per session.
-        // When we respawn (resume), the previous lock survives the host process
-        // exit and claude refuses to start with "Session ID is already in use".
-        // Remove the stale lock dir before spawning if we're resuming.
-        if resuming {
-            if let Some(home) = dirs::home_dir() {
-                let lock = home.join(".claude").join("session-env").join(&session_id);
-                if lock.exists() {
-                    match std::fs::remove_dir_all(&lock) {
-                        Ok(()) => tracing::debug!(target: "deepthix::pty", ?lock, "removed stale session lock"),
-                        Err(e) => tracing::warn!(target: "deepthix::pty", ?lock, error = %e, "failed to remove stale session lock"),
-                    }
+        // Claude creates ~/.claude/session-env/<uuid>/ as a lock per
+        // session. When we respawn (resume OR fresh --session-id with a
+        // recycled UUID) the previous lock can survive the prior host
+        // process exit and claude refuses to start with "Session ID is
+        // already in use". Always nuke it before spawn — claude
+        // recreates whatever it needs at startup.
+        if let Some(home) = dirs::home_dir() {
+            let lock = home.join(".claude").join("session-env").join(&session_id);
+            if lock.exists() {
+                match std::fs::remove_dir_all(&lock) {
+                    Ok(()) => tracing::debug!(target: "deepthix::pty", ?lock, "removed stale session lock"),
+                    Err(e) => tracing::warn!(target: "deepthix::pty", ?lock, error = %e, "failed to remove stale session lock"),
                 }
             }
         }
