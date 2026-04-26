@@ -56,7 +56,15 @@ fn pick_model() -> Option<PathBuf> {
     // whisper context" instead of telling us the model is busted.
     let home = dirs::home_dir()?;
     let cache = home.join(".cache").join("whisper");
+    // Order = preference. large-v3-turbo (Sept 2024, 809M params, 1.62GB)
+    // is the sweet spot in 2026: ~6-7% French WER (close to large-v3's
+    // ~5-6%) at ~6× the decoding speed thanks to a 32→4 decoder-layer
+    // distillation. On Apple Silicon CPU it transcribes a 30s clip in
+    // ~2-4s, so we prefer it over the heavier large-v3/v2 even though
+    // they nominally win on accuracy. Drops down to the original models
+    // if the user already has them on disk.
     let candidates: &[(&str, u64)] = &[
+        ("ggml-large-v3-turbo.bin", 1_500_000_000),
         ("ggml-large-v3.bin", 2_800_000_000),
         ("ggml-large-v2.bin", 2_800_000_000),
         ("ggml-medium.bin", 1_400_000_000),
