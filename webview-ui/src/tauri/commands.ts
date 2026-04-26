@@ -258,6 +258,34 @@ export async function readClaudeDailyActivity(): Promise<ClaudeActivity> {
   return await invoke<ClaudeActivity>('read_claude_daily_activity');
 }
 
+export interface UsageBucket {
+  /** 0.0–1.0 fraction consumed. */
+  utilization: number;
+  /** ISO-8601 UTC timestamp when this window resets. */
+  resets_at: string;
+}
+
+export interface ClaudeUsageLimits {
+  /** Current 5h session window. */
+  five_hour: UsageBucket;
+  /** Weekly all-models bucket. */
+  seven_day: UsageBucket;
+  /** Weekly Sonnet-only bucket. */
+  seven_day_sonnet: UsageBucket;
+  /** Set when the API call failed (4xx/5xx, network, no token). */
+  error?: string | null;
+}
+
+/**
+ * Live subscription utilization fetched from the same endpoint
+ * claude.ai itself uses (`/api/oauth/usage`). Mirrors the "Plan usage
+ * limits" panel — current session %, weekly %, sonnet-only %.
+ */
+export async function readClaudeUsageLimits(): Promise<ClaudeUsageLimits> {
+  log('readClaudeUsageLimits');
+  return await invoke<ClaudeUsageLimits>('read_claude_usage_limits');
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }

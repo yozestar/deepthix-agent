@@ -250,6 +250,166 @@ pub fn read_claude_subscription() -> Result<ClaudeSubscription, String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Real subscription limits — undocumented endpoint that claude.ai uses
+// for its own "Plan usage limits" panel. Discovered via reverse-engineered
+// open-source clones (creaked/claude-usage, JohnDimou/ClaudeWatch, etc.).
+//
+// The endpoint:
+//   GET https://api.anthropic.com/api/oauth/usage
+//   Authorization: Bearer <accessToken>
+//   anthropic-beta: oauth-2025-04-20
+//
+// Response shape:
+//   {
+//     "five_hour":         { "utilization": 0.06, "resets_at": "..." },
+//     "seven_day":         { "utilization": 0.01, "resets_at": "..." },
+//     "seven_day_sonnet":  { "utilization": 0.00, "resets_at": "..." },
+//     "extra_usage":       { ... } // optional, only some plans
+//   }
+//
+// We shell out to `curl` (macOS-only app, curl is part of base install)
+// to avoid pulling in a full HTTP crate just for one GET. The Bearer
+// token is fetched from the same keychain entry as `read_claude_subscription`.
+// ─────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct UsageBucket {
+    /// 0.0..1.0 fraction of the bucket consumed.
+    pub utilization: f64,
+    /// ISO-8601 UTC timestamp when this bucket resets. May be empty.
+    pub resets_at: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ClaudeUsageLimits {
+    /// Current 5h session window. The "Current session" row on claude.ai.
+    pub five_hour: UsageBucket,
+    /// Weekly all-models bucket.
+    pub seven_day: UsageBucket,
+    /// Weekly Sonnet-only bucket.
+    pub seven_day_sonnet: UsageBucket,
+    /// Set when the API returned a non-2xx so the UI can render an error.
+    pub error: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UsageBucketRaw {
+    #[serde(default)]
+    utilization: Option<f64>,
+    #[serde(default)]
+    resets_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UsageResponseRaw {
+    #[serde(default)]
+    five_hour: Option<UsageBucketRaw>,
+    #[serde(default)]
+    seven_day: Option<UsageBucketRaw>,
+    #[serde(default)]
+    seven_day_sonnet: Option<UsageBucketRaw>,
+}
+
+fn bucket_from(raw: Option<UsageBucketRaw>) -> UsageBucket {
+    let raw = raw.unwrap_or(UsageBucketRaw {
+        utilization: None,
+        resets_at: None,
+    });
+    UsageBucket {
+        utilization: raw.utilization.unwrap_or(0.0),
+        resets_at: raw.resets_at.unwrap_or_default(),
+    }
+}
+
+/// Read just the OAuth access token from the keychain (no parsing of the
+/// rest of the payload). Returns None if not signed in.
+fn read_oauth_token() -> Option<String> {
+    let output = Command::new("security")
+        .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    parsed
+        .get("claudeAiOauth")
+        .and_then(|o| o.get("accessToken"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+#[tauri::command]
+pub fn read_claude_usage_limits() -> Result<ClaudeUsageLimits, String> {
+    let Some(token) = read_oauth_token() else {
+        return Ok(ClaudeUsageLimits {
+            error: Some("not signed in to claude code".to_string()),
+            ..Default::default()
+        });
+    };
+
+    // Use --silent + --max-time to bound the call. -w "%{http_code}" so we
+    // can detect non-2xx without parsing curl's stderr.
+    let output = Command::new("curl")
+        .args([
+            "--silent",
+            "--max-time",
+            "8",
+            "--write-out",
+            "\n%{http_code}",
+            "-H",
+            &format!("Authorization: Bearer {token}"),
+            "-H",
+            "anthropic-beta: oauth-2025-04-20",
+            "-H",
+            "Content-Type: application/json",
+            "https://api.anthropic.com/api/oauth/usage",
+        ])
+        .output()
+        .map_err(|e| format!("curl spawn failed: {e}"))?;
+
+    let combined = String::from_utf8_lossy(&output.stdout).into_owned();
+    // Last newline-separated chunk is the http status code; everything
+    // before it is the JSON body.
+    let (body, status) = match combined.rfind('\n') {
+        Some(idx) => (combined[..idx].to_string(), combined[idx + 1..].trim().to_string()),
+        None => (combined.clone(), "000".to_string()),
+    };
+    let status_num: u16 = status.parse().unwrap_or(0);
+
+    if status_num < 200 || status_num >= 300 {
+        tracing::warn!(
+            target: "deepthix::commands",
+            %status, %body,
+            "read_claude_usage_limits non-2xx",
+        );
+        return Ok(ClaudeUsageLimits {
+            error: Some(format!("HTTP {status} — {}", body.chars().take(200).collect::<String>())),
+            ..Default::default()
+        });
+    }
+
+    let raw: UsageResponseRaw = serde_json::from_str(&body)
+        .map_err(|e| format!("parse usage response: {e} (body={body})"))?;
+
+    let limits = ClaudeUsageLimits {
+        five_hour: bucket_from(raw.five_hour),
+        seven_day: bucket_from(raw.seven_day),
+        seven_day_sonnet: bucket_from(raw.seven_day_sonnet),
+        error: None,
+    };
+    tracing::info!(
+        target: "deepthix::commands",
+        five_hour = limits.five_hour.utilization,
+        seven_day = limits.seven_day.utilization,
+        sonnet = limits.seven_day_sonnet.utilization,
+        "read_claude_usage_limits ok",
+    );
+    Ok(limits)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Daily activity — claude code maintains ~/.claude/stats-cache.json with
 // {date, messageCount, sessionCount, toolCallCount} per day.
 // Lightly stale (claude only refreshes it occasionally) but it's the
