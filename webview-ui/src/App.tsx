@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ProcessPane, SessionsPane } from './components/BottomPanel';
 import { FilesPane } from './components/FilesPane';
 import { MemoryPane } from './components/MemoryPane';
+import { OrchestratorPanel } from './components/OrchestratorPanel';
 import { OverviewPane } from './components/OverviewPane';
 import { SettingsPane } from './components/SettingsPane';
 import { Sidebar } from './components/Sidebar';
@@ -320,6 +321,15 @@ function App(): React.JSX.Element {
           )}
         </div>
       </div>
+      {/* Orchestrator side panel — collapsible right column, hosts the
+          chef session. Always mounted (so the chef stays alive across
+          mode switches) but the OrchestratorPanel itself decides
+          whether to render the terminal or just a thin "open" tab. */}
+      <OrchestratorPanel
+        terminals={terminals}
+        globalConfig={globalConfig.config}
+        updateGlobalConfig={globalConfig.update}
+      />
     </div>
   );
 }
