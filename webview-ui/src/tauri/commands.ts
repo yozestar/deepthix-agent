@@ -353,6 +353,29 @@ export async function setSkillEnabled(path: string, enabled: boolean): Promise<v
   return await invoke<void>('set_skill_enabled', { path, enabled });
 }
 
+export interface TranscribeResult {
+  text: string;
+  elapsed_ms: number;
+}
+
+/**
+ * Transcribe a base64-encoded audio blob via local whisper.cpp. The
+ * frontend captures via MediaRecorder (WebM/Opus by default) and we
+ * pipeline it through ffmpeg → whisper-cli on the Rust side.
+ */
+export async function transcribeAudio(
+  audioBase64: string,
+  mime: string | null,
+  lang: string | null,
+): Promise<TranscribeResult> {
+  log('transcribeAudio', { mime, lang, bytes: audioBase64.length });
+  return await invoke<TranscribeResult>('transcribe_audio', {
+    audioBase64,
+    mime,
+    lang,
+  });
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }

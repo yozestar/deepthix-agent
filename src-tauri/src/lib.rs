@@ -99,6 +99,7 @@ pub fn run() {
             commands::usage_snapshot::read_claude_usage_snapshot,
             commands::skills::list_skills,
             commands::skills::set_skill_enabled,
+            commands::voice::transcribe_audio,
         ])
         .setup(|_app| {
             tracing::info!(target: "deepthix::boot", "tauri setup complete");

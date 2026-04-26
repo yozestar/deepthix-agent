@@ -10,6 +10,7 @@ import { Sidebar } from './components/Sidebar';
 import { SkillsPane } from './components/SkillsPane';
 import { TamagotchiView } from './components/TamagotchiView';
 import { type Mode, TopTabs } from './components/TopTabs';
+import { VoiceRecorder } from './components/VoiceRecorder';
 import { Welcome } from './components/Welcome';
 import { useFileTree } from './hooks/useFileTree';
 import { useGlobalConfig } from './hooks/useGlobalConfig';
@@ -337,6 +338,10 @@ function App(): React.JSX.Element {
         globalConfig={globalConfig.config}
         updateGlobalConfig={globalConfig.update}
       />
+      {/* Push-to-talk voice → terminal. Hold ⌘M to record, release to
+          transcribe via local whisper.cpp + inject into the active
+          terminal. Always mounted; renders nothing in idle state. */}
+      <VoiceRecorder activeTermId={terminals.activeId} />
     </div>
   );
 }
