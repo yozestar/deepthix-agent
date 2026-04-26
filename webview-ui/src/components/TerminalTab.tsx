@@ -185,6 +185,23 @@ export function TerminalTab({
       } else {
         term.write(e.data);
       }
+      // Activity ping for the agent dot. Pty stdout is the FASTEST signal
+      // claude is alive — fires within a frame of the byte hitting the
+      // terminal, way before the JSONL watcher polls. Without this, a
+      // session that streams output silently (no tool_use) could sit on
+      // the red dot for up to 500ms after each token even though it's
+      // clearly working.
+      if (sessionId !== null) {
+        // Find the agentId by matching termId via a window lookup —
+        // useTerminals already exposes this via a ref. We dispatch a
+        // generic activity event keyed by termId; useAgentStatus
+        // resolves to agentId via the entry in useTerminals.
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: { type: 'ptyActivity', termId },
+          }),
+        );
+      }
     }).then((fn) => {
       unlisten = fn;
     });
@@ -432,23 +449,36 @@ export function TerminalTab({
     safeFit,
   ]);
 
-  // When this tab becomes visible (display:none → block), the ResizeObserver
-  // might not fire. Run a few delayed fits so the xterm dims reflect the
-  // laid-out container, and sync the new size back to the pty.
+  // When this tab becomes visible (display:none → block) OR when the
+  // component just remounted (font change → key change), the ResizeObserver
+  // doesn't always fire — the container's dimensions can stay 0 for a
+  // tick, then jump straight to their final size without a "change" event
+  // the observer cares about. Aggressive retries cover that gap: keep
+  // calling safeFit until xterm reports valid cols, with a hard cap so
+  // we don't spin forever on a hidden pane.
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
-    const tries = [50, 150, 400];
+    const tries = [16, 50, 120, 250, 500, 1000, 1800, 3000];
     const timers = tries.map((ms) =>
       setTimeout(() => {
-        if (!cancelled) safeFit();
+        if (cancelled) return;
+        const term = termRef.current;
+        // Stop early if xterm already has a sane geometry — the rest of
+        // the schedule is just safety net.
+        if (term && term.cols >= 20 && term.rows >= 5) {
+          // Still fit once more in case the container grew slightly; cheap.
+          safeFit();
+          return;
+        }
+        safeFit();
       }, ms),
     );
     return () => {
       cancelled = true;
       for (const t of timers) clearTimeout(t);
     };
-  }, [visible, safeFit]);
+  }, [visible, safeFit, termId]);
 
   // Re-fit on every window resize (BottomPanel resize handle drags also fire it).
   useEffect(() => {

@@ -10,3 +10,4 @@ pub mod projects;
 pub mod scrollback;
 pub mod sessions;
 pub mod terminals;
+pub mod usage;

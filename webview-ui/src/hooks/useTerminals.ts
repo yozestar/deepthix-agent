@@ -88,6 +88,20 @@ export function useTerminals(): UseTerminalsResult {
       return entry?.agentId;
     };
 
+    // ptyActivity → translate termId to agentId then re-dispatch as
+    // agentJsonlActivity (the same activity-ping channel useAgentStatus
+    // already listens for). Pty stdout fires within a frame of every
+    // chunk claude streams — much faster than the 500ms JSONL polling
+    // window — so the dot turns green before the user can blink.
+    function onPtyActivityMessage(ev: MessageEvent): void {
+      const data = ev.data as { type?: string; termId?: string } | null;
+      if (!data || data.type !== 'ptyActivity' || typeof data.termId !== 'string') return;
+      const agentId = lookupAgentId(data.termId);
+      if (agentId === undefined) return;
+      dispatchWebviewMessage({ type: 'agentJsonlActivity', id: agentId });
+    }
+    window.addEventListener('message', onPtyActivityMessage);
+
     void onAgentJsonlLine((e) => {
       const agentId = lookupAgentId(e.id);
       if (agentId === undefined) {
@@ -118,6 +132,7 @@ export function useTerminals(): UseTerminalsResult {
     return () => {
       cancelled = true;
       if (unlisten) unlisten();
+      window.removeEventListener('message', onPtyActivityMessage);
     };
   }, []);
 

@@ -199,6 +199,31 @@ export async function openExternalUrl(url: string): Promise<void> {
   return await invoke<void>('open_external_url', { url });
 }
 
+export interface ModelUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+}
+
+export interface ClaudeUsage {
+  /** All-time totals keyed by model name (e.g. "claude-opus-4-7"). */
+  all_time: Record<string, ModelUsage>;
+  /** Today (local timezone) totals keyed by model name. Subset of all_time. */
+  today: Record<string, ModelUsage>;
+  /** Number of JSONL files scanned. */
+  session_count: number;
+}
+
+/**
+ * Aggregate claude code token usage from all on-disk JSONL transcripts in
+ * `~/.claude/projects/`. Polled by the UsagePane.
+ */
+export async function readClaudeUsage(): Promise<ClaudeUsage> {
+  log('readClaudeUsage');
+  return await invoke<ClaudeUsage>('read_claude_usage');
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }

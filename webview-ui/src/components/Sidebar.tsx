@@ -5,6 +5,7 @@ import type { UseProjectsResult } from '../hooks/useProjects';
 import type { TerminalEntry } from '../hooks/useTerminals';
 import { FileTree } from './FileTree';
 import { ProjectList } from './ProjectList';
+import { UsagePane } from './UsagePane';
 
 const MIN_WIDTH = 160;
 const DEFAULT_WIDTH = 220;
@@ -107,6 +108,7 @@ export function Sidebar({
           }}
         />
         <FileTree tree={fileTree} onFileClick={onFileClick} />
+        <UsagePane />
       </div>
       <div
         onMouseDown={onMouseDown}
