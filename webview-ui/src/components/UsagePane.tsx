@@ -201,8 +201,26 @@ export function UsagePane(): React.JSX.Element {
             </div>
           )}
           {limits?.error && (
-            <div style={{ fontSize: '10px', opacity: 0.55 }} title={limits.error}>
-              live limits unavailable
+            <div
+              style={{
+                fontSize: '10px',
+                opacity: 0.7,
+                lineHeight: 1.4,
+                color: 'var(--color-text-muted)',
+              }}
+              title={limits.error}
+            >
+              {limits.error.includes('cooldown') ? (
+                <>refresh cooldown — relancing the auto-fetch in a few minutes</>
+              ) : limits.error.includes('not signed in') ||
+                limits.error.includes('invalid_grant') ||
+                limits.error.includes('401') ? (
+                <>
+                  session expired — run <code>claude /login</code> in any terminal
+                </>
+              ) : (
+                <>live limits unavailable</>
+              )}
             </div>
           )}
 

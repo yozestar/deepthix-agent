@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Mutex;
 
-use chrono::{Local, NaiveDate, TimeZone};
+use chrono::{Local, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Public Claude Code OAuth client id — same value used by every
@@ -288,20 +288,27 @@ pub fn read_claude_subscription() -> Result<ClaudeSubscription, String> {
 
 // ─────────────────────────────────────────────────────────────────────────
 // Real subscription limits — undocumented endpoint that claude.ai uses
-// for its own "Plan usage limits" panel. Discovered via reverse-engineered
-// open-source clones (creaked/claude-usage, JohnDimou/ClaudeWatch, etc.).
+// for its own "Plan usage limits" panel. The same endpoint claude code
+// itself fetches and pipes into the statusline.
 //
 // The endpoint:
 //   GET https://api.anthropic.com/api/oauth/usage
 //   Authorization: Bearer <accessToken>
 //   anthropic-beta: oauth-2025-04-20
 //
-// Response shape:
+// Response shape (verified against the bundled claude code binary —
+// look for `rate_limits.five_hour.used_percentage` in the statusline
+// example. Extracted at v2.1.119):
 //   {
-//     "five_hour":         { "utilization": 0.06, "resets_at": "..." },
-//     "seven_day":         { "utilization": 0.01, "resets_at": "..." },
-//     "seven_day_sonnet":  { "utilization": 0.00, "resets_at": "..." },
-//     "extra_usage":       { ... } // optional, only some plans
+//     "rate_limits": {
+//       "five_hour": {
+//         "used_percentage": 6,           // 0..100
+//         "resets_at": 1777200000,        // epoch SECONDS
+//         "remaining_messages": ...       // optional
+//       },
+//       "seven_day": { ... },             // optional
+//       "seven_day_sonnet": { ... }       // optional
+//     }
 //   }
 //
 // We shell out to `curl` (macOS-only app, curl is part of base install)
@@ -311,9 +318,12 @@ pub fn read_claude_subscription() -> Result<ClaudeSubscription, String> {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct UsageBucket {
-    /// 0.0..1.0 fraction of the bucket consumed.
+    /// 0.0..1.0 fraction of the bucket consumed (server returns 0..100,
+    /// we normalize to 0..1 to match the rest of the codebase's bar
+    /// rendering convention).
     pub utilization: f64,
-    /// ISO-8601 UTC timestamp when this bucket resets. May be empty.
+    /// ISO-8601 UTC timestamp when this bucket resets. Empty if the
+    /// server omitted it.
     pub resets_at: String,
 }
 
@@ -332,13 +342,16 @@ pub struct ClaudeUsageLimits {
 #[derive(Deserialize)]
 struct UsageBucketRaw {
     #[serde(default)]
-    utilization: Option<f64>,
+    used_percentage: Option<f64>,
+    /// Epoch seconds (number) per the binary; we normalize to ISO-8601
+    /// string for the JS side. Some responses may use ISO already, so
+    /// we accept both via Value.
     #[serde(default)]
-    resets_at: Option<String>,
+    resets_at: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
-struct UsageResponseRaw {
+struct RateLimitsRaw {
     #[serde(default)]
     five_hour: Option<UsageBucketRaw>,
     #[serde(default)]
@@ -347,14 +360,35 @@ struct UsageResponseRaw {
     seven_day_sonnet: Option<UsageBucketRaw>,
 }
 
+#[derive(Deserialize)]
+struct UsageResponseRaw {
+    #[serde(default)]
+    rate_limits: Option<RateLimitsRaw>,
+}
+
+fn resets_at_to_iso(v: Option<serde_json::Value>) -> String {
+    match v {
+        Some(serde_json::Value::Number(n)) => {
+            // Epoch seconds → ISO-8601 UTC.
+            let secs = n.as_f64().unwrap_or(0.0) as i64;
+            chrono::DateTime::<Utc>::from_timestamp(secs, 0)
+                .map(|dt| dt.to_rfc3339())
+                .unwrap_or_default()
+        }
+        Some(serde_json::Value::String(s)) => s,
+        _ => String::new(),
+    }
+}
+
 fn bucket_from(raw: Option<UsageBucketRaw>) -> UsageBucket {
     let raw = raw.unwrap_or(UsageBucketRaw {
-        utilization: None,
+        used_percentage: None,
         resets_at: None,
     });
     UsageBucket {
-        utilization: raw.utilization.unwrap_or(0.0),
-        resets_at: raw.resets_at.unwrap_or_default(),
+        // server: 0..100 → frontend: 0..1
+        utilization: raw.used_percentage.unwrap_or(0.0) / 100.0,
+        resets_at: resets_at_to_iso(raw.resets_at),
     }
 }
 
@@ -611,11 +645,15 @@ pub fn read_claude_usage_limits() -> Result<ClaudeUsageLimits, String> {
 
     let raw: UsageResponseRaw = serde_json::from_str(&body)
         .map_err(|e| format!("parse usage response: {e} (body={body})"))?;
-
+    let buckets = raw.rate_limits.unwrap_or(RateLimitsRaw {
+        five_hour: None,
+        seven_day: None,
+        seven_day_sonnet: None,
+    });
     let limits = ClaudeUsageLimits {
-        five_hour: bucket_from(raw.five_hour),
-        seven_day: bucket_from(raw.seven_day),
-        seven_day_sonnet: bucket_from(raw.seven_day_sonnet),
+        five_hour: bucket_from(buckets.five_hour),
+        seven_day: bucket_from(buckets.seven_day),
+        seven_day_sonnet: bucket_from(buckets.seven_day_sonnet),
         error: None,
     };
     tracing::info!(
