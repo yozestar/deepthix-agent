@@ -11,9 +11,37 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Mutex;
 
 use chrono::{Local, NaiveDate, TimeZone};
 use serde::{Deserialize, Serialize};
+
+/// Public Claude Code OAuth client id — same value used by every
+/// open-source claude-usage clone. Extracted from claude code's CLI
+/// (it's a public client identifier — refresh still requires the
+/// matching refresh_token).
+const CLAUDE_CODE_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+
+/// In-process cache of the access token. Avoids hammering the keychain
+/// (which can prompt) and lets us hold a refreshed token without
+/// rewriting the system credential store.
+static TOKEN_CACHE: Mutex<Option<CachedToken>> = Mutex::new(None);
+
+#[derive(Clone)]
+struct CachedToken {
+    access_token: String,
+    refresh_token: String,
+    /// epoch ms — same convention as the keychain payload.
+    expires_at_ms: u64,
+}
+
+fn now_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ModelUsage {
@@ -321,9 +349,9 @@ fn bucket_from(raw: Option<UsageBucketRaw>) -> UsageBucket {
     }
 }
 
-/// Read just the OAuth access token from the keychain (no parsing of the
-/// rest of the payload). Returns None if not signed in.
-fn read_oauth_token() -> Option<String> {
+/// Read access + refresh + expiry from the keychain payload. None if
+/// not signed in.
+fn read_keychain_tokens() -> Option<CachedToken> {
     let output = Command::new("security")
         .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
         .output()
@@ -333,24 +361,129 @@ fn read_oauth_token() -> Option<String> {
     }
     let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    parsed
-        .get("claudeAiOauth")
-        .and_then(|o| o.get("accessToken"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+    let oauth = parsed.get("claudeAiOauth")?;
+    Some(CachedToken {
+        access_token: oauth.get("accessToken")?.as_str()?.to_string(),
+        refresh_token: oauth
+            .get("refreshToken")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        expires_at_ms: oauth
+            .get("expiresAt")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+    })
 }
 
-#[tauri::command]
-pub fn read_claude_usage_limits() -> Result<ClaudeUsageLimits, String> {
-    let Some(token) = read_oauth_token() else {
-        return Ok(ClaudeUsageLimits {
-            error: Some("not signed in to claude code".to_string()),
-            ..Default::default()
-        });
-    };
+/// Hit the OAuth token endpoint with the refresh token to get a fresh
+/// access token. Returns the new {access, refresh, expires_at} on
+/// success; the response includes a rotated refresh token that we
+/// stash in the cache for next time.
+fn refresh_access_token(refresh_token: &str) -> Result<CachedToken, String> {
+    if refresh_token.is_empty() {
+        return Err("no refresh_token available".to_string());
+    }
+    let body = serde_json::json!({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": CLAUDE_CODE_CLIENT_ID,
+    })
+    .to_string();
 
-    // Use --silent + --max-time to bound the call. -w "%{http_code}" so we
-    // can detect non-2xx without parsing curl's stderr.
+    let output = Command::new("curl")
+        .args([
+            "--silent",
+            "--max-time",
+            "8",
+            "--write-out",
+            "\n%{http_code}",
+            "-X",
+            "POST",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            &body,
+            "https://console.anthropic.com/v1/oauth/token",
+        ])
+        .output()
+        .map_err(|e| format!("curl spawn (refresh) failed: {e}"))?;
+    let combined = String::from_utf8_lossy(&output.stdout).into_owned();
+    let (resp_body, status) = match combined.rfind('\n') {
+        Some(idx) => (
+            combined[..idx].to_string(),
+            combined[idx + 1..].trim().to_string(),
+        ),
+        None => (combined.clone(), "000".to_string()),
+    };
+    let status_num: u16 = status.parse().unwrap_or(0);
+    if !(200..300).contains(&status_num) {
+        return Err(format!("refresh HTTP {status} — {}", resp_body.chars().take(200).collect::<String>()));
+    }
+
+    #[derive(Deserialize)]
+    struct RefreshResponse {
+        access_token: String,
+        #[serde(default)]
+        refresh_token: Option<String>,
+        #[serde(default)]
+        expires_in: Option<u64>,
+    }
+    let parsed: RefreshResponse = serde_json::from_str(&resp_body)
+        .map_err(|e| format!("parse refresh response: {e} (body={resp_body})"))?;
+    let expires_at_ms =
+        now_ms() + parsed.expires_in.unwrap_or(3600).saturating_mul(1000);
+    Ok(CachedToken {
+        access_token: parsed.access_token,
+        // Refresh tokens may rotate; keep the new one if returned, else
+        // re-use the existing one for the next refresh.
+        refresh_token: parsed.refresh_token.unwrap_or_else(|| refresh_token.to_string()),
+        expires_at_ms,
+    })
+}
+
+/// Get a valid (non-expired) access token. Tries in order:
+///   1. RAM cache, if not expired.
+///   2. Keychain, if not expired (and update RAM cache).
+///   3. Refresh via the keychain's refresh_token; cache result.
+///
+/// We treat tokens as expired 60s BEFORE their stated expiry to avoid
+/// the boundary case where claude rotates the keychain entry between
+/// our read and the API call.
+fn current_access_token() -> Result<String, String> {
+    let cushion_ms: u64 = 60_000;
+    let now = now_ms();
+
+    if let Some(cached) = TOKEN_CACHE.lock().unwrap().clone() {
+        if cached.expires_at_ms > now + cushion_ms {
+            return Ok(cached.access_token);
+        }
+    }
+
+    let keychain = read_keychain_tokens().ok_or_else(|| "no claude credentials in keychain".to_string())?;
+    if keychain.expires_at_ms > now + cushion_ms {
+        // Keychain token is fresh — cache + use it.
+        let token = keychain.access_token.clone();
+        *TOKEN_CACHE.lock().unwrap() = Some(keychain);
+        return Ok(token);
+    }
+
+    // Keychain stale → refresh.
+    tracing::info!(
+        target: "deepthix::commands",
+        keychain_age_min = (now.saturating_sub(keychain.expires_at_ms)) / 60_000,
+        "claude oauth token expired; refreshing",
+    );
+    let fresh = refresh_access_token(&keychain.refresh_token)?;
+    let token = fresh.access_token.clone();
+    *TOKEN_CACHE.lock().unwrap() = Some(fresh);
+    Ok(token)
+}
+
+/// One GET attempt against the usage endpoint with the supplied token.
+/// Returns Ok((status_code, body)) so the caller can inspect 401 and
+/// decide to refresh + retry without conflating it with curl failures.
+fn fetch_usage_with(token: &str) -> Result<(u16, String), String> {
     let output = Command::new("curl")
         .args([
             "--silent",
@@ -368,17 +501,62 @@ pub fn read_claude_usage_limits() -> Result<ClaudeUsageLimits, String> {
         ])
         .output()
         .map_err(|e| format!("curl spawn failed: {e}"))?;
-
     let combined = String::from_utf8_lossy(&output.stdout).into_owned();
-    // Last newline-separated chunk is the http status code; everything
-    // before it is the JSON body.
     let (body, status) = match combined.rfind('\n') {
         Some(idx) => (combined[..idx].to_string(), combined[idx + 1..].trim().to_string()),
         None => (combined.clone(), "000".to_string()),
     };
     let status_num: u16 = status.parse().unwrap_or(0);
+    Ok((status_num, body))
+}
 
-    if status_num < 200 || status_num >= 300 {
+#[tauri::command]
+pub fn read_claude_usage_limits() -> Result<ClaudeUsageLimits, String> {
+    let token = match current_access_token() {
+        Ok(t) => t,
+        Err(e) => {
+            return Ok(ClaudeUsageLimits {
+                error: Some(e),
+                ..Default::default()
+            });
+        }
+    };
+
+    let (status, body) = match fetch_usage_with(&token) {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(ClaudeUsageLimits {
+                error: Some(e),
+                ..Default::default()
+            });
+        }
+    };
+
+    // 401 → cached token went stale between cache check and fetch (or
+    // anthropic invalidated it). Force a refresh and retry exactly once.
+    let (status, body) = if status == 401 {
+        tracing::info!(target: "deepthix::commands", "usage 401 — invalidating cache + retrying");
+        *TOKEN_CACHE.lock().unwrap() = None;
+        match current_access_token() {
+            Ok(t) => match fetch_usage_with(&t) {
+                Ok(r) => r,
+                Err(e) => return Ok(ClaudeUsageLimits {
+                    error: Some(e),
+                    ..Default::default()
+                }),
+            },
+            Err(e) => {
+                return Ok(ClaudeUsageLimits {
+                    error: Some(format!("refresh after 401: {e}")),
+                    ..Default::default()
+                });
+            }
+        }
+    } else {
+        (status, body)
+    };
+
+    if !(200..300).contains(&status) {
         tracing::warn!(
             target: "deepthix::commands",
             %status, %body,
