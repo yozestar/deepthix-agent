@@ -191,96 +191,155 @@ function App(): React.JSX.Element {
           mode={mode}
           onChangeMode={setMode}
         />
-        {/* Right-pane body: depends on whether a project is open + which mode.
-            Settings + Overview are project-agnostic so they render even when
-            no project is open. */}
-        {mode === 'settings' ? (
-          <SettingsPane globalConfig={globalConfig} />
-        ) : mode === 'overview' ? (
-          <OverviewPane terminals={terminals} projects={projects} onChangeMode={setMode} />
-        ) : !hasProjects ? (
-          <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
-        ) : mode === 'sessions' ? (
-          <>
-            {/* Tamagotchi fills the upper area; SessionsPane (when present)
-                anchors the resizable terminal area below. */}
-            <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-              <TamagotchiView
-                terminals={visibleAgents}
-                onSelectSession={(termId) => terminals.setActive(termId)}
-              />
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 24,
-                  right: 24,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-end',
-                  gap: 8,
-                  zIndex: 6,
-                }}
-              >
-                <label
+        {/* Right-pane body. The SESSIONS layout (TamagotchiView + the
+            resizable terminal pane) MUST stay mounted across mode switches
+            — unmounting it disposes every xterm instance and the user
+            sees their terminals reset to whatever the last on-disk
+            scrollback save was (up to 30s stale).
+            Other modes (settings, overview, process, memory, files) render
+            ON TOP of the sessions layout via an absolute overlay; flipping
+            them on/off only flips a CSS display, so the sessions stay
+            alive in the background.
+            !hasProjects + Welcome screen: still gated on the project list
+            (no terminal exists when no project is open). */}
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {/* SESSIONS layout — always mounted when at least one project
+              exists, hidden via display:none when another mode is active. */}
+          {hasProjects && (
+            <div
+              style={{
+                display: mode === 'sessions' ? 'flex' : 'none',
+                flexDirection: 'column',
+                flex: 1,
+                minHeight: 0,
+              }}
+            >
+              <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                <TamagotchiView
+                  terminals={visibleAgents}
+                  onSelectSession={(termId) => terminals.setActive(termId)}
+                />
+                <div
                   style={{
+                    position: 'absolute',
+                    bottom: 24,
+                    right: 24,
                     display: 'flex',
-                    alignItems: 'center',
+                    flexDirection: 'column',
+                    alignItems: 'flex-end',
                     gap: 8,
-                    background: 'var(--color-bg-dark)',
-                    border: '2px solid var(--color-border)',
-                    boxShadow: 'var(--shadow-pixel)',
-                    padding: '6px 10px',
-                    fontFamily: 'var(--font-pixel)',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                  }}
-                  title="Pass --dangerously-skip-permissions to new sessions"
-                >
-                  <input
-                    type="checkbox"
-                    checked={skipPerms}
-                    onChange={(e) => setSkipPerms(e.target.checked)}
-                  />
-                  skip perms
-                </label>
-                <button
-                  type="button"
-                  onClick={onSpawnAgent}
-                  style={{
-                    padding: '14px 24px',
-                    background: 'var(--color-accent)',
-                    color: 'var(--color-bg-dark)',
-                    border: '2px solid var(--color-border)',
-                    boxShadow: 'var(--shadow-pixel)',
-                    fontFamily: 'var(--font-pixel)',
-                    fontSize: '18px',
-                    cursor: 'pointer',
+                    zIndex: 6,
                   }}
                 >
-                  + Session
-                </button>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      background: 'var(--color-bg-dark)',
+                      border: '2px solid var(--color-border)',
+                      boxShadow: 'var(--shadow-pixel)',
+                      padding: '6px 10px',
+                      fontFamily: 'var(--font-pixel)',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                    }}
+                    title="Pass --dangerously-skip-permissions to new sessions"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={skipPerms}
+                      onChange={(e) => setSkipPerms(e.target.checked)}
+                    />
+                    skip perms
+                  </label>
+                  <button
+                    type="button"
+                    onClick={onSpawnAgent}
+                    style={{
+                      padding: '14px 24px',
+                      background: 'var(--color-accent)',
+                      color: 'var(--color-bg-dark)',
+                      border: '2px solid var(--color-border)',
+                      boxShadow: 'var(--shadow-pixel)',
+                      fontFamily: 'var(--font-pixel)',
+                      fontSize: '18px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    + Session
+                  </button>
+                </div>
               </div>
+              <SessionsPane
+                terminals={terminals}
+                projectId={projects.activeProjectId}
+                globalConfig={globalConfig.config}
+                updateGlobalConfig={globalConfig.update}
+              />
             </div>
-            <SessionsPane
-              terminals={terminals}
-              projectId={projects.activeProjectId}
-              globalConfig={globalConfig.config}
-              updateGlobalConfig={globalConfig.update}
-            />
-          </>
-        ) : mode === 'process' ? (
-          <ProcessPane projectPath={projects.activeProject?.path ?? null} />
-        ) : mode === 'memory' ? (
-          <MemoryPane projectPath={projects.activeProject?.path ?? null} />
-        ) : (
-          <FilesPane
-            projectPath={projects.activeProject?.path ?? null}
-            fileTree={fileTree}
-            openFiles={openFiles}
-          />
-        )}
+          )}
+
+          {/* Other modes — render as overlay so toggling between them
+              doesn't tear down the SESSIONS layout. Each is wrapped in a
+              flex-column container that fills the parent. */}
+          {mode === 'settings' && (
+            <ModeOverlay>
+              <SettingsPane globalConfig={globalConfig} />
+            </ModeOverlay>
+          )}
+          {mode === 'overview' && (
+            <ModeOverlay>
+              <OverviewPane terminals={terminals} projects={projects} onChangeMode={setMode} />
+            </ModeOverlay>
+          )}
+          {mode !== 'sessions' && mode !== 'overview' && mode !== 'settings' && !hasProjects && (
+            <ModeOverlay>
+              <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
+            </ModeOverlay>
+          )}
+          {hasProjects && mode === 'process' && (
+            <ModeOverlay>
+              <ProcessPane projectPath={projects.activeProject?.path ?? null} />
+            </ModeOverlay>
+          )}
+          {hasProjects && mode === 'memory' && (
+            <ModeOverlay>
+              <MemoryPane projectPath={projects.activeProject?.path ?? null} />
+            </ModeOverlay>
+          )}
+          {hasProjects && mode === 'files' && (
+            <ModeOverlay>
+              <FilesPane
+                projectPath={projects.activeProject?.path ?? null}
+                fileTree={fileTree}
+                openFiles={openFiles}
+              />
+            </ModeOverlay>
+          )}
+        </div>
       </div>
+    </div>
+  );
+}
+
+/** Absolute-positioned overlay that fully covers the SESSIONS layout.
+ *  Used by every non-sessions mode so switching back to SESSIONS doesn't
+ *  remount the xterm instances (and lose live scrollback). */
+function ModeOverlay({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'var(--color-bg)',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 10,
+      }}
+    >
+      {children}
     </div>
   );
 }
