@@ -306,6 +306,25 @@ export async function readClaudeUsageLimits(): Promise<ClaudeUsageLimits> {
   return await invoke<ClaudeUsageLimits>('read_claude_usage_limits');
 }
 
+export interface UsageSnapshot {
+  /** Raw JSON the statusline-dumper script captured (string). Empty if none. */
+  body: string;
+  /** mtime of the snapshot file in epoch ms; 0 if absent. */
+  mtime_ms: number;
+}
+
+/**
+ * Read the most recent statusline-dumper snapshot. Claude pipes a JSON
+ * containing { rate_limits, cost, context_window, model, ... } to its
+ * statusLine command — we install a script that captures it. As long
+ * as at least one Deepthix-spawned claude session is running, this
+ * returns the freshest live usage data with NO OAuth, NO Cloudflare,
+ * NO rate limits.
+ */
+export async function readClaudeUsageSnapshot(): Promise<UsageSnapshot> {
+  return await invoke<UsageSnapshot>('read_claude_usage_snapshot');
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }

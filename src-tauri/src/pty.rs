@@ -240,6 +240,23 @@ impl TerminalManager {
         if skip_permissions {
             cmd.arg("--dangerously-skip-permissions");
         }
+        // Pass our overlay settings so claude pipes its rate_limits JSON
+        // to our snapshot dumper script via statusLine. Best-effort —
+        // if install failed (read-only home, etc.) we just skip the flag
+        // and the session runs normally without our usage capture.
+        match crate::commands::usage_snapshot::ensure_installed() {
+            Ok(()) => {
+                if let Ok(overlay) = crate::commands::usage_snapshot::overlay_settings_path() {
+                    let overlay_str = overlay.to_string_lossy().into_owned();
+                    tracing::debug!(target: "deepthix::pty", %overlay_str, "passing --settings overlay");
+                    cmd.arg("--settings");
+                    cmd.arg(&overlay_str);
+                }
+            }
+            Err(e) => {
+                tracing::warn!(target: "deepthix::pty", error = %e, "usage_snapshot install failed; spawning claude without overlay");
+            }
+        }
         cmd.cwd(&cwd);
         for (k, v) in std::env::vars() {
             cmd.env(k, v);

@@ -1,33 +1,58 @@
 /* eslint-disable deepthix/no-inline-colors */
-// USAGE section in the sidebar. Surfaces:
-// - The Claude subscription tier (Max 20x, Pro, etc.) read from the macOS
-//   keychain.
-// - LIVE subscription limits fetched from the undocumented endpoint
-//   `https://api.anthropic.com/api/oauth/usage` (the same one claude.ai
-//   uses for its "Plan usage limits" panel). Three buckets:
-//     • Current session (5h window)
-//     • Weekly all-models
-//     • Weekly Sonnet-only
-//   Each renders as a tiny pixel progress bar with the % and the time
-//   left until the bucket resets.
-// - Today's local activity counts (messages, sessions) from
-//   ~/.claude/stats-cache.json as a complementary local stat.
+// USAGE section in the sidebar.
+//
+// Primary source: the statusline-dumper snapshot at
+// ~/.deepthix/usage-snapshot.json. Claude code pipes a JSON blob with
+// { rate_limits, cost, context_window, model, ... } to its statusLine
+// command on every UI tick; we install a tiny shell script as that
+// command (in src-tauri/src/commands/usage_snapshot.rs) so the JSON
+// lands on disk. As long as at least one Deepthix-spawned claude
+// session is running, this gives us live data with no OAuth, no
+// Cloudflare, no rate limits.
+//
+// Fallback display: subscription tier from the keychain + daily activity
+// from claude's local stats-cache. Shown when the snapshot is missing
+// or stale (no active session).
 
 import { useCallback, useEffect, useState } from 'react';
 
 import {
   type ClaudeActivity,
   type ClaudeSubscription,
-  type ClaudeUsageLimits,
   openExternalUrl,
   readClaudeDailyActivity,
   readClaudeSubscription,
-  readClaudeUsageLimits,
+  readClaudeUsageSnapshot,
 } from '../tauri/commands';
 
-const POLL_MS = 60_000;
+const POLL_MS = 5_000;
 const COUNTDOWN_TICK_MS = 30_000;
+const SNAPSHOT_STALE_MS = 5 * 60 * 1000; // 5 min → snapshot considered live
 const CLAUDE_USAGE_URL = 'https://claude.ai/settings/usage';
+
+interface RateLimitBucket {
+  used_percentage?: number;
+  resets_at?: number; // epoch seconds
+}
+
+interface ParsedSnapshot {
+  rate_limits?: {
+    five_hour?: RateLimitBucket;
+    seven_day?: RateLimitBucket;
+    seven_day_sonnet?: RateLimitBucket;
+    seven_day_opus?: RateLimitBucket;
+  };
+  cost?: {
+    total_cost_usd?: number;
+    total_lines_added?: number;
+    total_lines_removed?: number;
+  };
+  context_window?: {
+    used_percentage?: number;
+    context_window_size?: number;
+  };
+  model?: { display_name?: string };
+}
 
 function formatTier(sub: ClaudeSubscription): string {
   if (!sub.authenticated) return 'not signed in';
@@ -46,12 +71,16 @@ function formatNum(n: number): string {
   return String(n);
 }
 
-/** "in 4h 12m" / "in 6d 3h" / "now" */
-function formatResetCountdown(isoTs: string, nowMs: number): string {
-  if (!isoTs) return '';
-  const target = Date.parse(isoTs);
-  if (Number.isNaN(target)) return '';
-  const ms = target - nowMs;
+function formatUsd(n: number): string {
+  if (n >= 100) return `$${n.toFixed(0)}`;
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  return `$${n.toFixed(3)}`;
+}
+
+/** "in 4h 12m" / "in 6d 3h" / "now" — input is epoch seconds. */
+function formatResetCountdown(epochSec: number, nowMs: number): string {
+  if (!epochSec) return '';
+  const ms = epochSec * 1000 - nowMs;
   if (ms <= 0) return 'now';
   const minutes = Math.floor(ms / 60_000);
   if (minutes < 60) return `in ${minutes}m`;
@@ -66,29 +95,41 @@ function formatResetCountdown(isoTs: string, nowMs: number): string {
 }
 
 function pctColor(pct: number): string {
-  if (pct >= 0.85) return 'var(--color-danger)';
-  if (pct >= 0.6) return 'var(--color-warning, #f59e0b)';
+  if (pct >= 85) return 'var(--color-danger)';
+  if (pct >= 60) return 'var(--color-warning, #f59e0b)';
   return 'var(--color-status-success)';
+}
+
+function parseSnapshot(body: string): ParsedSnapshot | null {
+  if (!body) return null;
+  try {
+    return JSON.parse(body) as ParsedSnapshot;
+  } catch (e) {
+    console.warn('[Deepthix][UsagePane] snapshot parse failed', e);
+    return null;
+  }
 }
 
 export function UsagePane(): React.JSX.Element {
   const [sub, setSub] = useState<ClaudeSubscription | null>(null);
   const [activity, setActivity] = useState<ClaudeActivity | null>(null);
-  const [limits, setLimits] = useState<ClaudeUsageLimits | null>(null);
+  const [snapshot, setSnapshot] = useState<ParsedSnapshot | null>(null);
+  const [snapshotMtime, setSnapshotMtime] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [now, setNow] = useState<number>(() => Date.now());
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
-      const [s, a, l] = await Promise.all([
+      const [s, a, snap] = await Promise.all([
         readClaudeSubscription(),
         readClaudeDailyActivity(),
-        readClaudeUsageLimits(),
+        readClaudeUsageSnapshot(),
       ]);
       setSub(s);
       setActivity(a);
-      setLimits(l);
+      setSnapshot(parseSnapshot(snap.body));
+      setSnapshotMtime(snap.mtime_ms);
       setError(null);
     } catch (e) {
       console.warn('[Deepthix][UsagePane] refresh failed', e);
@@ -102,8 +143,6 @@ export function UsagePane(): React.JSX.Element {
     return () => clearInterval(id);
   }, [refresh]);
 
-  // Cheap local clock so the "in 4h 12m" reset countdown updates without
-  // hitting the API every second.
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), COUNTDOWN_TICK_MS);
     return () => clearInterval(id);
@@ -114,6 +153,11 @@ export function UsagePane(): React.JSX.Element {
       console.warn('[Deepthix][UsagePane] open claude.ai/settings/usage failed', e);
     });
   };
+
+  const snapshotFresh = snapshotMtime > 0 && now - snapshotMtime < SNAPSHOT_STALE_MS;
+  const limits = snapshot?.rate_limits;
+  const totalCostUsd = snapshot?.cost?.total_cost_usd ?? 0;
+  const ctxPct = snapshot?.context_window?.used_percentage ?? 0;
 
   return (
     <div
@@ -180,46 +224,45 @@ export function UsagePane(): React.JSX.Element {
             </div>
           )}
 
-          {/* Live subscription limits — the actual "Plan usage" panel. */}
-          {limits && !limits.error && (
+          {/* Live limits from the snapshot. */}
+          {snapshotFresh && limits && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
-              <UsageBar
-                label="Session"
-                bucket={limits.five_hour}
-                now={now}
-              />
-              <UsageBar
-                label="Weekly"
-                bucket={limits.seven_day}
-                now={now}
-              />
-              <UsageBar
-                label="Sonnet wk"
-                bucket={limits.seven_day_sonnet}
-                now={now}
-              />
+              {limits.five_hour && (
+                <UsageBar label="Session 5h" bucket={limits.five_hour} now={now} />
+              )}
+              {limits.seven_day && (
+                <UsageBar label="Weekly" bucket={limits.seven_day} now={now} />
+              )}
+              {limits.seven_day_sonnet && (
+                <UsageBar label="Sonnet wk" bucket={limits.seven_day_sonnet} now={now} />
+              )}
+              {limits.seven_day_opus && (
+                <UsageBar label="Opus wk" bucket={limits.seven_day_opus} now={now} />
+              )}
             </div>
           )}
-          {limits?.error && (
-            <div
-              style={{
-                fontSize: '10px',
-                opacity: 0.7,
-                lineHeight: 1.4,
-                color: 'var(--color-text-muted)',
-              }}
-              title={limits.error}
-            >
-              {limits.error.includes('cooldown') ? (
-                <>refresh cooldown — relancing the auto-fetch in a few minutes</>
-              ) : limits.error.includes('not signed in') ||
-                limits.error.includes('invalid_grant') ||
-                limits.error.includes('401') ? (
-                <>
-                  session expired — run <code>claude /login</code> in any terminal
-                </>
-              ) : (
-                <>live limits unavailable</>
+          {!snapshotFresh && (
+            <div style={{ fontSize: '10px', opacity: 0.55, lineHeight: 1.4 }}>
+              {snapshotMtime === 0
+                ? 'no snapshot yet — open a session to capture'
+                : 'snapshot stale (no active session)'}
+            </div>
+          )}
+
+          {/* Bonus stats from the snapshot — context window + total cost. */}
+          {snapshotFresh && snapshot && (
+            <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {snapshot.context_window && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.85 }}>
+                  <span style={{ opacity: 0.7 }}>Context</span>
+                  <span style={{ color: pctColor(ctxPct) }}>{ctxPct}% used</span>
+                </div>
+              )}
+              {totalCostUsd > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.85 }}>
+                  <span style={{ opacity: 0.7 }}>Spent</span>
+                  <span>{formatUsd(totalCostUsd)}</span>
+                </div>
               )}
             </div>
           )}
@@ -267,14 +310,14 @@ export function UsagePane(): React.JSX.Element {
 
 interface UsageBarProps {
   label: string;
-  bucket: { utilization: number; resets_at: string };
+  bucket: RateLimitBucket;
   now: number;
 }
 
 function UsageBar({ label, bucket, now }: UsageBarProps): React.JSX.Element {
-  const pct = Math.max(0, Math.min(1, bucket.utilization));
+  const pct = Math.max(0, Math.min(100, bucket.used_percentage ?? 0));
   const color = pctColor(pct);
-  const countdown = formatResetCountdown(bucket.resets_at, now);
+  const countdown = bucket.resets_at ? formatResetCountdown(bucket.resets_at, now) : '';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
       <div
@@ -285,7 +328,7 @@ function UsageBar({ label, bucket, now }: UsageBarProps): React.JSX.Element {
         }}
       >
         <span style={{ opacity: 0.7 }}>{label}</span>
-        <span style={{ color, fontWeight: 'bold' }}>{Math.round(pct * 100)}%</span>
+        <span style={{ color, fontWeight: 'bold' }}>{Math.round(pct)}%</span>
       </div>
       <div
         style={{
@@ -298,7 +341,7 @@ function UsageBar({ label, bucket, now }: UsageBarProps): React.JSX.Element {
       >
         <div
           style={{
-            width: `${pct * 100}%`,
+            width: `${pct}%`,
             height: '100%',
             background: color,
             transition: 'width 300ms ease-out',
