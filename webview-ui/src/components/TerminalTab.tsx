@@ -1,10 +1,11 @@
-import 'xterm/css/xterm.css';
+import '@xterm/xterm/css/xterm.css';
 
 import { FitAddon } from '@xterm/addon-fit';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { WebglAddon } from '@xterm/addon-webgl';
+import { Terminal } from '@xterm/xterm';
 import { useCallback, useEffect, useRef } from 'react';
-import { Terminal } from 'xterm';
 
 import {
   TERMINAL_DEFAULT_BG,
@@ -119,21 +120,35 @@ export function TerminalTab({
     const term = new Terminal({
       fontSize: settingsRef.current.terminalFontSize,
       fontFamily: settingsRef.current.terminalFontFamily,
-      lineHeight: settingsRef.current.terminalLineHeight,
+      // 1.0 is critical for Ink TUIs (claude code). Anything else and
+      // the box-drawing characters bleed across cell boundaries and
+      // the cursor math drifts. The user's stored 1.05 preference is
+      // ignored for terminal correctness — only the global app font
+      // size still picks up their setting.
+      lineHeight: 1.0,
       letterSpacing: 0,
       theme: { background: bgColor },
-      // false: claude code (Ink-based TUI) sends its own \r\n sequences and
-      // performs absolute cursor positioning — converting bare \n to \r\n
-      // double-shifts the cursor and corrupts the input box border on
-      // redraws (this was producing the visible "split prompt" rows).
+      // false: claude code sends its own \r\n sequences and performs
+      // absolute cursor positioning. Converting bare \n to \r\n
+      // double-shifts the cursor and corrupts the input box border.
       convertEol: false,
-      // Bar cursor matches what Ink expects, and blinking ensures we always
-      // see WHERE the input is (the static block was disappearing on
-      // certain redraws because xterm assumed it owned the cursor cell).
-      cursorStyle: 'bar',
-      cursorBlink: true,
-      // Re-affirm canvas-renderer defaults so a stale option from an HMR
-      // patch can't leave us with a broken renderer.
+      // Block cursor: Ink draws its OWN cursor; with cursorBlink on we
+      // get a double cursor (xterm's blinking one + Ink's static one).
+      cursorStyle: 'block',
+      cursorBlink: false,
+      // Lets xterm draw box-drawing / block-element chars itself
+      // (default true in 6.x but spelled out for clarity) — fixes the
+      // gaps + bleed that fall back to the font would produce.
+      customGlyphs: true,
+      // Helps wide nerd-font glyphs (powerline arrows, etc.) fit
+      // their cells.
+      rescaleOverlappingGlyphs: true,
+      // Higher contrast ratios force xterm to recolor text to meet a
+      // WCAG floor — that breaks claude's chosen palette.
+      minimumContrastRatio: 1,
+      drawBoldTextInBrightColors: false,
+      // Required for SerializeAddon + future addons.
+      allowProposedApi: true,
       allowTransparency: false,
       scrollback: 5000,
     });
@@ -154,6 +169,24 @@ export function TerminalTab({
     term.loadAddon(serialize);
     term.loadAddon(webLinks);
     term.open(el);
+    // WebGL renderer — ~9× faster than the (now-removed) canvas one and
+    // has a consolidated texture atlas that fixes the glyph-bleed bug
+    // we saw with the canvas renderer. MUST attach AFTER term.open(el)
+    // because the addon needs the rendered DOM tree. Wrap in try/catch:
+    // on machines without GPU acceleration WebGL fails to init and we
+    // silently fall back to the DOM renderer — claude is still usable.
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => {
+        // GPU dropped the context (sleep/wake, driver crash). Dispose
+        // the addon and let xterm fall back to DOM rendering.
+        console.warn('[Deepthix][TerminalTab] WebGL context lost; disposing addon');
+        webgl.dispose();
+      });
+      term.loadAddon(webgl);
+    } catch (e) {
+      console.warn('[Deepthix][TerminalTab] WebGL addon failed, falling back to DOM', e);
+    }
     // The xterm canvas renderer initializes lazily — the first fit() can
     // throw `_renderer.value.dimensions` is undefined. Swallow it; the
     // subsequent ResizeObserver / visibility effects will retry.
@@ -248,14 +281,17 @@ export function TerminalTab({
       }
     }, SCROLLBACK_AUTOSAVE_MS);
 
+    // Debounce fit() at 150ms — calling it on every resize tick causes
+    // pty data loss in Tauri (well-documented) and makes WebGL flicker.
+    // 150ms is short enough that the user doesn't notice the lag while
+    // dragging the divider, long enough that we batch a full resize.
+    let fitTimer: ReturnType<typeof setTimeout> | null = null;
     const resizeObserver = new ResizeObserver(() => {
-      // Use safeFit so that fit() failures (xterm renderer not yet
-      // initialized — common when this terminal is hidden via display:none
-      // and another panel triggers a layout) don't leave us stuck at the
-      // pre-resize geometry. Without try/catch the thrown
-      // `_renderer.value.dimensions` would short-circuit the observer
-      // callback and the terminal would silently keep its old size.
-      safeFitRef.current();
+      if (fitTimer) clearTimeout(fitTimer);
+      fitTimer = setTimeout(() => {
+        fitTimer = null;
+        safeFitRef.current();
+      }, 150);
     });
     resizeObserver.observe(el);
 
@@ -357,6 +393,7 @@ export function TerminalTab({
       writeDisposable.dispose();
       unlisten?.();
       resizeObserver.disconnect();
+      if (fitTimer) clearTimeout(fitTimer);
       el.removeEventListener('keydown', onKeyDown);
       el.removeEventListener('wheel', onWheel, { capture: true } as EventListenerOptions);
       term.dispose();
@@ -421,7 +458,9 @@ export function TerminalTab({
     });
     term.options.fontSize = settings.terminalFontSize;
     term.options.fontFamily = settings.terminalFontFamily;
-    term.options.lineHeight = settings.terminalLineHeight;
+    // Always 1.0 — see init reason. The user's stored lineHeight is
+    // intentionally ignored for terminals; it'd break Ink rendering.
+    term.options.lineHeight = 1.0;
     // xterm caches char metrics for the canvas renderer; force a refit + full
     // refresh so the new font/size actually paints. Without this, fontFamily
     // changes silently re-cache but keep using the old glyph atlas.
