@@ -185,12 +185,12 @@ export function SkillsPane({ projectPath }: Props): React.JSX.Element {
           />
           <SkillSection
             title="Plugin skills"
-            subtitle="provided by installed plugins — read-only"
+            subtitle="provided by installed plugins — toggles may be reverted on plugin update"
             empty="No plugin skills installed."
             skills={groups.plugin}
             onToggle={onToggle}
             pendingPaths={pendingPaths}
-            readonly={true}
+            readonly={false}
           />
         </>
       )}
@@ -303,9 +303,13 @@ function SkillRow({ skill, pending, onToggle, readonly }: RowProps): React.JSX.E
           title={
             readonly
               ? 'plugin skill — managed by the plugin manager'
-              : enabled
-                ? 'click to disable model auto-invocation'
-                : 'click to re-enable model auto-invocation'
+              : skill.plugin
+                ? enabled
+                  ? 'disable model auto-invocation (warning: a plugin update can revert this)'
+                  : 're-enable model auto-invocation (warning: a plugin update can revert this)'
+                : enabled
+                  ? 'click to disable model auto-invocation'
+                  : 'click to re-enable model auto-invocation'
           }
           style={{ cursor: readonly ? 'not-allowed' : 'pointer' }}
         />

@@ -202,16 +202,13 @@ pub fn list_skills(project_path: Option<String>) -> Result<Vec<SkillInfo>, Strin
     Ok(out)
 }
 
-/// Toggle `disable-model-invocation` in a SKILL.md's frontmatter.
-/// Refuses to write inside a plugin dir (we can detect that by path
-/// containing "plugins/" — those are managed externally).
+/// Toggle `disable-model-invocation` in a SKILL.md's frontmatter. We
+/// allow plugin paths too — the change CAN be wiped by a plugin
+/// update, but the user explicitly asked for the toggle so we honor
+/// it. UI shows a warning.
 #[tauri::command]
 pub fn set_skill_enabled(path: String, enabled: bool) -> Result<(), String> {
     let p = PathBuf::from(&path);
-    let path_str = p.to_string_lossy();
-    if path_str.contains("/plugins/") || path_str.contains("/.claude/plugins/") {
-        return Err("plugin skills are read-only — disable via the plugin manager".to_string());
-    }
     if !p.is_file() {
         return Err(format!("not a file: {path}"));
     }
@@ -336,10 +333,13 @@ body content
     }
 
     #[test]
-    fn set_skill_rejects_plugin_path() {
+    fn set_skill_writes_plugin_paths_now() {
+        // Plugin paths are allowed (with a UI warning) — the toggle still
+        // returns an error here because the file doesn't exist, but the
+        // error must NOT mention "read-only" anymore.
         let result =
             set_skill_enabled("/Users/x/.claude/plugins/foo/skills/bar/SKILL.md".into(), false);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("read-only"));
+        assert!(!result.unwrap_err().contains("read-only"));
     }
 }
