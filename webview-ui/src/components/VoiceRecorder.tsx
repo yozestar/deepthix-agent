@@ -128,7 +128,7 @@ export function VoiceRecorder({ activeTermId }: Props): React.JSX.Element | null
         setState({ kind: 'error', message: 'no active terminal — focus a session first' });
         return;
       }
-      console.info('[Deepthix][VoiceRecorder] injecting transcript', {
+      console.info('[Deepthix][VoiceRecorder] V3 injecting char-by-char', {
         target,
         chars: text.length,
         preview: text.slice(0, 60),
@@ -147,23 +147,33 @@ export function VoiceRecorder({ activeTermId }: Props): React.JSX.Element | null
       //   - 12 ms between chunks: empirically enough for Ink's input
       //     queue to drain without making short transcripts feel slow.
       // Still no trailing \n — user reads + submits manually.
+      // v2 (64-byte chunks) didn't work: bytes reached the pty (visible
+      // in tracing) but claude code's prompt stayed empty. Hypothesis:
+      // Ink's stdin reader coalesces bursty multi-byte writes into a
+      // single read, and the merged buffer doesn't match a known
+      // keypress event so the chars get filtered out.
+      // v3 (this) — write 1 character at a time with an 8 ms gap.
+      // Mirrors what xterm.onData sends when the user types (single
+      // chars), the only path we know works in this codebase. Slower
+      // (~120 chars/sec) but reliable.
       try {
-        const CHUNK_SIZE = 64;
-        const CHUNK_DELAY_MS = 12;
-        for (let i = 0; i < text.length; i += CHUNK_SIZE) {
-          const chunk = text.slice(i, i + CHUNK_SIZE);
-          await ptyWrite(target, chunk);
-          if (i + CHUNK_SIZE < text.length) {
-            await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS));
+        const PER_CHAR_DELAY_MS = 8;
+        // Array.from splits on Unicode code points, not UTF-16 code
+        // units, so accents like é and emoji stay intact.
+        const chars = Array.from(text);
+        for (let i = 0; i < chars.length; i++) {
+          await ptyWrite(target, chars[i]);
+          if (i < chars.length - 1) {
+            await new Promise((r) => setTimeout(r, PER_CHAR_DELAY_MS));
           }
         }
-        console.info('[Deepthix][VoiceRecorder] injection complete', {
+        console.info('[Deepthix][VoiceRecorder] V3 injection complete', {
           target,
-          chars: text.length,
+          chars: chars.length,
         });
       } catch (writeErr) {
         const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
-        console.error('[Deepthix][VoiceRecorder] ptyWrite failed', writeErr);
+        console.error('[Deepthix][VoiceRecorder] V3 ptyWrite failed', writeErr);
         setState({ kind: 'error', message: `pty write: ${msg}` });
         return;
       }
