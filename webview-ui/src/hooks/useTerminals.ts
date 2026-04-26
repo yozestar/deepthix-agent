@@ -226,6 +226,23 @@ export function useTerminals(): UseTerminalsResult {
       },
     ): Promise<TerminalEntry | null> => {
       console.debug('[Deepthix][useTerminals] open', { projectId, cwd, kind, label, opts });
+      // Defensive dedup: if we're being asked to RESUME a session id we
+      // already have a terminal for, skip — the prior call from a racing
+      // resumeProject already spawned it. Without this, a transient
+      // double-resume would spawn the same claude pty twice and the user
+      // ends up with N "session-6" tabs for a single conversation.
+      if (opts?.resumeSessionId) {
+        const existing = terminalsRef.current.find(
+          (t) => t.sessionId === opts.resumeSessionId,
+        );
+        if (existing) {
+          console.debug('[Deepthix][useTerminals] open: already alive for sessionId', {
+            sessionId: opts.resumeSessionId,
+            existingId: existing.id,
+          });
+          return existing;
+        }
+      }
       try {
         const result = await cmdSpawnTerminal(cwd, kind, undefined, undefined, {
           skipPermissions: opts?.skipPermissions,

@@ -34,12 +34,30 @@ pub struct PersistedSession {
     pub notes: Option<String>,
 }
 
+/// Dedup by session_id, keeping the LAST occurrence (newer label, etc.).
+/// Defensive cleanup: a previous double-spawn bug wrote the same session
+/// id multiple times into sessions.json, causing N parallel claude
+/// processes to spawn on next boot for a single conversation.
+fn dedup_sessions(sessions: Vec<PersistedSession>) -> Vec<PersistedSession> {
+    let mut seen: std::collections::HashMap<String, PersistedSession> =
+        std::collections::HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for s in sessions {
+        if !seen.contains_key(&s.session_id) {
+            order.push(s.session_id.clone());
+        }
+        seen.insert(s.session_id.clone(), s);
+    }
+    order.into_iter().filter_map(|id| seen.remove(&id)).collect()
+}
+
 #[tauri::command]
 pub fn save_sessions(project_id: String, sessions: Vec<PersistedSession>) -> Result<(), String> {
-    tracing::debug!(target: "deepthix::commands", %project_id, count = sessions.len(), "save_sessions");
+    let cleaned = dedup_sessions(sessions);
+    tracing::debug!(target: "deepthix::commands", %project_id, count = cleaned.len(), "save_sessions");
     let dir = storage::project_dir(&project_id).map_err(|e| e.to_string())?;
     let path = dir.join("sessions.json");
-    storage::write_json(&path, &sessions).map_err(|e| e.to_string())
+    storage::write_json(&path, &cleaned).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -48,5 +66,47 @@ pub fn load_sessions(project_id: String) -> Result<Vec<PersistedSession>, String
     let dir = storage::project_dir(&project_id).map_err(|e| e.to_string())?;
     let path = dir.join("sessions.json");
     let value = storage::read_json::<Vec<PersistedSession>>(&path).map_err(|e| e.to_string())?;
-    Ok(value.unwrap_or_default())
+    Ok(dedup_sessions(value.unwrap_or_default()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk(id: &str, label: &str) -> PersistedSession {
+        PersistedSession {
+            session_id: id.into(),
+            label: label.into(),
+            cwd: PathBuf::from("/tmp"),
+            skip_permissions: false,
+            created_at_ms: 0,
+            font_size: None,
+            font_family: None,
+            line_height: None,
+            notes: None,
+        }
+    }
+
+    #[test]
+    fn dedup_keeps_last_occurrence() {
+        let input = vec![
+            mk("a", "first-a"),
+            mk("b", "only-b"),
+            mk("a", "second-a"),
+            mk("a", "third-a"),
+        ];
+        let out = dedup_sessions(input);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].session_id, "a");
+        assert_eq!(out[0].label, "third-a"); // last wins
+        assert_eq!(out[1].session_id, "b");
+    }
+
+    #[test]
+    fn dedup_preserves_first_seen_order() {
+        let input = vec![mk("z", "z"), mk("a", "a"), mk("z", "z2"), mk("m", "m")];
+        let out = dedup_sessions(input);
+        let ids: Vec<&str> = out.iter().map(|s| s.session_id.as_str()).collect();
+        assert_eq!(ids, vec!["z", "a", "m"]);
+    }
 }
