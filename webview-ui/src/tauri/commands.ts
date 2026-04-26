@@ -189,6 +189,16 @@ export async function openChrome(url: string, width: number, height: number): Pr
   return await invoke<void>('open_chrome', { url, width, height });
 }
 
+/**
+ * Hand a URL off to the OS default browser via macOS `open`. Used by the
+ * xterm web-links addon — clicking a link inside a terminal opens it in
+ * the user's normal browser, not the Tauri webview. Refuses non-http(s).
+ */
+export async function openExternalUrl(url: string): Promise<void> {
+  log('openExternalUrl', { url });
+  return await invoke<void>('open_external_url', { url });
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }

@@ -247,6 +247,15 @@ export function SessionsPane({
             }}
           >
             <TerminalTab
+              // Including fontFamily in the React key forces a full xterm
+              // re-mount when the user picks a new font. xterm 5.3's canvas
+              // renderer caches a glyph atlas built from the original font
+              // — flipping `term.options.fontFamily` updates the option but
+              // the atlas keeps drawing the OLD glyphs (visible bug: nothing
+              // changes on screen until the terminal is recreated). Because
+              // we persist + restore scrollback by sessionId, the user
+              // doesn't lose their conversation across this remount.
+              key={`${t.id}::${globalConfig.terminalFontFamily}`}
               termId={t.id}
               visible={t.id === effectiveActive}
               settings={globalConfig}

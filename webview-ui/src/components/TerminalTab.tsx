@@ -2,6 +2,7 @@ import 'xterm/css/xterm.css';
 
 import { FitAddon } from '@xterm/addon-fit';
 import { SerializeAddon } from '@xterm/addon-serialize';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import { useCallback, useEffect, useRef } from 'react';
 import { Terminal } from 'xterm';
 
@@ -14,6 +15,7 @@ import {
 import type { GlobalConfig } from '../hooks/useGlobalConfig';
 import {
   loadTerminalScrollback,
+  openExternalUrl,
   ptyResize,
   ptyWrite,
   saveTerminalScrollback,
@@ -137,8 +139,20 @@ export function TerminalTab({
     });
     const fit = new FitAddon();
     const serialize = new SerializeAddon();
+    // Web-links addon: detects http(s) URLs in the buffer and turns them
+    // into hover-able / clickable hotspots. We intercept the click and
+    // hand the URL off to the OS via `open_external_url` so it lands in
+    // the user's default browser instead of the Tauri webview (which
+    // would refuse external navigation anyway).
+    const webLinks = new WebLinksAddon((event, uri) => {
+      event.preventDefault();
+      void openExternalUrl(uri).catch((e) => {
+        console.warn('[Deepthix][TerminalTab] open external url failed', { uri, e });
+      });
+    });
     term.loadAddon(fit);
     term.loadAddon(serialize);
+    term.loadAddon(webLinks);
     term.open(el);
     // The xterm canvas renderer initializes lazily — the first fit() can
     // throw `_renderer.value.dimensions` is undefined. Swallow it; the

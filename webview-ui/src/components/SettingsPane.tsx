@@ -83,33 +83,72 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
           </span>
         </Row>
 
-        <Row label="Font family">
-          <select
-            value={config.terminalFontFamily}
-            onChange={(e) => update({ terminalFontFamily: e.target.value })}
+        <Row label="Font family" align="start">
+          {/* Grille de presets avec preview live de chaque font. Picking ne
+              fait pas de round-trip aller-retour — on persiste tout de suite
+              et `useGlobalConfig` propage la nouvelle valeur jusqu'aux
+              terminaux. */}
+          <div
             style={{
-              background: 'var(--color-bg-dark)',
-              color: 'inherit',
-              border: '2px solid var(--color-border)',
-              padding: '4px 8px',
-              fontFamily: 'var(--font-pixel)',
-              fontSize: '13px',
-              minWidth: '240px',
-              cursor: 'pointer',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+              gap: '6px',
+              maxWidth: '720px',
             }}
-            title="Terminal font family"
           >
-            {/* If the persisted value isn't in the preset list (custom), surface
-                it as an extra option so the dropdown never displays blank. */}
+            {TERMINAL_FONT_FAMILY_PRESETS.map((p) => {
+              const selected = p.value === config.terminalFontFamily;
+              return (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => update({ terminalFontFamily: p.value })}
+                  title={p.value}
+                  style={{
+                    textAlign: 'left',
+                    padding: '6px 8px',
+                    background: selected ? 'var(--color-accent)' : 'var(--color-bg-dark)',
+                    color: selected ? 'var(--color-bg-dark)' : 'inherit',
+                    border: '2px solid var(--color-border)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '2px',
+                    fontFamily: 'var(--font-pixel)',
+                  }}
+                >
+                  <span style={{ fontSize: '11px', opacity: 0.85 }}>{p.label}</span>
+                  {/* Preview rendered with the actual stack so the user sees
+                      what they're picking before committing. */}
+                  <span
+                    style={{
+                      fontFamily: p.value,
+                      fontSize: '14px',
+                      letterSpacing: 0,
+                    }}
+                  >
+                    The quick brown fox 0123
+                  </span>
+                </button>
+              );
+            })}
+            {/* Custom value (typed via the legacy path or persisted from an
+                older config) gets a visible "(custom)" entry. */}
             {!TERMINAL_FONT_FAMILY_PRESETS.some((p) => p.value === config.terminalFontFamily) && (
-              <option value={config.terminalFontFamily}>(custom)</option>
+              <div
+                style={{
+                  padding: '6px 8px',
+                  background: 'var(--color-accent)',
+                  color: 'var(--color-bg-dark)',
+                  border: '2px solid var(--color-border)',
+                  fontFamily: 'var(--font-pixel)',
+                  fontSize: '11px',
+                }}
+              >
+                (custom) — {config.terminalFontFamily}
+              </div>
             )}
-            {TERMINAL_FONT_FAMILY_PRESETS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+          </div>
         </Row>
 
         <Row label="Line height">
@@ -265,13 +304,34 @@ function Section({ title, subtitle, children }: SectionProps): React.JSX.Element
 interface RowProps {
   label: string;
   children: React.ReactNode;
+  /** "start" lets the row contain a tall multi-line block (font picker grid). */
+  align?: 'center' | 'start';
 }
 
-function Row({ label, children }: RowProps): React.JSX.Element {
+function Row({ label, children, align = 'center' }: RowProps): React.JSX.Element {
+  const alignItems = align === 'start' ? 'flex-start' : 'center';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-      <span style={{ fontSize: '13px', opacity: 0.75, minWidth: '120px' }}>{label}</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{children}</div>
+    <div style={{ display: 'flex', alignItems, gap: '12px' }}>
+      <span
+        style={{
+          fontSize: '13px',
+          opacity: 0.75,
+          minWidth: '120px',
+          paddingTop: align === 'start' ? '4px' : 0,
+        }}
+      >
+        {label}
+      </span>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: align === 'start' ? 'flex-start' : 'center',
+          gap: '4px',
+          flex: align === 'start' ? 1 : undefined,
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }

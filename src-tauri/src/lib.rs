@@ -84,6 +84,7 @@ pub fn run() {
             commands::processes::list_processes,
             commands::processes::kill_process,
             commands::chrome::open_chrome,
+            commands::chrome::open_external_url,
             commands::memory::read_project_memory,
             commands::memory::write_project_memory,
             commands::memory::read_global_memory,
