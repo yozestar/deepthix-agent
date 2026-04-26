@@ -130,6 +130,19 @@ export async function clearTerminalScrollback(
   return await invoke<void>('clear_terminal_scrollback', { projectId, sessionId });
 }
 
+/**
+ * mtime of the claude JSONL transcript for a session (epoch ms, 0 if
+ * absent). The frontend polls this as the most reliable "is claude
+ * actively working?" signal — if mtime moved in the last few seconds,
+ * the session is doing something (thinking / streaming / tool use).
+ */
+export async function jsonlMtimeMs(
+  projectCwd: string,
+  sessionId: string,
+): Promise<number> {
+  return await invoke<number>('jsonl_mtime_ms', { projectCwd, sessionId });
+}
+
 /** Absolute path to the per-session dashboard HTML file (used in placeholder). */
 export async function dashboardPath(projectId: string, sessionId: string): Promise<string> {
   log('dashboardPath', { projectId, sessionId });

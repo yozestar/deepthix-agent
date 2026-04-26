@@ -144,7 +144,11 @@ export function useAgentStatus(): UseAgentStatusResult {
   const status = useCallback(
     (agentId: number): AgentStatus => {
       const a = agents.get(agentId);
-      if (!a) return 'absent';
+      // No record yet → default to 'idle' (visible red dot) rather than
+      // 'absent' (transparent / invisible). 'absent' was making sessions
+      // that hadn't yet emitted an event look like they had no status at
+      // all, which is worse UX than just showing them as not-working.
+      if (!a) return 'idle';
       if (a.openTools > 0) return 'working';
       if (a.lastActivityMs > 0 && now - a.lastActivityMs < IDLE_TIMEOUT_MS) {
         return 'working';

@@ -77,6 +77,28 @@ pub fn load_terminal_scrollback(
     }
 }
 
+/// mtime (epoch ms) of the JSONL transcript file for a claude session,
+/// or 0 if absent. Cheap stat call — used by the frontend's "is this
+/// session working right now?" heuristic. Rolling forward = activity.
+#[tauri::command]
+pub fn jsonl_mtime_ms(project_cwd: String, session_id: String) -> Result<u64, String> {
+    let path =
+        crate::jsonl_watcher::predict_jsonl_path(std::path::Path::new(&project_cwd), &session_id);
+    match std::fs::metadata(&path) {
+        Ok(meta) => {
+            let mtime = meta
+                .modified()
+                .map_err(|e| e.to_string())?
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| e.to_string())?
+                .as_millis() as u64;
+            Ok(mtime)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 #[tauri::command]
 pub fn clear_terminal_scrollback(
     project_id: String,

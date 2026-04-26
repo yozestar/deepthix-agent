@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   clearTerminalScrollback as cmdClearTerminalScrollback,
+  jsonlMtimeMs as cmdJsonlMtimeMs,
   killTerminal as cmdKillTerminal,
   loadSessions as cmdLoadSessions,
   type PersistedSession,
@@ -133,6 +134,53 @@ export function useTerminals(): UseTerminalsResult {
       cancelled = true;
       if (unlisten) unlisten();
       window.removeEventListener('message', onPtyActivityMessage);
+    };
+  }, []);
+
+  // Periodic JSONL-mtime poll. The pty/event chain is the FAST path
+  // (sub-frame latency on activity) but it's fragile — it depends on
+  // TerminalTab being mounted, ptyActivity being dispatched before the
+  // terminals ref settles, etc. The mtime poll is the SLOW reliable
+  // path: every 2s, for every claude session, we stat its JSONL file
+  // and dispatch agentJsonlActivity if mtime moved since the last
+  // probe. This guarantees the working dot turns green within ~2s of
+  // any actual activity, even when the event chain breaks.
+  useEffect(() => {
+    let cancelled = false;
+    const lastMtime = new Map<number, number>(); // agentId → last seen mtime
+    const tick = async (): Promise<void> => {
+      if (cancelled) return;
+      const claudeTerms = terminalsRef.current.filter(
+        (t) => t.kind === 'claude' && t.sessionId,
+      );
+      await Promise.all(
+        claudeTerms.map(async (t) => {
+          try {
+            const mtime = await cmdJsonlMtimeMs(t.cwd, t.sessionId as string);
+            if (mtime <= 0) return;
+            const prev = lastMtime.get(t.agentId);
+            // First observation: just record the mtime, don't fire the
+            // working signal — the file may be days old at app start
+            // and the agent is clearly idle right now.
+            if (prev === undefined) {
+              lastMtime.set(t.agentId, mtime);
+              return;
+            }
+            if (mtime > prev) {
+              lastMtime.set(t.agentId, mtime);
+              dispatchWebviewMessage({ type: 'agentJsonlActivity', id: t.agentId });
+            }
+          } catch {
+            // ignore per-session failures (file may not exist yet)
+          }
+        }),
+      );
+    };
+    void tick();
+    const id = setInterval(() => void tick(), 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
     };
   }, []);
 
