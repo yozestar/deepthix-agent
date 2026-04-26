@@ -13,11 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { UseProjectsResult } from '../hooks/useProjects';
 import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
-import {
-  dashboardMtimeMs,
-  dashboardPath,
-  readSessionDashboard,
-} from '../tauri/commands';
+import { dashboardMtimeMs, readSessionDashboard } from '../tauri/commands';
 import { PixelBrain } from './PixelBrain';
 import { StatusDot } from './StatusDot';
 import type { Mode } from './TopTabs';
@@ -358,39 +354,17 @@ interface DashboardProps {
  * Renders an iframe (via `srcdoc` so it inherits no document context) that
  * reflects the contents of `~/.deepthix/projects/<pid>/dashboards/<sid>.html`.
  * Polls the file's mtime every 2s and re-reads the body only when it
- * changes, so claude can `Write` into the file and have its dashboard
+ * changes — so claude can `Write` into the file and have its dashboard
  * appear here within ~2s.
  *
- * When the file doesn't exist yet, we show a placeholder explaining the
- * path so the user can paste it into a claude prompt — e.g. "write your
- * progress to /Users/.../sid.html and update it as you work".
+ * When the file doesn't exist yet, the iframe area stays blank. Claude
+ * already knows where to write (DEEPTHIX_DASHBOARD_PATH env + the block
+ * we inject into the project's CLAUDE.md), so the previous "tell this
+ * session to write to <path>" placeholder was redundant noise.
  */
-function SessionDashboard({ projectId, sessionId }: DashboardProps): React.JSX.Element {
+function SessionDashboard({ projectId, sessionId }: DashboardProps): React.JSX.Element | null {
   const [html, setHtml] = useState<string | null>(null);
-  const [path, setPath] = useState<string>('');
-  const [error, setError] = useState<string | null>(null);
   const lastMtimeRef = useRef<number>(-1);
-
-  // Resolve the absolute path once for the placeholder + copy-button.
-  useEffect(() => {
-    if (!sessionId) {
-      setPath('');
-      return;
-    }
-    let cancelled = false;
-    void dashboardPath(projectId, sessionId)
-      .then((p) => {
-        if (!cancelled) setPath(p);
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          console.warn('[Deepthix][SessionDashboard] dashboardPath failed', e);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, sessionId]);
 
   // Poll mtime and re-read the body only on change. Avoids re-rendering the
   // iframe on every tick (which would reset scroll/JS state inside it).
@@ -416,13 +390,11 @@ function SessionDashboard({ projectId, sessionId }: DashboardProps): React.JSX.E
             const body = await readSessionDashboard(projectId, sessionId);
             if (cancelled) return;
             setHtml(body);
-            setError(null);
           }
         }
       } catch (e) {
         if (!cancelled) {
           console.warn('[Deepthix][SessionDashboard] poll failed', e);
-          setError(e instanceof Error ? e.message : String(e));
         }
       } finally {
         if (!cancelled) {
@@ -437,21 +409,8 @@ function SessionDashboard({ projectId, sessionId }: DashboardProps): React.JSX.E
     };
   }, [projectId, sessionId]);
 
-  if (!sessionId) {
-    return (
-      <div
-        style={{
-          padding: '10px',
-          fontSize: '11px',
-          opacity: 0.55,
-          border: '1px dashed var(--color-border)',
-          background: 'var(--color-bg-dark)',
-        }}
-      >
-        Shell terminals don't have a dashboard.
-      </div>
-    );
-  }
+  // Shell terminals get no dashboard slot at all (no session id → no file).
+  if (!sessionId) return null;
 
   return (
     <div
@@ -467,7 +426,7 @@ function SessionDashboard({ projectId, sessionId }: DashboardProps): React.JSX.E
         overflow: 'hidden',
       }}
     >
-      {html && html.length > 0 ? (
+      {html && html.length > 0 && (
         <iframe
           // Render the file contents inline via srcdoc — gives the iframe a
           // null origin (sandboxed by default) and avoids needing a custom
@@ -485,82 +444,6 @@ function SessionDashboard({ projectId, sessionId }: DashboardProps): React.JSX.E
             background: 'white',
           }}
         />
-      ) : (
-        <DashboardPlaceholder path={path} error={error} />
-      )}
-    </div>
-  );
-}
-
-interface PlaceholderProps {
-  path: string;
-  error: string | null;
-}
-
-function DashboardPlaceholder({ path, error }: PlaceholderProps): React.JSX.Element {
-  const [copied, setCopied] = useState(false);
-  const onCopy = async (): Promise<void> => {
-    if (!path) return;
-    try {
-      await navigator.clipboard.writeText(path);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch (e) {
-      console.warn('[Deepthix][DashboardPlaceholder] copy failed', e);
-    }
-  };
-  return (
-    <div
-      style={{
-        padding: '10px',
-        fontSize: '11px',
-        color: 'var(--color-text-muted)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '6px',
-        height: '100%',
-        boxSizing: 'border-box',
-        overflow: 'auto',
-      }}
-    >
-      <div>
-        Tell this session to write its important data as HTML to:
-      </div>
-      <code
-        style={{
-          background: 'var(--color-bg)',
-          border: '1px solid var(--color-border)',
-          padding: '4px 6px',
-          fontSize: '10px',
-          wordBreak: 'break-all',
-          fontFamily: 'var(--font-pixel)',
-        }}
-        title={path}
-      >
-        {path || '(resolving…)'}
-      </code>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          void onCopy();
-        }}
-        disabled={!path}
-        style={{
-          alignSelf: 'flex-start',
-          padding: '3px 8px',
-          fontSize: '11px',
-          background: 'transparent',
-          color: 'inherit',
-          border: '2px solid var(--color-border)',
-          fontFamily: 'var(--font-pixel)',
-          cursor: path ? 'pointer' : 'default',
-        }}
-      >
-        {copied ? '✓ copied' : 'copy path'}
-      </button>
-      {error && (
-        <div style={{ color: 'var(--color-danger)', fontSize: '10px' }}>{error}</div>
       )}
     </div>
   );
