@@ -7,12 +7,25 @@ license = "MIT"
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
+# Tauri's `cargo run` invocation needs to know which binary to launch
+# now that we ship both `app` (the Tauri shell) and `deepthix-mcp`
+# (the JSON-RPC sidecar claude spawns).
+default-run = "app"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+# Sidecar binary: a small JSON-RPC stdio MCP server that claude
+# launches via --mcp-config. Exposes tools that read session state
+# from ~/.deepthix/ and ~/.claude/projects/ so the orchestrator (and
+# any other claude session) can introspect what its siblings are
+# doing without going through HTTP / Tauri IPC.
+[[bin]]
+name = "deepthix-mcp"
+path = "src/bin/deepthix-mcp.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.5.6", features = [] }

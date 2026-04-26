@@ -83,13 +83,40 @@ printf ' '
     }
 
     let dumper_str = dumper.to_string_lossy().into_owned();
-    let overlay = serde_json::json!({
+
+    // Resolve the MCP sidecar binary path. In dev it sits next to the
+    // main app binary in target/debug/. In a bundled .app we'll need to
+    // ship it via Tauri's sidecar config — for now we just look beside
+    // the running executable, which works for both dev and any sidecar
+    // copy that lands in the same dir.
+    let mcp_bin = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("deepthix-mcp")))
+        .filter(|p| p.exists());
+
+    let mut overlay = serde_json::json!({
         "statusLine": {
             "type": "command",
             "command": dumper_str,
             "padding": 0,
         }
     });
+    if let Some(mcp_path) = mcp_bin {
+        let mcp_str = mcp_path.to_string_lossy().into_owned();
+        // mcpServers schema (claude code): each entry is { type: "stdio",
+        // command: "<bin>", args?: [...] }. claude spawns the subprocess
+        // and speaks JSON-RPC over stdio.
+        overlay["mcpServers"] = serde_json::json!({
+            "deepthix": {
+                "type": "stdio",
+                "command": mcp_str,
+                "args": []
+            }
+        });
+        tracing::info!(target: "deepthix::usage_snapshot", %mcp_str, "registered deepthix MCP server in overlay");
+    } else {
+        tracing::warn!(target: "deepthix::usage_snapshot", "deepthix-mcp binary not found beside app — orchestrator tools disabled");
+    }
     let overlay_str = serde_json::to_string_pretty(&overlay).unwrap();
     let overlay_path = overlay_settings_path()?;
     let needs_write = match std::fs::read_to_string(&overlay_path) {
