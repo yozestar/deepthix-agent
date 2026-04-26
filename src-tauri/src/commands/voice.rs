@@ -49,20 +49,36 @@ fn which(name: &str) -> Option<PathBuf> {
 }
 
 fn pick_model() -> Option<PathBuf> {
-    // Prefer larger / more accurate models if the user has them.
+    // Prefer larger / more accurate models if the user has them. Each
+    // entry has a min-size sanity check to skip truncated/corrupt
+    // downloads — a half-downloaded `ggml-small.bin` (60MB instead of
+    // 466MB) crashes whisper-cli with the cryptic "failed to initialize
+    // whisper context" instead of telling us the model is busted.
     let home = dirs::home_dir()?;
     let cache = home.join(".cache").join("whisper");
-    for name in [
-        "ggml-large-v3.bin",
-        "ggml-large-v2.bin",
-        "ggml-medium.bin",
-        "ggml-small.bin",
-        "ggml-base.bin",
-        "ggml-tiny.bin",
-    ] {
+    let candidates: &[(&str, u64)] = &[
+        ("ggml-large-v3.bin", 2_800_000_000),
+        ("ggml-large-v2.bin", 2_800_000_000),
+        ("ggml-medium.bin", 1_400_000_000),
+        ("ggml-small.bin", 400_000_000),
+        ("ggml-base.bin", 130_000_000),
+        ("ggml-tiny.bin", 70_000_000),
+    ];
+    for (name, min_size) in candidates {
         let p = cache.join(name);
-        if p.is_file() {
-            return Some(p);
+        match std::fs::metadata(&p) {
+            Ok(m) if m.is_file() && m.len() >= *min_size => return Some(p),
+            Ok(m) => {
+                tracing::warn!(
+                    target: "deepthix::voice",
+                    model = %name,
+                    actual = m.len(),
+                    expected_min = min_size,
+                    "skipping truncated/corrupt model — re-download with: whisper --model {} --download-only",
+                    name.trim_start_matches("ggml-").trim_end_matches(".bin"),
+                );
+            }
+            Err(_) => {} // not present, ok
         }
     }
     None
