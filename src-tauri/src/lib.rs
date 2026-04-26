@@ -92,6 +92,8 @@ pub fn run() {
             commands::config::read_global_config,
             commands::config::write_global_config,
             commands::usage::read_claude_usage,
+            commands::usage::read_claude_subscription,
+            commands::usage::read_claude_daily_activity,
         ])
         .setup(|_app| {
             tracing::info!(target: "deepthix::boot", "tauri setup complete");

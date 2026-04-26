@@ -224,6 +224,40 @@ export async function readClaudeUsage(): Promise<ClaudeUsage> {
   return await invoke<ClaudeUsage>('read_claude_usage');
 }
 
+export interface ClaudeSubscription {
+  /** "max", "pro", "free", … or empty if not signed in. */
+  subscription_type: string;
+  /** "default_claude_max_20x" etc. Empty if absent. */
+  rate_limit_tier: string;
+  /** True iff the keychain entry was readable. */
+  authenticated: boolean;
+}
+
+/** Subscription tier read from the macOS keychain (Claude Code-credentials). */
+export async function readClaudeSubscription(): Promise<ClaudeSubscription> {
+  log('readClaudeSubscription');
+  return await invoke<ClaudeSubscription>('read_claude_subscription');
+}
+
+export interface DailyActivity {
+  date: string;
+  message_count: number;
+  session_count: number;
+  tool_call_count: number;
+}
+
+export interface ClaudeActivity {
+  today: DailyActivity;
+  all_time: DailyActivity;
+  last_computed_date: string;
+}
+
+/** Daily message/session/tool counts from claude's local stats-cache.json. */
+export async function readClaudeDailyActivity(): Promise<ClaudeActivity> {
+  log('readClaudeDailyActivity');
+  return await invoke<ClaudeActivity>('read_claude_daily_activity');
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }

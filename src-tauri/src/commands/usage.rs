@@ -10,6 +10,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Command;
 
 use chrono::{Local, NaiveDate, TimeZone};
 use serde::{Deserialize, Serialize};
@@ -180,6 +181,159 @@ fn scan_jsonl(path: &PathBuf, today: NaiveDate, out: &mut ClaudeUsage) {
             }
         }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Subscription info — read from the macOS keychain entry claude code stores.
+// Anthropic doesn't expose a usage-limits API to OAuth subscribers, so we
+// can only surface the subscription tier name + a link to claude.ai for
+// detailed limits. (See sibling command `read_claude_daily_activity`
+// for what we CAN show locally.)
+// ─────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ClaudeSubscription {
+    /// e.g. "max", "pro", "free". Empty if we can't read the keychain.
+    pub subscription_type: String,
+    /// e.g. "default_claude_max_20x". Empty if absent.
+    pub rate_limit_tier: String,
+    /// True iff we successfully read + parsed the keychain entry.
+    pub authenticated: bool,
+}
+
+#[derive(Deserialize)]
+struct KeychainPayload {
+    #[serde(rename = "claudeAiOauth")]
+    claude_ai_oauth: Option<OauthBlock>,
+}
+
+#[derive(Deserialize)]
+struct OauthBlock {
+    #[serde(rename = "subscriptionType", default)]
+    subscription_type: Option<String>,
+    #[serde(rename = "rateLimitTier", default)]
+    rate_limit_tier: Option<String>,
+}
+
+#[tauri::command]
+pub fn read_claude_subscription() -> Result<ClaudeSubscription, String> {
+    // `security find-generic-password -s "Claude Code-credentials" -w` prints
+    // ONLY the password value (the JSON blob) on stdout. We parse it for
+    // the subscription metadata. macOS-only — fine since the whole app is.
+    let output = Command::new("security")
+        .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+        .output()
+        .map_err(|e| format!("security spawn failed: {e}"))?;
+    if !output.status.success() {
+        // Not authed → return empty/unauthenticated rather than error
+        // so the UI can show a sane "not signed in" placeholder.
+        tracing::debug!(target: "deepthix::commands", "no Claude Code keychain entry");
+        return Ok(ClaudeSubscription::default());
+    }
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let parsed: KeychainPayload = match serde_json::from_str(&raw) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(target: "deepthix::commands", error = %e, "parse keychain payload");
+            return Ok(ClaudeSubscription::default());
+        }
+    };
+    let oauth = parsed.claude_ai_oauth.unwrap_or(OauthBlock {
+        subscription_type: None,
+        rate_limit_tier: None,
+    });
+    Ok(ClaudeSubscription {
+        subscription_type: oauth.subscription_type.unwrap_or_default(),
+        rate_limit_tier: oauth.rate_limit_tier.unwrap_or_default(),
+        authenticated: true,
+    })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Daily activity — claude code maintains ~/.claude/stats-cache.json with
+// {date, messageCount, sessionCount, toolCallCount} per day.
+// Lightly stale (claude only refreshes it occasionally) but it's the
+// most accurate per-day picture we can get without the API.
+// ─────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct DailyActivity {
+    pub date: String,
+    pub message_count: u64,
+    pub session_count: u64,
+    pub tool_call_count: u64,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ClaudeActivity {
+    /// Today's bucket if present, else zeros.
+    pub today: DailyActivity,
+    /// Sum of every day's bucket — all-time totals.
+    pub all_time: DailyActivity,
+    /// Date claude last refreshed the cache (yyyy-mm-dd).
+    pub last_computed_date: String,
+}
+
+#[derive(Deserialize)]
+struct StatsCache {
+    #[serde(rename = "lastComputedDate", default)]
+    last_computed_date: Option<String>,
+    #[serde(rename = "dailyActivity", default)]
+    daily_activity: Vec<DailyActivityRaw>,
+}
+
+#[derive(Deserialize)]
+struct DailyActivityRaw {
+    date: String,
+    #[serde(rename = "messageCount", default)]
+    message_count: u64,
+    #[serde(rename = "sessionCount", default)]
+    session_count: u64,
+    #[serde(rename = "toolCallCount", default)]
+    tool_call_count: u64,
+}
+
+#[tauri::command]
+pub fn read_claude_daily_activity() -> Result<ClaudeActivity, String> {
+    let path = match dirs::home_dir() {
+        Some(h) => h.join(".claude").join("stats-cache.json"),
+        None => return Err("no home dir".to_string()),
+    };
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(ClaudeActivity::default());
+        }
+        Err(e) => return Err(format!("read {}: {e}", path.display())),
+    };
+    let cache: StatsCache = match serde_json::from_str(&raw) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(target: "deepthix::commands", error = %e, "parse stats-cache.json");
+            return Ok(ClaudeActivity::default());
+        }
+    };
+    let today_iso = today_local().format("%Y-%m-%d").to_string();
+    let mut today = DailyActivity {
+        date: today_iso.clone(),
+        ..Default::default()
+    };
+    let mut all_time = DailyActivity::default();
+    for d in &cache.daily_activity {
+        all_time.message_count += d.message_count;
+        all_time.session_count += d.session_count;
+        all_time.tool_call_count += d.tool_call_count;
+        if d.date == today_iso {
+            today.message_count = d.message_count;
+            today.session_count = d.session_count;
+            today.tool_call_count = d.tool_call_count;
+        }
+    }
+    Ok(ClaudeActivity {
+        today,
+        all_time,
+        last_computed_date: cache.last_computed_date.unwrap_or_default(),
+    })
 }
 
 #[cfg(test)]
