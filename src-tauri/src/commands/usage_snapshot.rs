@@ -37,6 +37,15 @@ pub fn overlay_settings_path() -> std::io::Result<PathBuf> {
     Ok(storage::deepthix_dir()?.join("claude-overlay-settings.json"))
 }
 
+/// Separate MCP-only config we pass via `--mcp-config`. claude code
+/// IGNORES `mcpServers` inside `--settings` files — MCP servers must
+/// come from `--mcp-config` (or be registered globally via
+/// `claude mcp add`). This file lists just the deepthix sidecar so
+/// every Deepthix-spawned session can use its read tools.
+pub fn mcp_config_path() -> std::io::Result<PathBuf> {
+    Ok(storage::deepthix_dir()?.join("claude-mcp-config.json"))
+}
+
 /// Idempotently install the dumper script + the overlay settings file.
 /// Safe to call repeatedly — only writes when the on-disk content
 /// differs from the canonical version. Returns Ok(()) even if writes
@@ -94,29 +103,13 @@ printf ' '
         .and_then(|p| p.parent().map(|d| d.join("deepthix-mcp")))
         .filter(|p| p.exists());
 
-    let mut overlay = serde_json::json!({
+    let overlay = serde_json::json!({
         "statusLine": {
             "type": "command",
             "command": dumper_str,
             "padding": 0,
         }
     });
-    if let Some(mcp_path) = mcp_bin {
-        let mcp_str = mcp_path.to_string_lossy().into_owned();
-        // mcpServers schema (claude code): each entry is { type: "stdio",
-        // command: "<bin>", args?: [...] }. claude spawns the subprocess
-        // and speaks JSON-RPC over stdio.
-        overlay["mcpServers"] = serde_json::json!({
-            "deepthix": {
-                "type": "stdio",
-                "command": mcp_str,
-                "args": []
-            }
-        });
-        tracing::info!(target: "deepthix::usage_snapshot", %mcp_str, "registered deepthix MCP server in overlay");
-    } else {
-        tracing::warn!(target: "deepthix::usage_snapshot", "deepthix-mcp binary not found beside app — orchestrator tools disabled");
-    }
     let overlay_str = serde_json::to_string_pretty(&overlay).unwrap();
     let overlay_path = overlay_settings_path()?;
     let needs_write = match std::fs::read_to_string(&overlay_path) {
@@ -126,6 +119,34 @@ printf ' '
     if needs_write {
         std::fs::write(&overlay_path, overlay_str.as_bytes())?;
         tracing::info!(target: "deepthix::usage_snapshot", ?overlay_path, "installed overlay settings");
+    }
+
+    // MCP config — separate file because claude code ignores mcpServers
+    // inside --settings files. This is the file we pass via
+    // --mcp-config when spawning claude.
+    if let Some(mcp_path) = mcp_bin {
+        let mcp_str = mcp_path.to_string_lossy().into_owned();
+        let mcp_config = serde_json::json!({
+            "mcpServers": {
+                "deepthix": {
+                    "type": "stdio",
+                    "command": mcp_str,
+                    "args": []
+                }
+            }
+        });
+        let mcp_config_str = serde_json::to_string_pretty(&mcp_config).unwrap();
+        let mcp_config_file = mcp_config_path()?;
+        let needs_write = match std::fs::read_to_string(&mcp_config_file) {
+            Ok(existing) => existing != mcp_config_str,
+            Err(_) => true,
+        };
+        if needs_write {
+            std::fs::write(&mcp_config_file, mcp_config_str.as_bytes())?;
+            tracing::info!(target: "deepthix::usage_snapshot", ?mcp_config_file, "installed MCP config");
+        }
+    } else {
+        tracing::warn!(target: "deepthix::usage_snapshot", "deepthix-mcp binary not found beside app — orchestrator tools disabled");
     }
 
     Ok(())

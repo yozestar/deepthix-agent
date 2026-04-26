@@ -241,9 +241,10 @@ impl TerminalManager {
             cmd.arg("--dangerously-skip-permissions");
         }
         // Pass our overlay settings so claude pipes its rate_limits JSON
-        // to our snapshot dumper script via statusLine. Best-effort —
-        // if install failed (read-only home, etc.) we just skip the flag
-        // and the session runs normally without our usage capture.
+        // to our snapshot dumper script via statusLine, AND pass
+        // --mcp-config so claude spawns the deepthix MCP sidecar (read
+        // tools for the orchestrator). Both files are installed by
+        // ensure_installed(); best-effort if install failed.
         match crate::commands::usage_snapshot::ensure_installed() {
             Ok(()) => {
                 if let Ok(overlay) = crate::commands::usage_snapshot::overlay_settings_path() {
@@ -251,6 +252,14 @@ impl TerminalManager {
                     tracing::debug!(target: "deepthix::pty", %overlay_str, "passing --settings overlay");
                     cmd.arg("--settings");
                     cmd.arg(&overlay_str);
+                }
+                if let Ok(mcp) = crate::commands::usage_snapshot::mcp_config_path() {
+                    if mcp.exists() {
+                        let mcp_str = mcp.to_string_lossy().into_owned();
+                        tracing::debug!(target: "deepthix::pty", %mcp_str, "passing --mcp-config");
+                        cmd.arg("--mcp-config");
+                        cmd.arg(&mcp_str);
+                    }
                 }
             }
             Err(e) => {
