@@ -35,34 +35,23 @@ interface ProjectGroup {
 export function OverviewPane({ terminals, projects, onChangeMode }: Props): React.JSX.Element {
   const agentStatus = useAgentStatus();
 
-  // Group every claude session by projectId, in projects-list order so the
-  // layout matches the sidebar.
+  // Only show the ACTIVE project's sessions (per user request: clicking
+  // OVERVIEW from the sidebar should mean "tell me about THIS project",
+  // not "show me everything everywhere"). The cross-project flat view is
+  // gone — there's nothing else here.
   const groups = useMemo<ProjectGroup[]>(() => {
-    const out: ProjectGroup[] = [];
-    for (const p of projects.projects) {
-      const sessions = terminals.terminals.filter(
-        (t) => t.projectId === p.id && t.kind === 'claude',
-      );
-      if (sessions.length === 0) continue;
-      out.push({ projectId: p.id, projectName: p.name, projectPath: p.path, sessions });
-    }
-    // Also surface sessions whose project is no longer registered (rare —
-    // happens if you remove a project while a terminal is still alive). Group
-    // them under a synthetic "Orphaned" bucket so users can still click in.
-    const knownIds = new Set(projects.projects.map((p) => p.id));
-    const orphans = terminals.terminals.filter(
-      (t) => t.kind === 'claude' && !knownIds.has(t.projectId),
+    const activeId = projects.activeProjectId;
+    if (!activeId) return [];
+    const active = projects.projects.find((p) => p.id === activeId);
+    if (!active) return [];
+    const sessions = terminals.terminals.filter(
+      (t) => t.projectId === activeId && t.kind === 'claude',
     );
-    if (orphans.length > 0) {
-      out.push({
-        projectId: '__orphans__',
-        projectName: '(removed projects)',
-        projectPath: '',
-        sessions: orphans,
-      });
-    }
-    return out;
-  }, [projects.projects, terminals.terminals]);
+    if (sessions.length === 0) return [];
+    return [
+      { projectId: active.id, projectName: active.name, projectPath: active.path, sessions },
+    ];
+  }, [projects.activeProjectId, projects.projects, terminals.terminals]);
 
   const totalSessions = useMemo(
     () => groups.reduce((acc, g) => acc + g.sessions.length, 0),
@@ -105,7 +94,7 @@ export function OverviewPane({ terminals, projects, onChangeMode }: Props): Reac
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{ fontSize: '15px', letterSpacing: '0.06em' }}>OVERVIEW</span>
           <span style={{ fontSize: '12px', opacity: 0.6 }}>
-            All claude sessions across every open project.
+            Sessions claude du projet actif.
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px' }}>
@@ -133,9 +122,9 @@ export function OverviewPane({ terminals, projects, onChangeMode }: Props): Reac
             lineHeight: 1.6,
           }}
         >
-          No sessions anywhere yet.
+          Aucune session pour ce projet.
           <br />
-          Open a project from the sidebar and click <strong>+ Session</strong> to spawn one.
+          Clique sur <strong>+ Session</strong> dans la sidebar pour en créer une.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -227,13 +216,15 @@ function ProjectGroupView({
         </span>
       </div>
 
-      {/* Brain cards + per-session live HTML dashboard. The grid is wider
-          than before (min 320px) so the iframe has room to breathe. */}
+      {/* Cards avec iframe pleine largeur. Une seule colonne quand il n'y
+          a qu'une session, sinon 2 colonnes max — l'iframe a besoin de
+          place pour qu'on lise vraiment le dashboard. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-          gap: '12px',
+          gridTemplateColumns:
+            group.sessions.length === 1 ? '1fr' : 'repeat(auto-fill, minmax(520px, 1fr))',
+          gap: '16px',
         }}
       >
         {group.sessions.map((s, idx) => (
@@ -265,7 +256,7 @@ interface CardProps {
   onClick: () => void;
 }
 
-const BRAIN_SIZE = 88;
+const BRAIN_SIZE = 56;
 /** How often we poll the dashboard file's mtime. Cheap call (just stat). */
 const DASHBOARD_POLL_MS = 2_000;
 
@@ -280,25 +271,22 @@ function SessionCard({
   return (
     <div
       style={{
-        padding: '10px',
+        padding: '12px',
         background: active ? 'var(--color-bg-dark)' : 'transparent',
         border: '2px solid var(--color-border)',
         boxShadow: 'var(--shadow-pixel)',
         display: 'flex',
         flexDirection: 'column',
-        gap: '8px',
+        gap: '12px',
         fontFamily: 'var(--font-pixel)',
         position: 'relative',
       }}
       title={`${projectName} — ${terminal.label}`}
     >
-      {/* Status dot pinned top-right so it doesn't compete with the brain. */}
-      <div style={{ position: 'absolute', top: 6, right: 6 }}>
-        <StatusDot status={status} title={status} />
-      </div>
-
-      {/* Brain + label. Click-to-focus is on this header only — clicks in
-          the iframe area below should NOT also switch sessions. */}
+      {/* Header: brain + label sur la même ligne (gain de place vertical
+          pour l'iframe), session label en plus pour distinguer plusieurs
+          sessions du même projet. Click-to-focus uniquement sur cette
+          rangée — pas sur l'iframe en-dessous. */}
       <div
         role="button"
         tabIndex={0}
@@ -312,25 +300,36 @@ function SessionCard({
         style={{
           cursor: 'pointer',
           display: 'flex',
-          flexDirection: 'column',
           alignItems: 'center',
-          gap: '6px',
+          gap: '12px',
         }}
         title="Click to focus this session"
       >
         <PixelBrain seed={seed} size={BRAIN_SIZE} active={active} />
-        <span
-          style={{
-            fontSize: '13px',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            maxWidth: '100%',
-            textAlign: 'center',
-          }}
-        >
-          {projectName}
-        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+          <span
+            style={{
+              fontSize: '14px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {projectName}
+          </span>
+          <span
+            style={{
+              fontSize: '11px',
+              opacity: 0.55,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {terminal.label}
+          </span>
+        </div>
+        <StatusDot status={status} title={status} />
       </div>
 
       <SessionDashboard
@@ -418,9 +417,12 @@ function SessionDashboard({ projectId, sessionId }: DashboardProps): React.JSX.E
       style={{
         border: '2px solid var(--color-border)',
         background: 'var(--color-bg-dark)',
-        // Fixed height keeps the OVERVIEW grid consistent — the iframe
-        // scrolls internally if claude writes a long page.
-        height: '260px',
+        // Tall iframe — the dashboard is THE main content of OVERVIEW
+        // now that we only show the active project. Picks min(60vh, 600px)
+        // so the iframe fills the page on a tall window without ever
+        // pushing the header off screen on a short one.
+        height: 'min(60vh, 600px)',
+        minHeight: '420px',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
