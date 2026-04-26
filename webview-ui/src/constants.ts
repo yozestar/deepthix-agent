@@ -176,29 +176,35 @@ export const TERMINAL_LINE_HEIGHT_STEP = 0.05;
  * is meaningless inside xterm's canvas — Menlo wins as the fallback —
  * but kept for parity with the design spec so users can reset by name.
  */
+/**
+ * Each entry is shown as a preview tile in the Settings font picker
+ * AND used as the actual `fontFamily` string for xterm. We only list
+ * fonts that are EITHER:
+ *   - bundled with macOS (Menlo, Monaco, SF Mono, Courier New), or
+ *   - loaded at runtime via Google Fonts in index.html
+ * Anything else (Cascadia, Hack, Iosevka, Victor Mono…) would show a
+ * Menlo fallback in the preview because the user doesn't have it
+ * installed — confusing UX, so we omit them.
+ */
 export const TERMINAL_FONT_FAMILY_PRESETS: ReadonlyArray<{ label: string; value: string }> = [
+  // System fonts (macOS)
   { label: 'Menlo', value: 'Menlo, monospace' },
   { label: 'Monaco', value: 'Monaco, monospace' },
   { label: 'SF Mono', value: '"SF Mono", Menlo, monospace' },
   { label: 'Courier New', value: '"Courier New", Menlo, monospace' },
+  // Loaded via Google Fonts in index.html
   { label: 'JetBrains Mono', value: '"JetBrains Mono", Menlo, monospace' },
   { label: 'Fira Code', value: '"Fira Code", Menlo, monospace' },
   { label: 'Source Code Pro', value: '"Source Code Pro", Menlo, monospace' },
-  { label: 'Cascadia Code', value: '"Cascadia Code", Menlo, monospace' },
-  { label: 'Cascadia Mono', value: '"Cascadia Mono", Menlo, monospace' },
   { label: 'IBM Plex Mono', value: '"IBM Plex Mono", Menlo, monospace' },
-  { label: 'Hack', value: 'Hack, Menlo, monospace' },
-  { label: 'Iosevka', value: 'Iosevka, Menlo, monospace' },
-  { label: 'Iosevka Term', value: '"Iosevka Term", Menlo, monospace' },
-  { label: 'Inconsolata', value: 'Inconsolata, Menlo, monospace' },
-  { label: 'Anonymous Pro', value: '"Anonymous Pro", Menlo, monospace' },
   { label: 'Roboto Mono', value: '"Roboto Mono", Menlo, monospace' },
   { label: 'Ubuntu Mono', value: '"Ubuntu Mono", Menlo, monospace' },
-  { label: 'DejaVu Sans Mono', value: '"DejaVu Sans Mono", Menlo, monospace' },
-  { label: 'Liberation Mono', value: '"Liberation Mono", Menlo, monospace' },
+  { label: 'Inconsolata', value: 'Inconsolata, Menlo, monospace' },
   { label: 'PT Mono', value: '"PT Mono", Menlo, monospace' },
   { label: 'Space Mono', value: '"Space Mono", Menlo, monospace' },
-  { label: 'Victor Mono', value: '"Victor Mono", Menlo, monospace' },
-  { label: 'Operator Mono', value: '"Operator Mono", Menlo, monospace' },
+  { label: 'Anonymous Pro', value: '"Anonymous Pro", Menlo, monospace' },
+  { label: 'DM Mono', value: '"DM Mono", Menlo, monospace' },
+  { label: 'Cousine', value: 'Cousine, Menlo, monospace' },
+  // Project pixel font
   { label: 'Pixel (project)', value: 'var(--font-pixel), Menlo, monospace' },
 ];

@@ -5,6 +5,21 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Deepthix Agent</title>
+    <!--
+      Google Fonts: load the popular monospace families the user can pick
+      in Settings. Without these, the browser falls back to the system
+      default (Menlo) and every preview tile in the picker looks the
+      same. Loading them here also makes them usable inside xterm — the
+      WebGL/canvas renderer can use any font available to the document.
+      `display=block` so the picker doesn't show a flash of fallback
+      glyphs while a font is downloading.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono&family=Fira+Code&family=Source+Code+Pro&family=IBM+Plex+Mono&family=Roboto+Mono&family=Ubuntu+Mono&family=Inconsolata&family=PT+Mono&family=Space+Mono&family=Anonymous+Pro&family=DM+Mono&family=Cousine&display=block"
+    />
   </head>
   <body>
     <div id="root"></div>
