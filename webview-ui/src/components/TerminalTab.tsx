@@ -185,23 +185,15 @@ export function TerminalTab({
       } else {
         term.write(e.data);
       }
-      // Activity ping for the agent dot. Pty stdout is the FASTEST signal
-      // claude is alive — fires within a frame of the byte hitting the
-      // terminal, way before the JSONL watcher polls. Without this, a
-      // session that streams output silently (no tool_use) could sit on
-      // the red dot for up to 500ms after each token even though it's
-      // clearly working.
-      if (sessionId !== null) {
-        // Find the agentId by matching termId via a window lookup —
-        // useTerminals already exposes this via a ref. We dispatch a
-        // generic activity event keyed by termId; useAgentStatus
-        // resolves to agentId via the entry in useTerminals.
-        window.dispatchEvent(
-          new MessageEvent('message', {
-            data: { type: 'ptyActivity', termId },
-          }),
-        );
-      }
+      // NOTE: we used to dispatch a ptyActivity ping here as a fast
+      // working-status signal, but claude TUI redraws (cursor blink,
+      // rate-limit indicator, status footer animation) push bytes
+      // through the pty even when claude is idle — making the dot
+      // oscillate green→red on its own. The JSONL-size poll in
+      // useTerminals is the source of truth now: only real new content
+      // (thinking record, tool call, streamed message) grows the
+      // transcript file, so it's a clean signal at the cost of ~2s
+      // latency.
     }).then((fn) => {
       unlisten = fn;
     });
