@@ -77,8 +77,13 @@ export function OverviewPane({ terminals, projects, onChangeMode }: Props): Reac
         minHeight: 0,
         background: 'var(--color-bg)',
         padding: '20px 24px',
-        overflow: 'auto',
+        // No more outer overflow:auto — the iframe is the main content
+        // and it scrolls internally. Letting the page scroll AND the
+        // iframe scroll just makes both feel broken.
+        overflow: 'hidden',
         fontFamily: 'var(--font-pixel)',
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       {/* Header */}
@@ -127,7 +132,15 @@ export function OverviewPane({ terminals, projects, onChangeMode }: Props): Reac
           Clique sur <strong>+ Session</strong> dans la sidebar pour en créer une.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px',
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
           {groups.map((g) => (
             <ProjectGroupView
               key={g.projectId}
@@ -160,6 +173,18 @@ function ProjectGroupView({
   status,
   onPickSession,
 }: GroupViewProps): React.JSX.Element {
+  // Active session for the iframe. If the user clicks a tab, switch to
+  // that one. Default to the first session and re-sync if it gets
+  // removed (e.g. session closed externally).
+  const [activeSessionId, setActiveSessionId] = useState<string>(group.sessions[0]?.id ?? '');
+  useEffect(() => {
+    if (!group.sessions.some((s) => s.id === activeSessionId)) {
+      setActiveSessionId(group.sessions[0]?.id ?? '');
+    }
+  }, [group.sessions, activeSessionId]);
+
+  const activeSession = group.sessions.find((s) => s.id === activeSessionId) ?? group.sessions[0];
+  const activeIdx = activeSession ? group.sessions.indexOf(activeSession) : 0;
   const anyWorking = group.sessions.some((s) => status(s.agentId) === 'working');
   const projectStatus = anyWorking ? 'working' : 'idle';
 
@@ -172,11 +197,19 @@ function ProjectGroupView({
         padding: '12px 14px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '12px',
+        gap: '10px',
+        // Fill the OVERVIEW pane vertically — the iframe inside is the
+        // main content.
+        flex: 1,
+        minHeight: 0,
         fontFamily: 'var(--font-pixel)',
       }}
     >
-      {/* Project header */}
+      {/* Top bar: project info on the left, session pills on the right.
+          Pills switch which session's iframe is shown below; jump-to-
+          session-terminal still works via the FOCUS button so the user
+          can flip to the SESSIONS pane without losing the dashboard
+          view they're inspecting. */}
       <div
         style={{
           display: 'flex',
@@ -184,6 +217,7 @@ function ProjectGroupView({
           gap: '10px',
           borderBottom: '2px solid var(--color-border)',
           paddingBottom: '8px',
+          flexWrap: 'wrap',
         }}
       >
         <StatusDot status={projectStatus} />
@@ -205,39 +239,41 @@ function ProjectGroupView({
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
               flex: 1,
+              minWidth: 0,
             }}
             title={group.projectPath}
           >
             {group.projectPath}
           </span>
         )}
-        <span style={{ fontSize: '12px', opacity: 0.6 }}>
-          {group.sessions.length} session{group.sessions.length === 1 ? '' : 's'}
-        </span>
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+          {group.sessions.map((s, idx) => (
+            <SessionPill
+              key={s.id}
+              terminal={s}
+              seed={`${s.projectId}#${idx}`}
+              status={status(s.agentId)}
+              isActive={s.id === activeSession?.id}
+              onClick={() => setActiveSessionId(s.id)}
+              onFocus={() => onPickSession(s)}
+            />
+          ))}
+        </div>
       </div>
 
-      {/* Cards avec iframe pleine largeur. Une seule colonne quand il n'y
-          a qu'une session, sinon 2 colonnes max — l'iframe a besoin de
-          place pour qu'on lise vraiment le dashboard. */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns:
-            group.sessions.length === 1 ? '1fr' : 'repeat(auto-fill, minmax(520px, 1fr))',
-          gap: '16px',
-        }}
-      >
-        {group.sessions.map((s, idx) => (
-          <SessionCard
-            key={s.id}
-            terminal={s}
-            seed={`${s.projectId}#${idx}`}
-            projectName={group.projectName}
-            status={status(s.agentId)}
-            onClick={() => onPickSession(s)}
+      {/* Pleine hauteur — l'iframe occupe tout le reste de la pane. */}
+      {activeSession && (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <SessionDashboard
+            key={activeSession.id}
+            projectId={activeSession.projectId}
+            sessionId={activeSession.sessionId}
+            seed={`${activeSession.projectId}#${activeIdx}`}
+            sessionLabel={activeSession.label}
+            isWorking={status(activeSession.agentId) === 'working'}
           />
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -246,96 +282,86 @@ function ProjectGroupView({
 // Single session card
 // ─────────────────────────────────────────────────────────────────────────
 
-interface CardProps {
-  terminal: TerminalEntry;
-  /** Stable color/look hash — matches the brain in TamagotchiView. */
-  seed: string;
-  /** Shown as the card label (replaces the session label per user request). */
-  projectName: string;
-  status: 'idle' | 'working' | 'absent';
-  onClick: () => void;
-}
-
-const BRAIN_SIZE = 56;
 /** How often we poll the dashboard file's mtime. Cheap call (just stat). */
 const DASHBOARD_POLL_MS = 2_000;
+const PILL_BRAIN_SIZE = 28;
 
-function SessionCard({
+interface PillProps {
+  terminal: TerminalEntry;
+  seed: string;
+  status: 'idle' | 'working' | 'absent';
+  isActive: boolean;
+  /** Make this session's dashboard the visible one (no terminal jump). */
+  onClick: () => void;
+  /** Jump to the SESSIONS pane and focus this session's terminal. */
+  onFocus: () => void;
+}
+
+function SessionPill({
   terminal,
   seed,
-  projectName,
   status,
+  isActive,
   onClick,
-}: CardProps): React.JSX.Element {
-  const active = status === 'working';
+  onFocus,
+}: PillProps): React.JSX.Element {
+  const working = status === 'working';
   return (
     <div
       style={{
-        padding: '12px',
-        background: active ? 'var(--color-bg-dark)' : 'transparent',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '4px 8px 4px 4px',
+        background: isActive ? 'var(--color-accent)' : 'var(--color-bg-dark)',
+        color: isActive ? 'var(--color-bg-dark)' : 'inherit',
         border: '2px solid var(--color-border)',
         boxShadow: 'var(--shadow-pixel)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
+        cursor: 'pointer',
         fontFamily: 'var(--font-pixel)',
-        position: 'relative',
+        fontSize: '12px',
       }}
-      title={`${projectName} — ${terminal.label}`}
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      title={`${terminal.label} — click to view dashboard`}
     >
-      {/* Header: brain + label sur la même ligne (gain de place vertical
-          pour l'iframe), session label en plus pour distinguer plusieurs
-          sessions du même projet. Click-to-focus uniquement sur cette
-          rangée — pas sur l'iframe en-dessous. */}
-      <div
+      <PixelBrain seed={seed} size={PILL_BRAIN_SIZE} active={working} />
+      <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {terminal.label}
+      </span>
+      <StatusDot status={status} size={8} title={status} />
+      <span
         role="button"
         tabIndex={0}
-        onClick={onClick}
+        title="Open this session's terminal"
+        onClick={(e) => {
+          e.stopPropagation();
+          onFocus();
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
+            e.stopPropagation();
             e.preventDefault();
-            onClick();
+            onFocus();
           }
         }}
         style={{
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
+          marginLeft: '4px',
+          padding: '0 4px',
+          fontSize: '10px',
+          opacity: 0.7,
+          borderLeft: '1px solid currentColor',
         }}
-        title="Click to focus this session"
       >
-        <PixelBrain seed={seed} size={BRAIN_SIZE} active={active} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-          <span
-            style={{
-              fontSize: '14px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {projectName}
-          </span>
-          <span
-            style={{
-              fontSize: '11px',
-              opacity: 0.55,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {terminal.label}
-          </span>
-        </div>
-        <StatusDot status={status} title={status} />
-      </div>
-
-      <SessionDashboard
-        projectId={terminal.projectId}
-        sessionId={terminal.sessionId}
-      />
+        ↗
+      </span>
     </div>
   );
 }
@@ -347,7 +373,15 @@ function SessionCard({
 interface DashboardProps {
   projectId: string;
   sessionId: string | null;
+  /** Brain seed for the empty-state preview. Stable per session. */
+  seed: string;
+  /** Session label shown next to the brain in the empty state. */
+  sessionLabel: string;
+  /** Drives the brain animation while there's no dashboard yet. */
+  isWorking: boolean;
 }
+
+const EMPTY_BRAIN_SIZE = 96;
 
 /**
  * Renders an iframe (via `srcdoc` so it inherits no document context) that
@@ -361,7 +395,13 @@ interface DashboardProps {
  * we inject into the project's CLAUDE.md), so the previous "tell this
  * session to write to <path>" placeholder was redundant noise.
  */
-function SessionDashboard({ projectId, sessionId }: DashboardProps): React.JSX.Element | null {
+function SessionDashboard({
+  projectId,
+  sessionId,
+  seed,
+  sessionLabel,
+  isWorking,
+}: DashboardProps): React.JSX.Element | null {
   const [html, setHtml] = useState<string | null>(null);
   const lastMtimeRef = useRef<number>(-1);
 
@@ -417,18 +457,17 @@ function SessionDashboard({ projectId, sessionId }: DashboardProps): React.JSX.E
       style={{
         border: '2px solid var(--color-border)',
         background: 'var(--color-bg-dark)',
-        // Tall iframe — the dashboard is THE main content of OVERVIEW
-        // now that we only show the active project. Picks min(60vh, 600px)
-        // so the iframe fills the page on a tall window without ever
-        // pushing the header off screen on a short one.
-        height: 'min(60vh, 600px)',
-        minHeight: '420px',
+        // Fill ALL available space — the parent ProjectGroupView is a
+        // flex column with `flex: 1, minHeight: 0`, so we pick up
+        // whatever's left after the project header.
+        flex: 1,
+        minHeight: '300px',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
       }}
     >
-      {html && html.length > 0 && (
+      {html && html.length > 0 ? (
         <iframe
           // Render the file contents inline via srcdoc — gives the iframe a
           // null origin (sandboxed by default) and avoids needing a custom
@@ -446,6 +485,42 @@ function SessionDashboard({ projectId, sessionId }: DashboardProps): React.JSX.E
             background: 'white',
           }}
         />
+      ) : (
+        // Pretty empty state — big brain in the middle of the empty
+        // canvas + a single line telling the user nothing has been
+        // written yet. The brain pulses if claude is actually working
+        // so it doesn't feel dead during a long thinking phase.
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            opacity: 0.85,
+          }}
+        >
+          <PixelBrain seed={seed} size={EMPTY_BRAIN_SIZE} active={isWorking} />
+          <span
+            style={{
+              fontSize: '13px',
+              fontFamily: 'var(--font-pixel)',
+              color: 'var(--color-text)',
+            }}
+          >
+            {sessionLabel}
+          </span>
+          <span
+            style={{
+              fontSize: '11px',
+              opacity: 0.5,
+              fontFamily: 'var(--font-pixel)',
+            }}
+          >
+            {isWorking ? 'thinking…' : 'no dashboard yet'}
+          </span>
+        </div>
       )}
     </div>
   );
