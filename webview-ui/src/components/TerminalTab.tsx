@@ -422,9 +422,22 @@ export function TerminalTab({
     try {
       fit.fit();
       if (term.cols > 0 && term.rows > 0) {
-        void ptyResize(termId, term.cols, term.rows);
-        // Newer claude-code redraws when it sees a SIGWINCH; nudge the
-        // canvas renderer too so any rows previously left blank past the
+        // Clear-screen + cursor-home BEFORE resizing the pty: Ink
+        // (claude-code's TUI engine) doesn't always erase the previous
+        // frame on SIGWINCH (vadimdemedes/ink#907) — it computes how
+        // many rows to move up using `output.split('\n').length` and
+        // ignores visual wrapping when cols shrinks, leaving stale
+        // box-drawing rows that look like a "─" stream across the
+        // terminal. Sending \x1b[2J\x1b[H first guarantees Ink's next
+        // render starts on a clean buffer. The bytes go through
+        // ptyWrite (not term.write) so claude's stdin sees them and
+        // reacts; xterm just renders the result.
+        void ptyWrite(termId, '\x1b[2J\x1b[H')
+          .then(() => ptyResize(termId, term.cols, term.rows))
+          .catch((e) => {
+            console.debug('[Deepthix][TerminalTab] pre-resize clear failed', e);
+          });
+        // Nudge xterm too so any rows previously left blank past the
         // old fit height get repainted from the scrollback buffer.
         try {
           term.refresh(0, term.rows - 1);

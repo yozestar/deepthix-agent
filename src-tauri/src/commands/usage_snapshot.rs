@@ -108,7 +108,13 @@ printf ' '
             "type": "command",
             "command": dumper_str,
             "padding": 0,
-        }
+        },
+        // anthropics/claude-code#41007 — animated spinner glyphs
+        // (`· ✢ * ✶ ✻ ✽`) have inconsistent widths in some monospace
+        // fonts, which makes the box-drawing chars one row down jitter
+        // by 1 column on every frame. Disabling the animations stops
+        // that cascade. Has no effect on tool/output rendering.
+        "prefersReducedMotion": true
     });
     let overlay_str = serde_json::to_string_pretty(&overlay).unwrap();
     let overlay_path = overlay_settings_path()?;

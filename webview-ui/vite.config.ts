@@ -111,7 +111,13 @@ export default defineConfig({
     // macOS WKWebView is Safari-based; pinning the target avoids shipping
     // syntax the runtime can't parse.
     target: 'safari15',
-    minify: tauriDebug ? false : 'esbuild',
+    // terser, not esbuild: xtermjs/xterm.js#5800 — esbuild re-minifies
+    // xterm.js v6's already-minified ESM and mangles `InputHandler.requestMode`
+    // (`ReferenceError: i is not defined`). The DCS handler chain dies on the
+    // first claude-code TUI request and the prompt starts dropping input +
+    // bleeding box-drawing chars across cells. Terser's per-identifier
+    // mangler doesn't trip the same code path.
+    minify: tauriDebug ? false : 'terser',
     sourcemap: tauriDebug,
   },
   base: './',
