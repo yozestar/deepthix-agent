@@ -126,3 +126,23 @@
     opacity: 0.3;
   }
 }
+
+/*
+ * xterm.js v6 + WKWebView (Tauri/Wry on macOS) workaround.
+ *
+ * WebKit lazily promotes layers and skips compositing for elements it
+ * thinks are static, which on the xterm canvas/DOM grid produces
+ * half-line tearing and the "─" bleed across rows that several
+ * Tauri-using apps reported in 2025-2026 issue threads. Forcing a
+ * GPU layer on the terminal root + the screen container keeps the
+ * compositor active across redraws.
+ *
+ * `transform: translateZ(0)` is the standard hint; the rest reinforces
+ * it so WebKit doesn't decide to demote during scroll.
+ */
+.xterm,
+.xterm .xterm-screen {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
+}
