@@ -21,7 +21,7 @@
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { ptyWrite } from '../tauri/commands';
+import { ptyWrite, stashDroppedFile } from '../tauri/commands';
 
 interface TermSummary {
   id: string;
@@ -122,25 +122,47 @@ export function TerminalDropTarget({
             });
             return;
           }
-          // Quote each path so spaces / special chars survive a paste
-          // into the prompt. Single-quote wrap, escape any single quote
-          // by closing-quoting-reopening (POSIX safe form: `'\''`).
-          const quoted = paths.map(quoteForShell).join(' ');
-          console.info('[Deepthix][TerminalDropTarget] dropping into pty', {
-            target: target.id,
-            targetLabel: target.label,
-            count: paths.length,
-            firstPath: paths[0],
-          });
-          // Reuse the voice recorder's char-by-char trick — Ink coalesces
-          // bursty multi-byte writes and drops them. 8ms gap, 1 unicode
-          // code point at a time. Trailing space (not \r) so the user
-          // can edit / add context before submitting.
-          void injectSlowly(target.id, `${quoted} `).catch((e) => {
-            const msg = e instanceof Error ? e.message : String(e);
-            console.error('[Deepthix][TerminalDropTarget] inject failed', e);
-            setState({ kind: 'error', message: `pty: ${msg}` });
-          });
+          // macOS's screenshot thumbnail (Cmd+Shift+4 → drag from
+          // the floating preview) hands us a path inside
+          // /var/folders/.../TemporaryItems/NSIRD_screencaptureui_*/
+          // that the OS deletes the moment the drag ends. Claude reads
+          // the file ~1s later and gets ENOENT. We stash every dropped
+          // file into ~/.deepthix/dropped/ during the drop event (when
+          // the file is still alive) so the path we hand to claude
+          // survives. Cheap on stable paths too — single fs::copy.
+          (async (): Promise<void> => {
+            try {
+              const stable = await Promise.all(
+                paths.map((p) =>
+                  stashDroppedFile(p).catch((err) => {
+                    console.warn(
+                      '[Deepthix][TerminalDropTarget] stash failed, falling back to original path',
+                      { src: p, err },
+                    );
+                    return p; // fall back so the drop isn't a total loss
+                  }),
+                ),
+              );
+              const quoted = stable.map(quoteForShell).join(' ');
+              console.info('[Deepthix][TerminalDropTarget] dropping into pty', {
+                target: target.id,
+                targetLabel: target.label,
+                count: paths.length,
+                firstSrc: paths[0],
+                firstStable: stable[0],
+              });
+              // Reuse the voice recorder's char-by-char trick — Ink
+              // coalesces bursty multi-byte writes and drops them.
+              // 8ms gap, 1 unicode code point at a time. Trailing space
+              // (not \r) so the user can edit / add context before
+              // submitting.
+              await injectSlowly(target.id, `${quoted} `);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              console.error('[Deepthix][TerminalDropTarget] drop pipeline failed', e);
+              setState({ kind: 'error', message: `drop: ${msg}` });
+            }
+          })();
           setState({ kind: 'idle' });
         }
       })

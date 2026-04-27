@@ -410,6 +410,14 @@ export async function listRecentNotifications(
   return await invoke<NotificationRecord[]>('list_recent_notifications', { limit });
 }
 
+/** Snapshot a file the user dragged onto the window into
+ *  ~/.deepthix/dropped/ and return the stable absolute path. Used to
+ *  defeat macOS's transient TemporaryItems/NSIRD_screencaptureui_*
+ *  paths that vanish the moment the drag finishes. */
+export async function stashDroppedFile(src: string): Promise<string> {
+  return await invoke<string>('stash_dropped_file', { src });
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }

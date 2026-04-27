@@ -136,6 +136,60 @@ fn list_dir_inner(path: &Path) -> std::io::Result<Vec<FileEntry>> {
     Ok(entries)
 }
 
+/// Copy a file the user dragged into the window to a stable location
+/// under `~/.deepthix/dropped/<uuid>.<ext>` and return the new path.
+///
+/// Why: macOS's screenshot thumbnail (the floating preview after
+/// Cmd+Shift+4) hands the webview a path inside
+/// `/var/folders/.../TemporaryItems/NSIRD_screencaptureui_*/...png`
+/// that the OS deletes the moment the drag finishes. Claude reads the
+/// file ~1 s later and gets ENOENT. By snapshotting the bytes during
+/// the drop event — when the file is still alive — we give claude a
+/// path that survives.
+///
+/// Always copies, even for paths that look stable. Cheap (the dropped
+/// files are small) and avoids second-guessing the OS's lifetime
+/// rules. Returns the absolute path of the snapshot.
+#[tauri::command]
+pub fn stash_dropped_file(src: PathBuf) -> Result<PathBuf, String> {
+    tracing::debug!(target: "deepthix::commands", ?src, "stash_dropped_file");
+    let home = dirs::home_dir().ok_or_else(|| "no home dir".to_string())?;
+    let dst_dir = home.join(".deepthix").join("dropped");
+    std::fs::create_dir_all(&dst_dir)
+        .map_err(|e| format!("create dropped dir: {e}"))?;
+
+    // Build a filename that preserves the original extension (so claude
+    // knows it's a .png / .pdf / etc.) but uses a fresh uuid prefix so
+    // multiple drops don't collide. We deliberately KEEP the original
+    // basename (after the uuid) so the user can still see what they
+    // dragged in if they later browse ~/.deepthix/dropped/.
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin")
+        .to_string();
+    let stem = src
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file")
+        // Strip the macOS screenshot prefix so it doesn't bloat the path.
+        // "Capture d'écran 2026-04-27 à 10.39.18" → keep the timestamp suffix
+        // but drop the locale prefix.
+        .replace(' ', "_");
+    let id = uuid::Uuid::new_v4().to_string();
+    // Keep the uuid short (first segment) — the dir is opaque to the
+    // user anyway; what matters is the extension survives.
+    let short = id.split('-').next().unwrap_or(&id);
+    let dst = dst_dir.join(format!("{short}_{stem}.{ext}"));
+
+    std::fs::copy(&src, &dst).map_err(|e| {
+        tracing::warn!(target: "deepthix::commands", ?src, ?dst, error = %e, "stash_dropped_file copy failed");
+        format!("copy: {e}")
+    })?;
+    tracing::info!(target: "deepthix::commands", ?src, ?dst, "stash_dropped_file ok");
+    Ok(dst)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
