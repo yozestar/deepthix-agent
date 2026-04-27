@@ -11,6 +11,7 @@ import { SkillsPane } from './components/SkillsPane';
 import { TamagotchiView } from './components/TamagotchiView';
 import { type Mode, TopTabs } from './components/TopTabs';
 import { NotificationToasts } from './components/NotificationToasts';
+import { TerminalDropTarget } from './components/TerminalDropTarget';
 import { VoiceRecorder } from './components/VoiceRecorder';
 import { Welcome } from './components/Welcome';
 import { useFileTree } from './hooks/useFileTree';
@@ -357,6 +358,20 @@ function App(): React.JSX.Element {
           from Tauri commands AND the JsonlWatcher on
           ~/.deepthix/notifications.jsonl (which deepthix-mcp writes to). */}
       <NotificationToasts />
+      {/* Drag a file from Finder onto the window → its absolute path is
+          shell-quoted and char-by-char-injected into the active claude
+          session's prompt. Picks the same target as VoiceRecorder. */}
+      <TerminalDropTarget
+        activeTermId={terminals.activeId}
+        activeProjectId={projects.activeProjectId}
+        terminals={terminals.terminals.map((t) => ({
+          id: t.id,
+          label: t.label,
+          cwd: t.cwd,
+          kind: t.kind,
+          projectId: t.projectId,
+        }))}
+      />
     </div>
   );
 }
