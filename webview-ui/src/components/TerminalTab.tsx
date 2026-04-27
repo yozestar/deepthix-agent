@@ -169,24 +169,6 @@ export function TerminalTab({
     term.loadAddon(serialize);
     term.loadAddon(webLinks);
     term.open(el);
-    // WebGL renderer — ~9× faster than the (now-removed) canvas one and
-    // has a consolidated texture atlas that fixes the glyph-bleed bug
-    // we saw with the canvas renderer. MUST attach AFTER term.open(el)
-    // because the addon needs the rendered DOM tree. Wrap in try/catch:
-    // on machines without GPU acceleration WebGL fails to init and we
-    // silently fall back to the DOM renderer — claude is still usable.
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => {
-        // GPU dropped the context (sleep/wake, driver crash). Dispose
-        // the addon and let xterm fall back to DOM rendering.
-        console.warn('[Deepthix][TerminalTab] WebGL context lost; disposing addon');
-        webgl.dispose();
-      });
-      term.loadAddon(webgl);
-    } catch (e) {
-      console.warn('[Deepthix][TerminalTab] WebGL addon failed, falling back to DOM', e);
-    }
     // The xterm canvas renderer initializes lazily — the first fit() can
     // throw `_renderer.value.dimensions` is undefined. Swallow it; the
     // subsequent ResizeObserver / visibility effects will retry.
@@ -195,6 +177,37 @@ export function TerminalTab({
     } catch (e) {
       console.debug('[Deepthix][TerminalTab] initial fit deferred', e);
     }
+    // WebGL renderer — ~9× faster than the (now-removed) canvas one and
+    // has a consolidated texture atlas that fixes the glyph-bleed bug
+    // we saw with the canvas renderer. We DEFER its load by two
+    // requestAnimationFrame ticks because the addon's render loop reads
+    // `this._renderer.value.dimensions` synchronously, and on a fresh
+    // mount that ref isn't populated until xterm has painted at least
+    // once with the DOM renderer. Loading WebGL too early throws an
+    // unhandled TypeError on every subsequent frame and the terminal
+    // visibly freezes (#xterm 4757). Two RAFs is enough on every
+    // browser we tested — the user only sees ~16ms of DOM rendering
+    // before the WebGL upgrade kicks in.
+    let webgl: WebglAddon | null = null;
+    const upgradeToWebgl = (): void => {
+      try {
+        webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          console.warn('[Deepthix][TerminalTab] WebGL context lost; disposing addon');
+          webgl?.dispose();
+          webgl = null;
+        });
+        term.loadAddon(webgl);
+        // Force one render so we surface init errors HERE inside try
+        // instead of next frame as an unhandled exception.
+        term.refresh(0, term.rows - 1);
+      } catch (e) {
+        console.warn('[Deepthix][TerminalTab] WebGL addon failed, falling back to DOM', e);
+        webgl?.dispose();
+        webgl = null;
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(upgradeToWebgl));
     termRef.current = term;
     fitRef.current = fit;
     serializeRef.current = serialize;
