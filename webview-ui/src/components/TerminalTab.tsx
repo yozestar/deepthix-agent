@@ -3,7 +3,14 @@ import '@xterm/xterm/css/xterm.css';
 import { FitAddon } from '@xterm/addon-fit';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { WebglAddon } from '@xterm/addon-webgl';
+// WebGL renderer was removed in 2026-04: it kept hitting xtermjs#4757
+// (`_renderer.value.dimensions` undefined race) on remount, especially
+// after the bundle grew with CodeMirror + react-pdf. xterm.js v6 ships
+// a much faster DOM renderer (PRs #4605/#4631/#4651/#4662/#4681/#4754)
+// that's recommended for Ink-heavy TUIs (claude code, gum, ink-table)
+// because the multi-page texture atlas race no longer applies and the
+// glyph-bleed bugs we saw with WebGL are gone. Performance is plenty
+// for what claude does (~120 fps idle, ~30 fps during tool spam).
 import { Terminal } from '@xterm/xterm';
 import { useCallback, useEffect, useRef } from 'react';
 
@@ -120,6 +127,12 @@ export function TerminalTab({
     const term = new Terminal({
       fontSize: settingsRef.current.terminalFontSize,
       fontFamily: settingsRef.current.terminalFontFamily,
+      // Explicit weights stop xterm from synthesising bold via stroke
+      // duplication, which is the #1 source of the "double pixel" smear
+      // people see on Ink prompts. Numbers are CSS values; 'normal' = 400,
+      // 'bold' = 700.
+      fontWeight: 'normal',
+      fontWeightBold: 'bold',
       // 1.0 is critical for Ink TUIs (claude code). Anything else and
       // the box-drawing characters bleed across cell boundaries and
       // the cursor math drifts. The user's stored 1.05 preference is
@@ -128,6 +141,11 @@ export function TerminalTab({
       lineHeight: 1.0,
       letterSpacing: 0,
       theme: { background: bgColor },
+      // Ink redraws the entire prompt on every chunk; smooth scrolling
+      // would compete with those frames and amplify flicker. Default is
+      // already 0 in v6 but spelled out so a future bump doesn't break
+      // the prompt visually.
+      smoothScrollDuration: 0,
       // false: claude code sends its own \r\n sequences and performs
       // absolute cursor positioning. Converting bare \n to \r\n
       // double-shifts the cursor and corrupts the input box border.
@@ -169,7 +187,7 @@ export function TerminalTab({
     term.loadAddon(serialize);
     term.loadAddon(webLinks);
     term.open(el);
-    // The xterm canvas renderer initializes lazily — the first fit() can
+    // The xterm DOM renderer initializes lazily — the first fit() can
     // throw `_renderer.value.dimensions` is undefined. Swallow it; the
     // subsequent ResizeObserver / visibility effects will retry.
     try {
@@ -177,37 +195,6 @@ export function TerminalTab({
     } catch (e) {
       console.debug('[Deepthix][TerminalTab] initial fit deferred', e);
     }
-    // WebGL renderer — ~9× faster than the (now-removed) canvas one and
-    // has a consolidated texture atlas that fixes the glyph-bleed bug
-    // we saw with the canvas renderer. We DEFER its load by two
-    // requestAnimationFrame ticks because the addon's render loop reads
-    // `this._renderer.value.dimensions` synchronously, and on a fresh
-    // mount that ref isn't populated until xterm has painted at least
-    // once with the DOM renderer. Loading WebGL too early throws an
-    // unhandled TypeError on every subsequent frame and the terminal
-    // visibly freezes (#xterm 4757). Two RAFs is enough on every
-    // browser we tested — the user only sees ~16ms of DOM rendering
-    // before the WebGL upgrade kicks in.
-    let webgl: WebglAddon | null = null;
-    const upgradeToWebgl = (): void => {
-      try {
-        webgl = new WebglAddon();
-        webgl.onContextLoss(() => {
-          console.warn('[Deepthix][TerminalTab] WebGL context lost; disposing addon');
-          webgl?.dispose();
-          webgl = null;
-        });
-        term.loadAddon(webgl);
-        // Force one render so we surface init errors HERE inside try
-        // instead of next frame as an unhandled exception.
-        term.refresh(0, term.rows - 1);
-      } catch (e) {
-        console.warn('[Deepthix][TerminalTab] WebGL addon failed, falling back to DOM', e);
-        webgl?.dispose();
-        webgl = null;
-      }
-    };
-    requestAnimationFrame(() => requestAnimationFrame(upgradeToWebgl));
     termRef.current = term;
     fitRef.current = fit;
     serializeRef.current = serialize;
