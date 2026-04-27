@@ -520,6 +520,34 @@ export function TerminalTab({
     return () => window.removeEventListener('resize', onWindowResize);
   }, [visible, safeFit]);
 
+  // Re-fit once Google Fonts (loaded in index.html) finish downloading.
+  // The first fit() typically runs before the font has hit the page, so
+  // xterm measures character width with whatever the system fallback is
+  // (Menlo on macOS) and freezes that grid. When the real font swaps in
+  // the cells stay the same width but the glyphs are slightly wider /
+  // narrower → cursor drifts and the user has to resize the window to
+  // force a re-measurement. document.fonts.ready resolves once every
+  // font in the document is loaded; we re-fit then so the measurement
+  // matches the font that actually paints.
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    if (typeof document.fonts?.ready?.then !== 'function') return;
+    void document.fonts.ready.then(() => {
+      if (cancelled) return;
+      console.debug('[Deepthix][TerminalTab] fonts.ready, re-fitting', { termId });
+      safeFit();
+      // One more after a tick — fit() may have observed transitional
+      // dimensions from the font swap itself (CSS layout reflow).
+      requestAnimationFrame(() => {
+        if (!cancelled) safeFit();
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, safeFit, termId]);
+
   return (
     <div
       ref={containerRef}
