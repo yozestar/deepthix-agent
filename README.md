@@ -19,9 +19,18 @@ Pre-built installers ship on the [Releases page](https://github.com/deepthix/dee
 | **Windows x64 (NSIS installer)**  | [`Deepthix Agent_*_x64-setup.exe`](https://github.com/deepthix/deepthix-agent/releases/latest)                        |
 | **Windows x64 (MSI installer)**   | [`Deepthix Agent_*_x64_en-US.msi`](https://github.com/deepthix/deepthix-agent/releases/latest)                        |
 
-The app isn't code-signed yet, so:
+The app isn't notarized by Apple yet, so first launch needs a one-time bypass:
 
-- **macOS**: right-click the .app the first time → "Open" → "Open" in the dialog.
+- **macOS** (the .dmg shows "is damaged and can't be opened"): in Terminal, after downloading:
+
+  ```bash
+  xattr -cr ~/Downloads/Deepthix.Agent_*_aarch64.dmg
+  # or for Intel:
+  xattr -cr ~/Downloads/Deepthix.Agent_*_x64.dmg
+  ```
+
+  Then double-click the .dmg, drag the app into `/Applications`, and launch normally. macOS sets a quarantine attribute on every browser download; the app is ad-hoc-signed, so removing the attribute is enough — no signing-identity warning.
+
 - **Windows**: SmartScreen will warn → "More info" → "Run anyway".
 
 After install, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) must be on your PATH (`brew install anthropic/anthropic/claude` on macOS, or follow the docs for Windows).
