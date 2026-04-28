@@ -6,7 +6,15 @@
 // the top tab strip — the SETTINGS button at the top of the sidebar
 // switches into it instead.
 
-export type Mode = 'overview' | 'sessions' | 'process' | 'memory' | 'files' | 'skills' | 'settings';
+export type Mode =
+  | 'overview'
+  | 'sessions'
+  | 'process'
+  | 'memory'
+  | 'files'
+  | 'skills'
+  | 'schedule'
+  | 'settings';
 
 interface Props {
   projectName: string | null;
@@ -22,6 +30,7 @@ const VISIBLE_MODES: ReadonlyArray<Mode> = [
   'process',
   'memory',
   'skills',
+  'schedule',
 ];
 
 export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.Element {

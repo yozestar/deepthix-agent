@@ -410,6 +410,57 @@ export async function listRecentNotifications(
   return await invoke<NotificationRecord[]>('list_recent_notifications', { limit });
 }
 
+// ─── Schedules ──────────────────────────────────────────────────────────
+
+export type Cadence =
+  | { kind: 'once'; at_ms: number }
+  | { kind: 'interval'; every_seconds: number };
+
+export interface Schedule {
+  id: string;
+  name: string;
+  target_session_id: string;
+  target_project_id: string;
+  prompt: string;
+  cadence: Cadence;
+  paused: boolean;
+  last_run_ms: number | null;
+  next_run_ms: number;
+  created_ms: number;
+}
+
+export async function listSchedules(): Promise<Schedule[]> {
+  return await invoke<Schedule[]>('list_schedules');
+}
+
+export async function createSchedule(args: {
+  name: string;
+  target_session_id: string;
+  target_project_id: string;
+  prompt: string;
+  cadence: Cadence;
+}): Promise<Schedule> {
+  return await invoke<Schedule>('create_schedule', { args });
+}
+
+export async function updateSchedule(args: {
+  id: string;
+  name?: string;
+  prompt?: string;
+  cadence?: Cadence;
+  paused?: boolean;
+}): Promise<Schedule> {
+  return await invoke<Schedule>('update_schedule', { args });
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  return await invoke<void>('delete_schedule', { id });
+}
+
+export async function runScheduleNow(id: string): Promise<void> {
+  return await invoke<void>('run_schedule_now', { id });
+}
+
 /** Snapshot a file the user dragged onto the window into
  *  ~/.deepthix/dropped/ and return the stable absolute path. Used to
  *  defeat macOS's transient TemporaryItems/NSIRD_screencaptureui_*

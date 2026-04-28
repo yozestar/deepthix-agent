@@ -363,6 +363,26 @@ impl TerminalManager {
         handle.write(data)
     }
 
+    /// Find a live terminal id whose hosted claude session matches the
+    /// supplied session UUID. Used by the scheduler to deliver a job
+    /// prompt to the right pty: the on-disk schedule references the
+    /// stable session_id, but ptyWrite needs the in-memory term id
+    /// (assigned anew on each spawn). Returns None if no terminal
+    /// currently hosts that session.
+    pub fn find_term_by_session(&self, session_id: &str) -> Option<String> {
+        self.inner
+            .lock()
+            .unwrap()
+            .iter()
+            .find_map(|(term_id, handle)| {
+                if handle.session_id() == Some(session_id) {
+                    Some(term_id.clone())
+                } else {
+                    None
+                }
+            })
+    }
+
     pub fn resize(&self, id: &str, cols: u16, rows: u16) {
         if let Some(handle) = self.inner.lock().unwrap().get(id) {
             handle.resize(cols, rows);

@@ -7,6 +7,7 @@ import { OrchestratorPanel } from './components/OrchestratorPanel';
 import { OverviewPane } from './components/OverviewPane';
 import { SettingsPane } from './components/SettingsPane';
 import { Sidebar } from './components/Sidebar';
+import { SchedulesPane } from './components/SchedulesPane';
 import { SkillsPane } from './components/SkillsPane';
 import { TamagotchiView } from './components/TamagotchiView';
 import { type Mode, TopTabs } from './components/TopTabs';
@@ -327,6 +328,11 @@ function App(): React.JSX.Element {
           {mode === 'skills' && (
             <ModeOverlay>
               <SkillsPane projectPath={projects.activeProject?.path ?? null} />
+            </ModeOverlay>
+          )}
+          {mode === 'schedule' && (
+            <ModeOverlay>
+              <SchedulesPane terminals={terminals} />
             </ModeOverlay>
           )}
         </div>
