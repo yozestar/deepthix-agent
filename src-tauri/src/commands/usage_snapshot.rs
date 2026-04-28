@@ -83,11 +83,18 @@ printf ' '
     };
     if needs_write {
         std::fs::write(&dumper, script.as_bytes())?;
-        // chmod +x — required for claude to spawn it.
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&dumper)?.permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&dumper, perms)?;
+        // chmod +x — required for claude to spawn it. Unix-only: on
+        // Windows there's no executable bit, the file extension is what
+        // determines spawnability. The bash script is macOS-only anyway
+        // (claude statusLine uses `bash`, not cmd.exe), so the whole
+        // statusLine pipeline is effectively a no-op on Windows.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&dumper)?.permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&dumper, perms)?;
+        }
         tracing::info!(target: "deepthix::usage_snapshot", ?dumper, "installed dumper script");
     }
 

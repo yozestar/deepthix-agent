@@ -35,7 +35,6 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "//": "Ad-hoc signing identity ('-') is the no-cost workaround for the 'app is damaged' Gatekeeper error users get when downloading an unsigned, un-notarized DMG built in CI. AMFI requires _some_ valid codesign block to launch a binary; ad-hoc gives one without needing an Apple Developer ID. The user still has to remove the quarantine xattr after download (xattr -cr ~/Downloads/<file>.dmg) — but the binary itself launches.",
       "signingIdentity": "-"
     }
   }
