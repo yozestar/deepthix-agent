@@ -2,7 +2,7 @@
 name = "app"
 version = "0.1.0"
 description = "Standalone macOS app for running and watching Claude Code agents in a pixel art office."
-authors = ["Ruben Perez <ruben.perez.pro@gmail.com>"]
+authors = ["Deepthix Agent contributors"]
 license = "MIT"
 repository = ""
 edition = "2021"

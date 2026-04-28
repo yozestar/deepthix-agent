@@ -35,3 +35,8 @@ playwright-report/
 
 # Local notes (not for commit)
 /notes/
+
+# Planning / spec docs from the brainstorming + writing-plans skills.
+# These reference absolute filesystem paths and aren't useful for the
+# public-facing repo — keep locally only.
+/docs/superpowers/

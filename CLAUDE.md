@@ -12,7 +12,7 @@ server/         Node hook server forked from pixel-agents. Currently UNUSED — 
                 scaffolding for Phase 5 (Claude Code Hooks integration as Tauri sidecar).
 shared/         Shared TS types (used by webview now; eventually by sidecar too).
 eslint-rules/   Local ESLint plugin: no inline colors, pixel font, pixel shadows.
-docs/           Master plan + per-phase specs in docs/superpowers/plans/.
+docs/           External-asset attribution and other public docs.
 ```
 
 ## Key components
@@ -48,7 +48,7 @@ cd webview-ui && npm test         # Webview tests only
 
 ## Current state
 
-**6 of 10 phases shipped** (master plan: `docs/superpowers/plans/2026-04-24-deepthix-master-plan.md`).
+**6 of 10 phases shipped.**
 
 - Phases 0–4: shipped and tagged (`deepthix-phase-N-done`). Bootstrap, projects sidebar, pixel office, terminals (pty + xterm), agents + JSONL watcher.
 - Phase 5 (Hook server sidecar): **deferred** — `server/` directory kept but not wired in. Heuristic JSONL polling does the work for now.

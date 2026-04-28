@@ -18,7 +18,17 @@ import type { UseTerminalsResult } from '../hooks/useTerminals';
 import { TerminalTab } from './TerminalTab';
 
 const ORCHESTRATOR_PROJECT_ID = '__orchestrator__';
-const ORCHESTRATOR_CWD = '/Users/rubenperez/.deepthix/orchestrator';
+// Resolved at first render via Tauri's path API so we don't bake a
+// username into the bundle. Falls back to a sentinel for the SSR-ish
+// initial paint; the real spawn happens after the resolution.
+let resolvedOrchestratorCwd: string | null = null;
+async function resolveOrchestratorCwd(): Promise<string> {
+  if (resolvedOrchestratorCwd) return resolvedOrchestratorCwd;
+  const { homeDir } = await import('@tauri-apps/api/path');
+  const home = await homeDir();
+  resolvedOrchestratorCwd = `${home.replace(/\/$/, '')}/.deepthix/orchestrator`;
+  return resolvedOrchestratorCwd;
+}
 const STORAGE_KEY_OPEN = 'deepthix.orchestrator.open';
 const STORAGE_KEY_WIDTH = 'deepthix.orchestrator.width';
 const MIN_WIDTH = 320;
@@ -91,17 +101,19 @@ export function OrchestratorPanel({
   useEffect(() => {
     if (!open || spawnAttemptedRef.current) return;
     spawnAttemptedRef.current = true;
-    void terminals.resumeProject(ORCHESTRATOR_PROJECT_ID).then(() => {
+    void (async (): Promise<void> => {
+      const cwd = await resolveOrchestratorCwd();
+      await terminals.resumeProject(ORCHESTRATOR_PROJECT_ID);
       // After resume, if there's still no session, spawn a fresh one.
       const stillEmpty = terminals.terminals.every(
         (t) => t.projectId !== ORCHESTRATOR_PROJECT_ID,
       );
       if (stillEmpty) {
-        void terminals.open(ORCHESTRATOR_PROJECT_ID, ORCHESTRATOR_CWD, 'claude', 'orchestrator', {
+        await terminals.open(ORCHESTRATOR_PROJECT_ID, cwd, 'claude', 'orchestrator', {
           skipPermissions: true,
         });
       }
-    });
+    })();
   }, [open, terminals]);
 
   if (!open) {

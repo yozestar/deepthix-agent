@@ -6,7 +6,7 @@ This project is a fork of [pixel-agents](https://github.com/pablodelucca/pixel-a
 
 ## Status
 
-Under active development. **6 of 10 phases shipped** — see [`docs/superpowers/plans/2026-04-24-deepthix-master-plan.md`](docs/superpowers/plans/2026-04-24-deepthix-master-plan.md) for the master plan and per-phase specs.
+Under active development. Architecture overview in [`CLAUDE.md`](CLAUDE.md).
 
 ## Quick start
 
