@@ -8,7 +8,25 @@ This project is a fork of [pixel-agents](https://github.com/pablodelucca/pixel-a
 
 Under active development. Architecture overview in [`CLAUDE.md`](CLAUDE.md).
 
-## Quick start
+## Download
+
+Pre-built installers ship on the [Releases page](https://github.com/deepthix/deepthix-agent/releases). Pick the artifact for your machine:
+
+| Platform                          | Download                                                                                                              |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **macOS — Apple Silicon (M1+)**   | [`Deepthix Agent_*_aarch64.dmg`](https://github.com/deepthix/deepthix-agent/releases/latest)                          |
+| **macOS — Intel**                 | [`Deepthix Agent_*_x64.dmg`](https://github.com/deepthix/deepthix-agent/releases/latest)                              |
+| **Windows x64 (NSIS installer)**  | [`Deepthix Agent_*_x64-setup.exe`](https://github.com/deepthix/deepthix-agent/releases/latest)                        |
+| **Windows x64 (MSI installer)**   | [`Deepthix Agent_*_x64_en-US.msi`](https://github.com/deepthix/deepthix-agent/releases/latest)                        |
+
+The app isn't code-signed yet, so:
+
+- **macOS**: right-click the .app the first time → "Open" → "Open" in the dialog.
+- **Windows**: SmartScreen will warn → "More info" → "Run anyway".
+
+After install, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) must be on your PATH (`brew install anthropic/anthropic/claude` on macOS, or follow the docs for Windows).
+
+## Quick start (dev)
 
 ```bash
 git clone <this-repo-url> deepthix-agent
@@ -46,7 +64,8 @@ The `npm run dev` command launches Tauri in dev mode (it spawns Vite for the web
 | `server/`     | Forked HTTP/hooks server — currently unused, kept for future Claude Code Hooks integration |
 | `shared/`     | Shared TypeScript types between the webview and (future) server                  |
 | `eslint-rules/` | Project-specific lint rules (no inline colors, pixel font, pixel shadows)      |
-| `docs/`       | Planning docs, phase specs, master plan                                          |
+| `docs/`       | External-asset attribution and other public docs                                 |
+| `.github/`    | Release pipeline (auto-builds macOS Intel/ARM + Windows on every `v*` tag)      |
 
 ## Build commands
 
@@ -61,7 +80,17 @@ cd webview-ui && npm run dev   # Webview-only dev (no Tauri shell)
 
 ## Contributing
 
-This is a personal project under active development; the public API is not yet stable. If you want to follow along or fork it further, the master plan in `docs/superpowers/plans/` is the source of truth for what's shipped and what's next.
+Personal project, public API not yet stable. PRs welcome on bugs you actually hit; please open an issue for any feature work first so we don't both ship the same thing.
+
+## Releases
+
+Tagging a `v*` commit automatically triggers `.github/workflows/release.yml`, which builds macOS Apple Silicon, macOS Intel, and Windows x64 in parallel and attaches the artifacts to a draft release. Bump the version in `src-tauri/tauri.conf.json` + `src-tauri/Cargo.toml`, then:
+
+```bash
+git tag v0.X.Y
+git push origin v0.X.Y
+# Wait ~15 min, review the draft release on GitHub, click Publish.
+```
 
 ## License
 
