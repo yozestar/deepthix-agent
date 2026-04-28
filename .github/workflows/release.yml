@@ -1,0 +1,100 @@
+# Release pipeline.
+#
+# Trigger: push of any v* tag (e.g. v0.1.0) OR manual dispatch.
+# Output: a GitHub Release named after the tag, with .dmg/.app.tar.gz
+# (macOS Apple Silicon + Intel) and .msi/.exe (Windows x64) attached.
+#
+# Builds happen on GitHub-hosted runners — Tauri can't cross-compile to
+# Windows from macOS because it needs the Windows toolchain (MSVC, WiX).
+# Three matrix legs:
+#   - macos-latest with `aarch64-apple-darwin`  -> Apple Silicon dmg
+#   - macos-latest with `x86_64-apple-darwin`   -> Intel dmg
+#   - windows-latest with default target         -> Windows MSI/NSIS
+#
+# Notes
+#   - We use --legacy-peer-deps because @xterm/addon-web-links@0.11
+#     declares a peer on @xterm/xterm@^5 but we ship v6 (the addon
+#     still works fine, it's a stale peer range).
+#   - The official tauri-action handles compiling, bundling, and
+#     uploading every artifact to the release in one step.
+#   - releaseDraft: true so the user can review + publish manually
+#     once all three jobs finish — useful if one platform fails.
+#   - github.ref_name is forwarded via env vars (not interpolated in
+#     run: blocks) per GitHub's workflow-injection guidance.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+            label: 'macOS (Apple Silicon)'
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+            label: 'macOS (Intel)'
+          - platform: windows-latest
+            args: ''
+            label: 'Windows x64'
+
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.platform }}
+
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Rust toolchain (with macOS targets when needed)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache cargo registry + target
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install root deps
+        # See header note re: legacy-peer-deps.
+        run: npm install --legacy-peer-deps
+
+      - name: Install webview deps
+        run: npm install --prefix webview-ui --legacy-peer-deps
+
+      - name: Build + bundle + release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: Deepthix Agent ${{ env.RELEASE_TAG }}
+          releaseBody: |
+            Auto-built by `.github/workflows/release.yml`.
+            Pick the artifact matching your machine:
+              - `*_aarch64.dmg`     -> macOS on Apple Silicon (M1/M2/M3/M4)
+              - `*_x64.dmg`         -> macOS on Intel
+              - `*_x64-setup.exe`   -> Windows installer (NSIS)
+              - `*_x64_en-US.msi`   -> Windows installer (MSI)
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
