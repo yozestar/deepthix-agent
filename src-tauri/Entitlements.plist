@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        macOS hardened-runtime entitlements.
+
+        - device.audio-input: required for the WKWebView to actually
+          receive microphone audio at runtime. Info.plist's
+          NSMicrophoneUsageDescription only EXPOSES the API; this
+          entitlement is what lets it return real samples (vs silent
+          buffers / immediate denial).
+
+        - cs.allow-jit + cs.allow-unsigned-executable-memory: required
+          by V8 / xterm.js's WebGL fallback paths in some macOS versions.
+          Cheap to grant, painful to debug if missing.
+
+        - cs.disable-library-validation: lets the app load the
+          unsigned ffmpeg / whisper-cli binaries the voice pipeline
+          spawns from /opt/homebrew/bin without macOS killing the child
+          for "code signature mismatch".
+
+        Entitlements only take effect on a code-signed binary. Tauri
+        ad-hoc-signs by default when no Apple Developer ID is set
+        (bundle.macOS.signingIdentity = "-"), which is enough for these
+        non-restricted entitlements.
+    -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

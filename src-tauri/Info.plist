@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Required for navigator.mediaDevices.getUserMedia({ audio: true })
+        to be exposed in the WKWebView. Without this key WebKit hard-blocks
+        the mediaDevices API and React code throws
+        "undefined is not an object" the moment Cmd+M tries to record.
+
+        The string is shown verbatim by macOS in the system permission
+        dialog the first time the user records — keep it short, honest,
+        and explain what happens to the audio (local-only).
+    -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Deepthix Agent records short voice clips when you press ⌘M, transcribes them locally with whisper.cpp, and types the transcript into the active claude session. Audio never leaves your Mac.</string>
+</dict>
+</plist>
