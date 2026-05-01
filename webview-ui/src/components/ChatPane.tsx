@@ -236,7 +236,9 @@ type ParseAction =
   | { kind: 'append'; messages: Message[] }
   | { kind: 'append_text'; blockKey: string; text: string }
   | { kind: 'set_tool_input'; blockKey: string; input: unknown }
-  | { kind: 'set_session'; sessionId: string };
+  | { kind: 'set_session'; sessionId: string }
+  | { kind: 'set_slash_commands'; commands: string[] }
+  | { kind: 'turn_end'; ok: boolean; durationMs: number; costUsd: number };
 
 type ParseResult = ParseAction[];
 
@@ -260,20 +262,24 @@ function parseLine(line: string, ctx: ParseContext): ParseResult {
       const subtype = (obj.subtype as string) ?? 'unknown';
       if (subtype === 'init') {
         const sid = obj.session_id as string | undefined;
-        return sid ? [{ kind: 'set_session', sessionId: sid }] : [];
+        const slash =
+          (obj.slash_commands as string[] | undefined)?.filter(
+            (s) => typeof s === 'string',
+          ) ?? null;
+        const actions: ParseAction[] = [];
+        if (sid) actions.push({ kind: 'set_session', sessionId: sid });
+        if (slash && slash.length > 0)
+          actions.push({ kind: 'set_slash_commands', commands: slash });
+        return actions;
       }
-      // Already rendered as the "thinking…" header indicator.
-      if (subtype === 'status') return [];
-      const summary =
-        subtype === 'hook_started' || subtype === 'hook_response'
-          ? `${subtype}: ${(obj.hook_name as string) ?? ''}`
-          : subtype;
-      return [
-        {
-          kind: 'append',
-          messages: [{ kind: 'system', uid: uid(), ts: Date.now(), subtype, summary }],
-        },
-      ];
+      // Suppress all of these — they show up on every turn and just
+      // chrome-bloat the chat:
+      //   - status: rendered as the header "thinking…" indicator
+      //   - hook_started / hook_response: per-session-start noise from
+      //     plugins (superpowers, etc.). Errors still come through
+      //     stderr.
+      //   - any subtype we don't explicitly recognise stays hidden.
+      return [];
     }
     case 'user':
       // We already created our own user bubble at send time.
@@ -440,25 +446,21 @@ function parseLine(line: string, ctx: ParseContext): ParseResult {
     }
     case 'result': {
       const subtype = (obj.subtype as string) ?? '';
-      const ok = subtype === 'success';
       return [
         {
-          kind: 'append',
-          messages: [
-            {
-              kind: 'result',
-              uid: uid(),
-              ts: Date.now(),
-              ok,
-              durationMs: (obj.duration_ms as number) ?? 0,
-              costUsd: (obj.total_cost_usd as number) ?? 0,
-              text: (obj.result as string) ?? subtype,
-            },
-          ],
+          kind: 'turn_end',
+          ok: subtype === 'success',
+          durationMs: (obj.duration_ms as number) ?? 0,
+          costUsd: (obj.total_cost_usd as number) ?? 0,
         },
       ];
     }
-    case 'rate_limit_event':
+    case 'rate_limit_event': {
+      // Only surface rate-limit when we're actually being throttled —
+      // "allowed" status fires on every turn and is just noise.
+      const info = obj.rate_limit_info as Record<string, unknown> | undefined;
+      const status = (info?.status as string) ?? 'allowed';
+      if (status === 'allowed') return [];
       return [
         {
           kind: 'append',
@@ -468,13 +470,12 @@ function parseLine(line: string, ctx: ParseContext): ParseResult {
               uid: uid(),
               ts: Date.now(),
               subtype: 'rate_limit',
-              summary: `rate limit ${
-                ((obj.rate_limit_info as Record<string, unknown> | undefined)?.status as string) ?? '?'
-              }`,
+              summary: `rate limit ${status}`,
             },
           ],
         },
       ];
+    }
     default:
       return [];
   }
@@ -495,6 +496,14 @@ export function ChatPane({
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Slash commands learned from the system/init event. Used to drive
+   *  the autocomplete popup when the user types `/` at the start of
+   *  the input. */
+  const [slashCommands, setSlashCommands] = useState<string[]>([]);
+  /** Last turn summary for the header. Replaces the per-turn bubble. */
+  const [lastTurn, setLastTurn] = useState<
+    { ok: boolean; durationMs: number; costUsd: number } | null
+  >(null);
   const ctxRef = useRef<ParseContext>(makeContext());
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const termIdRef = useRef<string | null>(termId);
@@ -599,7 +608,19 @@ export function ChatPane({
           }
           case 'append': {
             setMessages((prev) => [...prev, ...a.messages]);
-            if (a.messages.some((m) => m.kind === 'result')) setBusy(false);
+            break;
+          }
+          case 'turn_end': {
+            setLastTurn({
+              ok: a.ok,
+              durationMs: a.durationMs,
+              costUsd: a.costUsd,
+            });
+            setBusy(false);
+            break;
+          }
+          case 'set_slash_commands': {
+            setSlashCommands(a.commands);
             break;
           }
           case 'append_text': {
@@ -720,11 +741,29 @@ export function ChatPane({
           background: 'var(--color-bg-dark)',
           borderBottom: '2px solid var(--color-border)',
           fontSize: '11px',
-          opacity: 0.85,
+          opacity: 0.9,
+          gap: 8,
         }}
       >
-        <span title={cwd}>{headerLabel}</span>
-        <span>{busy ? 'thinking…' : 'idle'}</span>
+        <span title={cwd} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {headerLabel}
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {busy ? (
+            <ThinkingIndicator />
+          ) : lastTurn ? (
+            <span
+              style={{
+                color: lastTurn.ok ? 'inherit' : 'var(--color-danger)',
+                opacity: 0.75,
+              }}
+            >
+              {(lastTurn.durationMs / 1000).toFixed(1)}s · ${lastTurn.costUsd.toFixed(4)}
+            </span>
+          ) : (
+            <span style={{ opacity: 0.5 }}>idle</span>
+          )}
+        </span>
       </div>
 
       {/* Message list */}
@@ -763,7 +802,122 @@ export function ChatPane({
         ))}
       </div>
 
-      {/* Input row */}
+      <ChatInput
+        input={input}
+        setInput={setInput}
+        send={send}
+        slashCommands={slashCommands}
+        canSend={Boolean(termId) && !busy}
+        spawning={!termId}
+        busy={busy}
+      />
+    </div>
+  );
+}
+
+// ─── Input + slash command autocomplete ─────────────────────────────────
+
+function ChatInput({
+  input,
+  setInput,
+  send,
+  slashCommands,
+  canSend,
+  spawning,
+  busy,
+}: {
+  input: string;
+  setInput: (v: string) => void;
+  send: () => void;
+  slashCommands: string[];
+  canSend: boolean;
+  spawning: boolean;
+  busy: boolean;
+}): React.JSX.Element {
+  const [selectedIdx, setSelectedIdx] = useState(0);
+
+  // Show the slash popup when the input starts with `/` and the user
+  // has typed at most one line (still composing the command name —
+  // multi-line means they're past the command).
+  const showSlash = useMemo(() => {
+    if (slashCommands.length === 0) return false;
+    if (!input.startsWith('/')) return false;
+    if (input.includes('\n')) return false;
+    return true;
+  }, [input, slashCommands]);
+
+  const filtered = useMemo(() => {
+    if (!showSlash) return [];
+    const q = input.slice(1).toLowerCase();
+    const matches = slashCommands.filter((c) => c.toLowerCase().startsWith(q));
+    // Cap to 8 — anything more becomes a wall of text. The user can
+    // narrow by typing more.
+    return matches.slice(0, 8);
+  }, [input, slashCommands, showSlash]);
+
+  // Reset selection whenever the filter changes shape.
+  useEffect(() => {
+    setSelectedIdx((i) => (i >= filtered.length ? 0 : i));
+  }, [filtered]);
+
+  const pick = useCallback(
+    (cmd: string) => {
+      // Replace whatever the user typed by the chosen command + a
+      // trailing space so they can append args before hitting enter.
+      setInput(`/${cmd} `);
+    },
+    [setInput],
+  );
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {showSlash && filtered.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: 8,
+            right: 8,
+            marginBottom: 4,
+            background: 'var(--color-bg-dark)',
+            border: '2px solid var(--color-border)',
+            boxShadow: 'var(--shadow-pixel)',
+            zIndex: 10,
+            maxHeight: 240,
+            overflow: 'auto',
+            fontSize: '12px',
+          }}
+        >
+          {filtered.map((cmd, i) => (
+            <button
+              key={cmd}
+              type="button"
+              onMouseDown={(e) => {
+                // mousedown not click — click loses textarea focus first
+                // and the closing-on-blur causes a flicker.
+                e.preventDefault();
+                pick(cmd);
+              }}
+              onMouseEnter={() => setSelectedIdx(i)}
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                padding: '6px 10px',
+                background:
+                  i === selectedIdx ? 'var(--color-accent)' : 'transparent',
+                color: i === selectedIdx ? 'var(--color-bg-dark)' : 'inherit',
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-pixel)',
+                fontSize: '12px',
+              }}
+            >
+              /{cmd}
+            </button>
+          ))}
+        </div>
+      )}
       <div
         style={{
           padding: '8px',
@@ -777,13 +931,39 @@ export function ChatPane({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
+            if (showSlash && filtered.length > 0) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSelectedIdx((i) => Math.min(filtered.length - 1, i + 1));
+                return;
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSelectedIdx((i) => Math.max(0, i - 1));
+                return;
+              }
+              if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                e.preventDefault();
+                pick(filtered[selectedIdx]);
+                return;
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setInput('');
+                return;
+              }
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              void send();
+              send();
             }
           }}
-          placeholder={termId ? 'Message claude (⏎ send, ⇧⏎ newline)' : 'Spawning claude…'}
-          disabled={!termId || busy}
+          placeholder={
+            spawning
+              ? 'Spawning claude…'
+              : 'Message claude (⏎ send, ⇧⏎ newline, / for commands)'
+          }
+          disabled={spawning || busy}
           rows={3}
           style={{
             flex: 1,
@@ -800,20 +980,18 @@ export function ChatPane({
         />
         <button
           type="button"
-          onClick={() => void send()}
-          disabled={!termId || busy || !input.trim()}
+          onClick={send}
+          disabled={!canSend || !input.trim()}
           style={{
             padding: '4px 16px',
-            background:
-              termId && !busy && input.trim() ? 'var(--color-accent)' : 'transparent',
-            color:
-              termId && !busy && input.trim() ? 'var(--color-bg-dark)' : 'inherit',
+            background: canSend && input.trim() ? 'var(--color-accent)' : 'transparent',
+            color: canSend && input.trim() ? 'var(--color-bg-dark)' : 'inherit',
             border: '2px solid var(--color-border)',
-            boxShadow: termId && !busy && input.trim() ? 'var(--shadow-pixel)' : 'none',
-            cursor: termId && !busy && input.trim() ? 'pointer' : 'default',
+            boxShadow: canSend && input.trim() ? 'var(--shadow-pixel)' : 'none',
+            cursor: canSend && input.trim() ? 'pointer' : 'default',
             fontFamily: 'var(--font-pixel)',
             fontSize: '13px',
-            opacity: termId && !busy && input.trim() ? 1 : 0.4,
+            opacity: canSend && input.trim() ? 1 : 0.4,
           }}
         >
           {busy ? '…' : 'Send'}
@@ -824,6 +1002,27 @@ export function ChatPane({
 }
 
 // ─── Message bubbles ────────────────────────────────────────────────────
+
+function ThinkingIndicator(): React.JSX.Element {
+  // Three dots that pulse in sequence. Uses the existing global pulse
+  // keyframes defined in index.css (see the @keyframes block).
+  const dot: React.CSSProperties = {
+    width: 4,
+    height: 4,
+    borderRadius: '50%',
+    background: 'var(--color-text)',
+    display: 'inline-block',
+    animation: 'pulse 1.2s ease-in-out infinite',
+  };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ marginRight: 4 }}>thinking</span>
+      <span style={{ ...dot, animationDelay: '0s' }} />
+      <span style={{ ...dot, animationDelay: '0.2s' }} />
+      <span style={{ ...dot, animationDelay: '0.4s' }} />
+    </span>
+  );
+}
 
 function MessageBubble({ m }: { m: Message }): React.JSX.Element {
   switch (m.kind) {
