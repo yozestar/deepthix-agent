@@ -733,6 +733,41 @@ export function ChatPane({
     [sessionId],
   );
 
+  // Set of toolUseIds whose result has not yet arrived. Drives the
+  // pulsing "running" indicator on tool_use bubbles. A tool is "done"
+  // when claude sends back a (result) bubble pointing at the same
+  // toolUseId.
+  const runningTools = useMemo(() => {
+    const started = new Set<string>();
+    const finished = new Set<string>();
+    for (const m of messages) {
+      if (m.kind !== 'tool_use') continue;
+      if (m.tool === '(result)') {
+        if (m.toolUseId) finished.add(m.toolUseId);
+      } else if (m.toolUseId) {
+        started.add(m.toolUseId);
+      }
+    }
+    const out = new Set<string>();
+    for (const id of started) if (!finished.has(id)) out.add(id);
+    return out;
+  }, [messages]);
+
+  // Show a "claude is thinking" placeholder at the bottom of the log
+  // when busy AND there's no in-progress streaming bubble for the user
+  // to watch grow. Prevents the dead-air feeling between message_start
+  // and the first content_block_start, OR while claude is processing
+  // a long tool result before its next assistant turn.
+  const showPendingPlaceholder = useMemo(() => {
+    if (!busy) return false;
+    // If the most recent message is an assistant_text bubble that's
+    // currently being filled (no message_stop yet for its block), the
+    // streaming caret already gives feedback. Don't double up.
+    const last = messages[messages.length - 1];
+    if (last && last.kind === 'assistant_text' && last.text.length > 0) return false;
+    return true;
+  }, [busy, messages]);
+
   return (
     <div
       style={{
@@ -813,8 +848,15 @@ export function ChatPane({
           </div>
         )}
         {messages.map((m) => (
-          <MessageBubble key={m.uid} m={m} />
+          <MessageBubble
+            key={m.uid}
+            m={m}
+            running={
+              m.kind === 'tool_use' && m.tool !== '(result)' && runningTools.has(m.toolUseId)
+            }
+          />
         ))}
+        {showPendingPlaceholder && <PendingPlaceholder />}
       </div>
 
       <ChatInput
@@ -1018,19 +1060,68 @@ function ChatInput({
 
 // ─── Message bubbles ────────────────────────────────────────────────────
 
-function ThinkingIndicator(): React.JSX.Element {
-  // Three dots that pulse in sequence. Uses the existing global pulse
-  // keyframes defined in index.css (see the @keyframes block).
+/**
+ * Bottom-of-log placeholder shown while claude is busy and there's no
+ * actively-streaming text bubble for the user to watch grow. Three
+ * pulsing dots in a left-aligned bubble that mirrors the assistant
+ * style — visually consistent with the "claude is typing" pattern
+ * users know from chat apps.
+ */
+function PendingPlaceholder(): React.JSX.Element {
   const dot: React.CSSProperties = {
-    width: 4,
-    height: 4,
+    width: 6,
+    height: 6,
     borderRadius: '50%',
     background: 'var(--color-text)',
     display: 'inline-block',
     animation: 'pulse 1.2s ease-in-out infinite',
   };
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+    <div
+      className="dt-chat-msg"
+      style={{
+        alignSelf: 'flex-start',
+        background: 'var(--color-bg-dark)',
+        color: 'var(--color-text)',
+        border: '2px solid var(--color-border)',
+        boxShadow: 'var(--shadow-pixel)',
+        padding: '8px 12px',
+        fontSize: 12,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        opacity: 0.85,
+      }}
+    >
+      <span style={{ opacity: 0.7, marginRight: 4 }}>claude is thinking</span>
+      <span style={{ ...dot, animationDelay: '0s' }} />
+      <span style={{ ...dot, animationDelay: '0.2s' }} />
+      <span style={{ ...dot, animationDelay: '0.4s' }} />
+    </div>
+  );
+}
+
+function ThinkingIndicator(): React.JSX.Element {
+  // Coloured + bolded so it actually reads as ACTIVE in the header
+  // rather than disappearing into the surrounding chrome.
+  const dot: React.CSSProperties = {
+    width: 5,
+    height: 5,
+    borderRadius: '50%',
+    background: 'var(--color-accent)',
+    display: 'inline-block',
+    animation: 'pulse 1.2s ease-in-out infinite',
+  };
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        color: 'var(--color-accent)',
+        fontWeight: 'bold',
+      }}
+    >
       <span style={{ marginRight: 4 }}>thinking</span>
       <span style={{ ...dot, animationDelay: '0s' }} />
       <span style={{ ...dot, animationDelay: '0.2s' }} />
@@ -1039,7 +1130,7 @@ function ThinkingIndicator(): React.JSX.Element {
   );
 }
 
-function MessageBubble({ m }: { m: Message }): React.JSX.Element {
+function MessageBubble({ m, running }: { m: Message; running?: boolean }): React.JSX.Element {
   switch (m.kind) {
     case 'user':
       return (
@@ -1064,7 +1155,7 @@ function MessageBubble({ m }: { m: Message }): React.JSX.Element {
         />
       );
     case 'tool_use':
-      return <ToolBubble m={m} />;
+      return <ToolBubble m={m} running={Boolean(running)} />;
     case 'system':
       return (
         <div
@@ -1449,8 +1540,10 @@ function formatSize(bytes: number): string {
 
 function ToolBubble({
   m,
+  running,
 }: {
   m: Extract<Message, { kind: 'tool_use' }>;
+  running: boolean;
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const isResult = m.tool === '(result)';
@@ -1530,6 +1623,22 @@ function ToolBubble({
         >
           {style.summary}
         </span>
+        {running && (
+          // Pulsing dot — the tool has been started but its result
+          // hasn't come back yet. Disappears the moment claude sends
+          // back the matching tool_result.
+          <span
+            title="running"
+            style={{
+              flexShrink: 0,
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: style.accent,
+              animation: 'pulse 1s ease-in-out infinite',
+            }}
+          />
+        )}
         {!isResult && (
           <span style={{ opacity: 0.4, fontSize: 11, flexShrink: 0 }}>
             {expanded ? '▾' : '▸'}
