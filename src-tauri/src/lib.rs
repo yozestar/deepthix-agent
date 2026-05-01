@@ -120,6 +120,8 @@ pub fn run() {
             commands::chat::chat_load_history,
             commands::chat::chat_interrupt,
             commands::chat::chat_kill,
+            commands::chat::read_session_excerpt,
+            commands::chat::append_to_claude_md,
         ])
         .setup(|app| {
             // Spawn the notifications watcher tied to the app handle so it

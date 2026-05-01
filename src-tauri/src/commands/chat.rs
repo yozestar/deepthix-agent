@@ -465,6 +465,134 @@ pub fn chat_load_history(project_cwd: PathBuf, session_id: String) -> Result<Vec
     Ok(raw.lines().filter(|l| !l.is_empty()).map(|s| s.to_string()).collect())
 }
 
+/// Format the last `last_n` user/assistant turns of a session into a
+/// human-readable excerpt. Used by the Coach pane to brief its own
+/// claude session on what the main session has been doing without
+/// dumping the raw JSONL on it.
+///
+/// Skips queue-operation, attachment (hook output), and system noise.
+/// Tool_use blocks are summarised inline so the coach sees what was
+/// invoked without the full input dump.
+#[tauri::command]
+pub fn read_session_excerpt(
+    project_cwd: PathBuf,
+    session_id: String,
+    last_n: Option<usize>,
+) -> Result<String, String> {
+    let limit = last_n.unwrap_or(20).min(200);
+    let path = crate::jsonl_watcher::predict_jsonl_path(&project_cwd, &session_id);
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(String::new()),
+        Err(e) => return Err(format!("read jsonl: {e}")),
+    };
+    // Walk from the end, collect up to `limit` user/assistant records,
+    // then reverse so the excerpt reads forward.
+    let mut entries: Vec<String> = Vec::new();
+    for line in raw.lines().rev() {
+        if entries.len() >= limit {
+            break;
+        }
+        let v: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let kind = v.get("type").and_then(|x| x.as_str()).unwrap_or("");
+        match kind {
+            "user" => {
+                let content = v.get("message").and_then(|m| m.get("content"));
+                let body = match content {
+                    Some(serde_json::Value::String(s)) => s.clone(),
+                    Some(serde_json::Value::Array(a)) => {
+                        let mut buf = String::new();
+                        for b in a {
+                            let bt = b.get("type").and_then(|x| x.as_str()).unwrap_or("");
+                            if bt == "text" {
+                                if let Some(t) = b.get("text").and_then(|x| x.as_str()) {
+                                    buf.push_str(t);
+                                    buf.push('\n');
+                                }
+                            } else if bt == "tool_result" {
+                                let txt = b.get("content").map(stringify_short).unwrap_or_default();
+                                buf.push_str(&format!("[tool_result] {}\n", short(&txt, 240)));
+                            }
+                        }
+                        buf
+                    }
+                    _ => continue,
+                };
+                let trimmed = short(body.trim(), 600);
+                entries.push(format!("USER:\n{trimmed}\n"));
+            }
+            "assistant" => {
+                let content = v.get("message").and_then(|m| m.get("content"));
+                let mut buf = String::new();
+                if let Some(serde_json::Value::Array(blocks)) = content {
+                    for b in blocks {
+                        let bt = b.get("type").and_then(|x| x.as_str()).unwrap_or("");
+                        if bt == "text" {
+                            if let Some(t) = b.get("text").and_then(|x| x.as_str()) {
+                                buf.push_str(t);
+                                buf.push('\n');
+                            }
+                        } else if bt == "tool_use" {
+                            let name = b.get("name").and_then(|x| x.as_str()).unwrap_or("?");
+                            let input = b.get("input").map(stringify_short).unwrap_or_default();
+                            buf.push_str(&format!("[tool: {name}] {}\n", short(&input, 240)));
+                        }
+                    }
+                }
+                let trimmed = short(buf.trim(), 800);
+                if !trimmed.is_empty() {
+                    entries.push(format!("ASSISTANT:\n{trimmed}\n"));
+                }
+            }
+            _ => continue,
+        }
+    }
+    entries.reverse();
+    Ok(entries.join("\n---\n\n"))
+}
+
+fn stringify_short(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        _ => serde_json::to_string(v).unwrap_or_default(),
+    }
+}
+fn short(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let truncated: String = s.chars().take(max).collect();
+    format!("{truncated}…")
+}
+
+/// Append a coach-suggested note to the project's `CLAUDE.md`. Used
+/// by the Coach pane's "Add to memory" button so insights persist
+/// into the main session's context on next launch.
+///
+/// Wraps the addition in a clearly-marked section so re-runs don't
+/// step on each other.
+#[tauri::command]
+pub fn append_to_claude_md(project_cwd: PathBuf, text: String) -> Result<(), String> {
+    let path = project_cwd.join("CLAUDE.md");
+    let block = format!(
+        "\n\n<!-- coach: {} -->\n{}\n",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M UTC"),
+        text.trim(),
+    );
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("open: {e}"))?;
+    f.write_all(block.as_bytes()).map_err(|e| format!("write: {e}"))?;
+    tracing::info!(target: "deepthix::chat", ?path, bytes = block.len(), "append_to_claude_md");
+    Ok(())
+}
+
 #[tauri::command]
 pub fn chat_kill(state: State<'_, ChatManager>, term_id: String) -> Result<(), String> {
     tracing::info!(target: "deepthix::chat", %term_id, "chat_kill");

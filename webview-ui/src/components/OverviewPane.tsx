@@ -18,7 +18,6 @@ import {
   ptyWrite,
   readSessionDashboard,
 } from '../tauri/commands';
-import { PixelBrain } from './PixelBrain';
 import { StatusDot } from './StatusDot';
 import type { Mode } from './TopTabs';
 
@@ -184,7 +183,6 @@ function ProjectGroupView({
   // still need to land in SOME live session — we use the first claude
   // session and let claude figure out coordination from there.
   const proxySession = group.sessions[0];
-  const seed = `${group.projectId}#0`;
 
   return (
     <div
@@ -241,11 +239,10 @@ function ProjectGroupView({
           </span>
         )}
         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-          {group.sessions.map((s, idx) => (
+          {group.sessions.map((s) => (
             <SessionPill
               key={s.id}
               terminal={s}
-              seed={`${s.projectId}#${idx}`}
               status={status(s.agentId)}
               isActive={false}
               onClick={() => onPickSession(s)}
@@ -264,7 +261,6 @@ function ProjectGroupView({
           termId={proxySession?.id ?? ''}
           projectId={group.projectId}
           sessionId={null}
-          seed={seed}
           sessionLabel={group.projectName}
           isWorking={anyWorking}
         />
@@ -279,11 +275,8 @@ function ProjectGroupView({
 
 /** How often we poll the dashboard file's mtime. Cheap call (just stat). */
 const DASHBOARD_POLL_MS = 2_000;
-const PILL_BRAIN_SIZE = 28;
-
 interface PillProps {
   terminal: TerminalEntry;
-  seed: string;
   status: 'idle' | 'working' | 'absent';
   isActive: boolean;
   /** Make this session's dashboard the visible one (no terminal jump). */
@@ -294,13 +287,11 @@ interface PillProps {
 
 function SessionPill({
   terminal,
-  seed,
   status,
   isActive,
   onClick,
   onFocus,
 }: PillProps): React.JSX.Element {
-  const working = status === 'working';
   return (
     <div
       style={{
@@ -327,8 +318,7 @@ function SessionPill({
       }}
       title={`${terminal.label} — click to view dashboard`}
     >
-      <PixelBrain seed={seed} size={PILL_BRAIN_SIZE} active={working} />
-      <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {terminal.label}
       </span>
       <StatusDot status={status} size={8} title={status} />
@@ -370,33 +360,23 @@ interface DashboardProps {
   termId: string;
   projectId: string;
   sessionId: string | null;
-  /** Brain seed for the empty-state preview. Stable per session. */
-  seed: string;
-  /** Session label shown next to the brain in the empty state. */
+  /** Label shown when the dashboard.html is empty. */
   sessionLabel: string;
-  /** Drives the brain animation while there's no dashboard yet. */
+  /** Whether at least one session in the project is currently working. */
   isWorking: boolean;
 }
 
-const EMPTY_BRAIN_SIZE = 96;
-
 /**
- * Renders an iframe (via `srcdoc` so it inherits no document context) that
- * reflects the contents of `~/.deepthix/projects/<pid>/dashboards/<sid>.html`.
+ * Renders an iframe (via `srcdoc` so it inherits no document context)
+ * that reflects the contents of `~/.deepthix/projects/<pid>/dashboard.html`.
  * Polls the file's mtime every 2s and re-reads the body only when it
- * changes — so claude can `Write` into the file and have its dashboard
- * appear here within ~2s.
- *
- * When the file doesn't exist yet, the iframe area stays blank. Claude
- * already knows where to write (DEEPTHIX_DASHBOARD_PATH env + the block
- * we inject into the project's CLAUDE.md), so the previous "tell this
- * session to write to <path>" placeholder was redundant noise.
+ * changes — so any session in the project can `Write` to the file and
+ * have its dashboard appear here within ~2s.
  */
 function SessionDashboard({
   termId,
   projectId,
   sessionId,
-  seed,
   sessionLabel,
   isWorking,
 }: DashboardProps): React.JSX.Element | null {
@@ -522,10 +502,9 @@ function SessionDashboard({
           }}
         />
       ) : (
-        // Pretty empty state — big brain in the middle of the empty
-        // canvas + a single line telling the user nothing has been
-        // written yet. The brain pulses if claude is actually working
-        // so it doesn't feel dead during a long thinking phase.
+        // Empty state — clean, no animated brain. Just tells the user
+        // what's expected (claude can write a dashboard.html and it
+        // shows up here).
         <div
           style={{
             flex: 1,
@@ -533,11 +512,12 @@ function SessionDashboard({
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '12px',
-            opacity: 0.85,
+            gap: '8px',
+            opacity: 0.7,
+            padding: '24px',
+            textAlign: 'center',
           }}
         >
-          <PixelBrain seed={seed} size={EMPTY_BRAIN_SIZE} active={isWorking} />
           <span
             style={{
               fontSize: '13px',
@@ -547,14 +527,10 @@ function SessionDashboard({
           >
             {sessionLabel}
           </span>
-          <span
-            style={{
-              fontSize: '11px',
-              opacity: 0.5,
-              fontFamily: 'var(--font-pixel)',
-            }}
-          >
-            {isWorking ? 'thinking…' : 'no dashboard yet'}
+          <span style={{ fontSize: '11px', opacity: 0.6, fontFamily: 'var(--font-pixel)' }}>
+            {isWorking
+              ? 'claude is working…'
+              : 'No dashboard yet — claude can `Write` to $DEEPTHIX_DASHBOARD_PATH'}
           </span>
         </div>
       )}

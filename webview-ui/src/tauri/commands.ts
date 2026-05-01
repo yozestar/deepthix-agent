@@ -456,6 +456,22 @@ export async function chatLoadHistory(projectCwd: string, sessionId: string): Pr
   return await invoke<string[]>('chat_load_history', { projectCwd, sessionId });
 }
 
+/** Read a human-readable excerpt of a past session — last `lastN`
+ *  user/assistant turns, formatted for handing to a Coach session. */
+export async function readSessionExcerpt(
+  projectCwd: string,
+  sessionId: string,
+  lastN = 20,
+): Promise<string> {
+  return await invoke<string>('read_session_excerpt', { projectCwd, sessionId, lastN });
+}
+
+/** Append a coach-suggested note to the project's CLAUDE.md so the
+ *  insight persists into the main session's context. */
+export async function appendToClaudeMd(projectCwd: string, text: string): Promise<void> {
+  return await invoke<void>('append_to_claude_md', { projectCwd, text });
+}
+
 // ─── Schedules ──────────────────────────────────────────────────────────
 
 export type Cadence =

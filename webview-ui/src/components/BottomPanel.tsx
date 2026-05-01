@@ -24,7 +24,7 @@ import {
   type ProcessInfo,
 } from '../tauri/commands';
 import { StatusDot } from './StatusDot';
-import { ChatPane } from './ChatPane';
+import { SessionTabs } from './SessionTabs';
 import { TerminalTab } from './TerminalTab';
 
 const MIN_HEIGHT = 160;
@@ -248,23 +248,20 @@ export function SessionsPane({
             }}
           >
             {t.kind === 'claude' ? (
-              // Claude sessions go through the stream-json ChatPane, not
-              // xterm. Avoids every TUI rendering bug we kept fighting
-              // (cell-bleed, glyph drift, fonts.ready races, WKWebView
-              // DPR), at the cost of losing the in-TTY slash commands
-              // (/agents, /privacy, etc.) — those become future custom
-              // UI in this pane.
+              // SessionTabs wraps the main ChatPane and adds tabs
+              // (Chat / Coach). Coach is a sub-session that analyses
+              // the main one in real time.
               //
               // onSessionReady fires when claude emits its system/init
               // event with the real session_id. We feed it back to
               // useTerminals so the entry gets persisted with the
               // right id (otherwise fresh sessions vanish on next
               // launch — they were never saved with a non-null id).
-              <ChatPane
+              <SessionTabs
                 cwd={t.cwd}
-                resumeSessionId={t.sessionId}
+                termId={t.id}
+                sessionId={t.sessionId}
                 skipPermissions={t.skipPermissions}
-                bindTermId={t.id}
                 onSessionReady={({ termId, sessionId }) => {
                   if (sessionId) terminals.setSessionId(termId, sessionId);
                 }}
