@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  chatKill as cmdChatKill,
+  chatSpawn as cmdChatSpawn,
   clearTerminalScrollback as cmdClearTerminalScrollback,
   jsonlMtimeMs as cmdJsonlMtimeMs,
   killTerminal as cmdKillTerminal,
@@ -233,18 +235,35 @@ export function useTerminals(): UseTerminalsResult {
         }
       }
       try {
-        const result = await cmdSpawnTerminal(cwd, kind, undefined, undefined, {
-          skipPermissions: opts?.skipPermissions,
-          resumeSessionId: opts?.resumeSessionId,
-        });
+        // Claude sessions go through the new stream-json ChatManager
+        // (no PTY, no Ink TUI). Shell sessions still spawn through
+        // the PTY TerminalManager so they can host bash/zsh.
+        let resultId: string;
+        let resultSessionId: string | null;
+        if (kind === 'claude') {
+          const r = await cmdChatSpawn({
+            cwd,
+            resume_session_id: opts?.resumeSessionId ?? null,
+            skip_permissions: opts?.skipPermissions ?? false,
+          });
+          resultId = r.term_id;
+          resultSessionId = r.session_id; // usually null at spawn — filled in by the system/init event
+        } else {
+          const r = await cmdSpawnTerminal(cwd, kind, undefined, undefined, {
+            skipPermissions: opts?.skipPermissions,
+            resumeSessionId: opts?.resumeSessionId,
+          });
+          resultId = r.id;
+          resultSessionId = r.session_id;
+        }
         const agentId = nextAgentIdRef.current++;
         const entry: TerminalEntry = {
-          id: result.id,
+          id: resultId,
           label: label ?? `${kind === 'claude' ? 'session' : 'shell'}-${agentId}`,
           cwd,
           kind,
           agentId,
-          sessionId: result.session_id,
+          sessionId: resultSessionId,
           projectId,
           skipPermissions: opts?.skipPermissions ?? false,
           notes: opts?.initialNotes ?? '',
@@ -252,12 +271,12 @@ export function useTerminals(): UseTerminalsResult {
         console.debug('[Deepthix][useTerminals] opened', entry);
         setTerminals((prev) => [...prev, entry]);
         terminalsRef.current = [...terminalsRef.current, entry];
-        setActive(result.id);
+        setActive(resultId);
         if (kind === 'claude') {
           dispatchWebviewMessage({
             type: 'agentCreated',
             id: agentId,
-            terminalId: result.id,
+            terminalId: resultId,
             name: entry.label,
           });
           persistProjectSessions(projectId);
@@ -306,7 +325,13 @@ export function useTerminals(): UseTerminalsResult {
     console.debug('[Deepthix][useTerminals] close', { id });
     const entry = terminalsRef.current.find((t) => t.id === id);
     try {
-      await cmdKillTerminal(id);
+      // Claude sessions live in ChatManager; shells in TerminalManager.
+      // Pick the right kill API.
+      if (entry?.kind === 'claude') {
+        await cmdChatKill(id);
+      } else {
+        await cmdKillTerminal(id);
+      }
     } catch (e) {
       console.error('[Deepthix][useTerminals] kill failed', e);
     }

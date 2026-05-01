@@ -26,6 +26,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::commands::chat::ChatManager;
 use crate::pty::TerminalManager;
 
 const SCHEDULER_TICK_MS: u64 = 5_000;
@@ -246,6 +247,7 @@ pub fn delete_schedule(state: State<'_, SchedulesState>, id: String) -> Result<(
 pub fn run_schedule_now(
     state: State<'_, SchedulesState>,
     pty: State<'_, TerminalManager>,
+    chat: State<'_, ChatManager>,
     app: AppHandle,
     id: String,
 ) -> Result<(), String> {
@@ -256,7 +258,7 @@ pub fn run_schedule_now(
             .cloned()
             .ok_or_else(|| format!("schedule not found: {id}"))?
     };
-    fire_schedule(&pty, &app, &entry, /*manual=*/ true);
+    fire_schedule(&pty, &chat, &app, &entry, /*manual=*/ true);
     // Mark last_run_ms but keep next_run_ms.
     let mut list = state.0.lock().unwrap();
     if let Some(s) = list.iter_mut().find(|s| s.id == id) {
@@ -290,6 +292,10 @@ pub fn start_scheduler(app: AppHandle) {
                 Some(p) => p,
                 None => continue,
             };
+            let chat = match app_handle.try_state::<ChatManager>() {
+                Some(c) => c,
+                None => continue,
+            };
             // Snapshot the schedules to fire under the lock, release
             // the lock, then fire (so ptyWrite + Tauri emit don't hold
             // the schedule lock).
@@ -301,7 +307,7 @@ pub fn start_scheduler(app: AppHandle) {
                     .collect()
             };
             for s in to_fire {
-                fire_schedule(&pty, &app_handle, &s, /*manual=*/ false);
+                fire_schedule(&pty, &chat, &app_handle, &s, /*manual=*/ false);
             }
             // Update last_run_ms / next_run_ms / paused for each fired
             // job, then persist.
@@ -326,10 +332,48 @@ pub fn start_scheduler(app: AppHandle) {
     });
 }
 
-/// Send a schedule's prompt into the target session's pty. Best-effort:
-/// any failure becomes a warn-level notification so the user knows
-/// what happened, but doesn't crash anything.
-fn fire_schedule(pty: &TerminalManager, app: &AppHandle, s: &Schedule, manual: bool) {
+/// Send a schedule's prompt into the target session. Looks up the
+/// session_id in the ChatManager first (claude sessions live there
+/// post-rewrite), then falls back to TerminalManager (shell or legacy
+/// PTY claude). Best-effort: any failure becomes a warn-level
+/// notification so the user knows but doesn't crash anything.
+fn fire_schedule(
+    pty: &TerminalManager,
+    chat: &ChatManager,
+    app: &AppHandle,
+    s: &Schedule,
+    manual: bool,
+) {
+    // Try chat first — it's the new home for claude sessions.
+    if let Some(term_id) = chat.find_term_by_session(&s.target_session_id) {
+        match chat.send_user_text(&term_id, &s.prompt) {
+            Ok(_) => {
+                tracing::info!(
+                    target: "deepthix::schedules",
+                    id = %s.id, name = %s.name, term = %term_id, manual,
+                    "fired (chat)",
+                );
+                emit_notification(
+                    app,
+                    &format!("Schedule '{}' ran", s.name),
+                    if manual { "Manual run" } else { &s.prompt },
+                    "success",
+                    &format!("schedule:{}", s.id),
+                );
+            }
+            Err(e) => {
+                tracing::warn!(target: "deepthix::schedules", id = %s.id, error = %e, "chat send failed");
+                emit_notification(
+                    app,
+                    &format!("Schedule '{}' failed", s.name),
+                    &format!("chat send: {e}"),
+                    "error",
+                    &format!("schedule:{}", s.id),
+                );
+            }
+        }
+        return;
+    }
     let term_id = match pty.find_term_by_session(&s.target_session_id) {
         Some(tid) => tid,
         None => {
@@ -351,14 +395,13 @@ fn fire_schedule(pty: &TerminalManager, app: &AppHandle, s: &Schedule, manual: b
             return;
         }
     };
-    // Compose: prompt + carriage return so claude code submits it.
     let payload = format!("{}\r", s.prompt);
     match pty.write(&term_id, payload.as_bytes()) {
         Ok(_) => {
             tracing::info!(
                 target: "deepthix::schedules",
                 id = %s.id, name = %s.name, term = %term_id, manual,
-                "fired",
+                "fired (pty)",
             );
             emit_notification(
                 app,

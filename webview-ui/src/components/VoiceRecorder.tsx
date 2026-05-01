@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { ptyWrite, transcribeAudio } from '../tauri/commands';
+import { chatSendUserText, ptyWrite, transcribeAudio } from '../tauri/commands';
 
 type RecorderState =
   | { kind: 'idle' }
@@ -218,20 +218,31 @@ export function VoiceRecorder({
       // chars), the only path we know works in this codebase. Slower
       // (~120 chars/sec) but reliable.
       try {
-        const PER_CHAR_DELAY_MS = 8;
-        // Array.from splits on Unicode code points, not UTF-16 code
-        // units, so accents like é and emoji stay intact.
-        const chars = Array.from(text);
-        for (let i = 0; i < chars.length; i++) {
-          await ptyWrite(target, chars[i]);
-          if (i < chars.length - 1) {
-            await new Promise((r) => setTimeout(r, PER_CHAR_DELAY_MS));
+        if (targetTerm.kind === 'claude') {
+          // Chat sessions go through stream-json, not PTY. Send the
+          // whole transcript as one user turn — the multi-character
+          // chunking trick was a PTY/Ink workaround.
+          await chatSendUserText(target, text);
+          console.info('[Deepthix][VoiceRecorder] chat send complete', {
+            target,
+            chars: text.length,
+          });
+        } else {
+          const PER_CHAR_DELAY_MS = 8;
+          // Array.from splits on Unicode code points, not UTF-16 code
+          // units, so accents like é and emoji stay intact.
+          const chars = Array.from(text);
+          for (let i = 0; i < chars.length; i++) {
+            await ptyWrite(target, chars[i]);
+            if (i < chars.length - 1) {
+              await new Promise((r) => setTimeout(r, PER_CHAR_DELAY_MS));
+            }
           }
+          console.info('[Deepthix][VoiceRecorder] V4 PTY injection complete', {
+            target,
+            chars: chars.length,
+          });
         }
-        console.info('[Deepthix][VoiceRecorder] V4 injection complete', {
-          target,
-          chars: chars.length,
-        });
       } catch (writeErr) {
         const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
         console.error('[Deepthix][VoiceRecorder] V4 ptyWrite failed', writeErr);

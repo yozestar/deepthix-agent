@@ -56,6 +56,7 @@ pub fn run() {
             std::sync::Mutex::new(None),
         ))
         .manage(crate::commands::schedules::SchedulesState::new())
+        .manage(crate::commands::chat::ChatManager::new())
         .invoke_handler(tauri::generate_handler![
             commands::projects::open_folder,
             commands::projects::add_project,
@@ -113,6 +114,10 @@ pub fn run() {
             commands::schedules::update_schedule,
             commands::schedules::delete_schedule,
             commands::schedules::run_schedule_now,
+            commands::chat::chat_spawn,
+            commands::chat::chat_send_user_text,
+            commands::chat::chat_set_session_id,
+            commands::chat::chat_kill,
         ])
         .setup(|app| {
             // Spawn the notifications watcher tied to the app handle so it

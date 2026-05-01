@@ -410,6 +410,39 @@ export async function listRecentNotifications(
   return await invoke<NotificationRecord[]>('list_recent_notifications', { limit });
 }
 
+// ─── Chat (stream-json claude) ──────────────────────────────────────────
+
+export interface ChatSpawnArgs {
+  cwd: string;
+  resume_session_id?: string | null;
+  skip_permissions?: boolean;
+  model?: string | null;
+}
+
+export interface ChatSpawnResult {
+  term_id: string;
+  session_id: string | null;
+}
+
+export async function chatSpawn(args: ChatSpawnArgs): Promise<ChatSpawnResult> {
+  log('chat_spawn', { cwd: args.cwd, resume: args.resume_session_id ?? null });
+  return await invoke<ChatSpawnResult>('chat_spawn', { args });
+}
+
+export async function chatSendUserText(termId: string, text: string): Promise<void> {
+  log('chat_send_user_text', { termId, chars: text.length });
+  return await invoke<void>('chat_send_user_text', { termId, text });
+}
+
+export async function chatKill(termId: string): Promise<void> {
+  log('chat_kill', { termId });
+  return await invoke<void>('chat_kill', { termId });
+}
+
+export async function chatSetSessionId(termId: string, sessionId: string): Promise<void> {
+  return await invoke<void>('chat_set_session_id', { termId, sessionId });
+}
+
 // ─── Schedules ──────────────────────────────────────────────────────────
 
 export type Cadence =

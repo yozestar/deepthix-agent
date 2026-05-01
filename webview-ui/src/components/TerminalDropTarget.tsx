@@ -21,7 +21,7 @@
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { ptyWrite, stashDroppedFile } from '../tauri/commands';
+import { chatSendUserText, ptyWrite, stashDroppedFile } from '../tauri/commands';
 
 interface TermSummary {
   id: string;
@@ -156,7 +156,13 @@ export function TerminalDropTarget({
               // 8ms gap, 1 unicode code point at a time. Trailing space
               // (not \r) so the user can edit / add context before
               // submitting.
-              await injectSlowly(target.id, `${quoted} `);
+              if (target.kind === 'claude') {
+                // Chat sessions: send the quoted paths as one user
+                // message. claude reads them as a normal prompt.
+                await chatSendUserText(target.id, quoted);
+              } else {
+                await injectSlowly(target.id, `${quoted} `);
+              }
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e);
               console.error('[Deepthix][TerminalDropTarget] drop pipeline failed', e);

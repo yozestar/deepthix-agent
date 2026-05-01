@@ -73,3 +73,33 @@ export async function onNotification(
     handler(event.payload);
   });
 }
+
+export interface ChatEvent {
+  term_id: string;
+  /** Raw JSON line as claude wrote it. The chat pane parses it. */
+  line: string;
+  stream: 'stdout' | 'stderr';
+}
+
+export async function onChatEvent(
+  handler: (e: ChatEvent) => void,
+): Promise<UnlistenFn> {
+  return await listen<ChatEvent>('chat_event', (event) => {
+    handler(event.payload);
+  });
+}
+
+export interface ChatExitEvent {
+  term_id: string;
+  type: 'exit';
+  code: number | null;
+}
+
+export async function onChatExit(
+  handler: (e: ChatExitEvent) => void,
+): Promise<UnlistenFn> {
+  return await listen<ChatExitEvent>('chat_exit', (event) => {
+    log('chat_exit', { termId: event.payload.term_id, code: event.payload.code });
+    handler(event.payload);
+  });
+}

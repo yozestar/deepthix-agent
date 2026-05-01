@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod chrome;
 pub mod config;
 pub mod dashboard;
