@@ -117,6 +117,7 @@ pub fn run() {
             commands::chat::chat_spawn,
             commands::chat::chat_send_user_text,
             commands::chat::chat_set_session_id,
+            commands::chat::chat_load_history,
             commands::chat::chat_kill,
         ])
         .setup(|app| {

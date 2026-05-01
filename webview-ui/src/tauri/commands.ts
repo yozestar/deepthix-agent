@@ -443,6 +443,10 @@ export async function chatSetSessionId(termId: string, sessionId: string): Promi
   return await invoke<void>('chat_set_session_id', { termId, sessionId });
 }
 
+export async function chatLoadHistory(projectCwd: string, sessionId: string): Promise<string[]> {
+  return await invoke<string[]>('chat_load_history', { projectCwd, sessionId });
+}
+
 // ─── Schedules ──────────────────────────────────────────────────────────
 
 export type Cadence =

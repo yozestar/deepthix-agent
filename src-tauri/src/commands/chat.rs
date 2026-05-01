@@ -391,6 +391,28 @@ pub fn chat_set_session_id(
     }
 }
 
+/// Read every JSONL line of a past claude session so the ChatPane can
+/// render the history before the new stream-json child is even spawned.
+/// Returns the lines verbatim (no Rust-side parsing) — the webview
+/// already has the JSON-shape knowledge to turn each record into a
+/// Message bubble.
+///
+/// `project_cwd` + `session_id` are the same pair we use everywhere
+/// else; they resolve to ~/.claude/projects/<hash>/<session_id>.jsonl
+/// where hash = absolute project path with slashes/backslashes/colons
+/// replaced by dashes.
+#[tauri::command]
+pub fn chat_load_history(project_cwd: PathBuf, session_id: String) -> Result<Vec<String>, String> {
+    let path = crate::jsonl_watcher::predict_jsonl_path(&project_cwd, &session_id);
+    tracing::debug!(target: "deepthix::chat", ?path, %session_id, "chat_load_history");
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) => return Err(format!("read jsonl: {e}")),
+    };
+    Ok(raw.lines().filter(|l| !l.is_empty()).map(|s| s.to_string()).collect())
+}
+
 #[tauri::command]
 pub fn chat_kill(state: State<'_, ChatManager>, term_id: String) -> Result<(), String> {
     tracing::info!(target: "deepthix::chat", %term_id, "chat_kill");

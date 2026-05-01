@@ -19,6 +19,7 @@ import remarkGfm from 'remark-gfm';
 
 import {
   chatKill,
+  chatLoadHistory,
   chatSendUserText,
   chatSetSessionId,
   chatSpawn,
@@ -105,6 +106,130 @@ function makeContext(): ParseContext {
 
 function blockKey(messageId: string, index: number): string {
   return `${messageId}|${index}`;
+}
+
+/**
+ * Parse one line of a `~/.claude/projects/.../<session>.jsonl` file
+ * into Message bubbles for the chat history.
+ *
+ * The on-disk JSONL format differs from the live stream-json wire
+ * format: claude code writes its own internal record shape with
+ * `parentUuid`, `attachment`, `userType`, `cwd`, `gitBranch`, etc.
+ * We pull out the user/assistant content and ignore everything else
+ * (queue-operation, attachment hooks, summary, system) so the
+ * rendered history mirrors the chat the user typed and saw.
+ */
+function parseHistoryRecord(line: string): Message[] {
+  let r: Record<string, unknown>;
+  try {
+    r = JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+  const type = r.type as string | undefined;
+  const recordUuid = (r.uuid as string) ?? Math.random().toString(36);
+
+  if (type === 'user') {
+    const msg = r.message as Record<string, unknown> | undefined;
+    if (!msg) return [];
+    const content = msg.content;
+    // Pure text input from the user: render as a user bubble. Tool
+    // results sent back to claude are nested as content arrays — we
+    // skip those (they'll show up under their tool_use card via the
+    // separate `tool_result` block handling below).
+    if (typeof content === 'string') {
+      return [
+        {
+          kind: 'user',
+          uid: recordUuid,
+          ts: Date.parse((r.timestamp as string) ?? '') || Date.now(),
+          text: content,
+        },
+      ];
+    }
+    if (Array.isArray(content)) {
+      const out: Message[] = [];
+      for (const block of content as Array<Record<string, unknown>>) {
+        if (block.type === 'text') {
+          out.push({
+            kind: 'user',
+            uid: `${recordUuid}-${out.length}`,
+            ts: Date.parse((r.timestamp as string) ?? '') || Date.now(),
+            text: (block.text as string) ?? '',
+          });
+        } else if (block.type === 'tool_result') {
+          out.push({
+            kind: 'tool_use',
+            uid: `${recordUuid}-${out.length}`,
+            ts: Date.parse((r.timestamp as string) ?? '') || Date.now(),
+            tool: '(result)',
+            input: null,
+            toolUseId: (block.tool_use_id as string) ?? '',
+            result: {
+              text: stringifyToolResult(block.content),
+              isError: Boolean(block.is_error),
+            },
+          });
+        }
+      }
+      return out;
+    }
+    return [];
+  }
+
+  if (type === 'assistant') {
+    const msg = r.message as Record<string, unknown> | undefined;
+    const messageId = (msg?.id as string) ?? recordUuid;
+    const content = msg?.content;
+    if (!Array.isArray(content)) return [];
+    const out: Message[] = [];
+    (content as Array<Record<string, unknown>>).forEach((block, idx) => {
+      const key = blockKey(messageId, idx);
+      if (block.type === 'text') {
+        out.push({
+          kind: 'assistant_text',
+          uid: key,
+          ts: Date.parse((r.timestamp as string) ?? '') || Date.now(),
+          text: (block.text as string) ?? '',
+          messageId: key,
+        });
+      } else if (block.type === 'tool_use') {
+        out.push({
+          kind: 'tool_use',
+          uid: key,
+          ts: Date.parse((r.timestamp as string) ?? '') || Date.now(),
+          tool: (block.name as string) ?? '?',
+          input: block.input,
+          toolUseId: (block.id as string) ?? key,
+        });
+      }
+    });
+    return out;
+  }
+
+  // summary / system / attachment / queue-operation: not surfaced.
+  return [];
+}
+
+function stringifyToolResult(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((b) => {
+        if (b && typeof b === 'object') {
+          const block = b as Record<string, unknown>;
+          if (block.type === 'text') return (block.text as string) ?? '';
+          return JSON.stringify(block);
+        }
+        return String(b);
+      })
+      .join('\n');
+  }
+  try {
+    return JSON.stringify(content);
+  } catch {
+    return String(content);
+  }
 }
 
 type ParseResult =
@@ -343,6 +468,38 @@ export function ChatPane({
   useEffect(() => {
     termIdRef.current = termId;
   }, [termId]);
+
+  // Hydrate the message log from claude's own JSONL transcript on
+  // mount when we're resuming a session. We don't depend on this for
+  // claude itself — `--resume <id>` already gives the model its full
+  // context — but the user expects to SEE the past conversation when
+  // they reopen a session, not a blank pane.
+  useEffect(() => {
+    if (!resumeSessionId) return;
+    let cancelled = false;
+    void chatLoadHistory(cwd, resumeSessionId)
+      .then((lines) => {
+        if (cancelled) return;
+        const restored: Message[] = [];
+        for (const line of lines) {
+          for (const m of parseHistoryRecord(line)) restored.push(m);
+        }
+        if (restored.length > 0) {
+          setMessages((prev) => [...restored, ...prev]);
+          console.info('[Deepthix][ChatPane] history loaded', {
+            session: resumeSessionId,
+            messages: restored.length,
+            lines: lines.length,
+          });
+        }
+      })
+      .catch((e) => {
+        console.warn('[Deepthix][ChatPane] history load failed', e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd, resumeSessionId]);
 
   // Spawn on mount (unless we were handed a pre-existing termId).
   useEffect(() => {
