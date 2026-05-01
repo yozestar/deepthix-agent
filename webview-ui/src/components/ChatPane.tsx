@@ -1068,6 +1068,7 @@ function MessageBubble({ m }: { m: Message }): React.JSX.Element {
     case 'system':
       return (
         <div
+          className="dt-chat-msg"
           style={{
             alignSelf: 'center',
             fontSize: '11px',
@@ -1080,8 +1081,12 @@ function MessageBubble({ m }: { m: Message }): React.JSX.Element {
         </div>
       );
     case 'result':
+      // The live stream no longer emits this — turn end goes to the
+      // header. Kept for the (theoretical) history record case so we
+      // never break on legacy data; renders the same compact pill.
       return (
         <div
+          className="dt-chat-msg"
           style={{
             alignSelf: 'center',
             fontSize: '11px',
@@ -1098,6 +1103,7 @@ function MessageBubble({ m }: { m: Message }): React.JSX.Element {
     case 'error':
       return (
         <div
+          className="dt-chat-msg"
           style={{
             alignSelf: 'stretch',
             fontSize: '12px',
@@ -1132,6 +1138,7 @@ function Bubble({
 }): React.JSX.Element {
   return (
     <div
+      className="dt-chat-msg"
       style={{
         alignSelf: align === 'right' ? 'flex-end' : 'flex-start',
         maxWidth: '85%',
@@ -1321,54 +1328,265 @@ function MarkdownBody({ source }: { source: string }): React.JSX.Element {
   );
 }
 
+/**
+ * Per-tool visual config + one-line summary derived from the tool's
+ * input. Adding a new tool: drop a case in `summarizeTool` and pick
+ * an icon + accent class. Anything not listed falls into the generic
+ * "tool" branch (plain wrench + neutral border).
+ */
+interface ToolStyle {
+  icon: string;
+  /** A CSS color expression used for the left accent bar. */
+  accent: string;
+  /** One-line summary of the input — what the user actually wants to
+   *  read at a glance instead of the raw JSON dump. */
+  summary: string;
+}
+
+function summarizeTool(name: string, input: unknown): ToolStyle {
+  const obj = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const get = (k: string): string => (typeof obj[k] === 'string' ? (obj[k] as string) : '');
+  const trunc = (s: string, n = 80): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+  const basename = (p: string): string => p.split('/').filter(Boolean).slice(-1)[0] || p;
+
+  switch (name) {
+    case 'Bash': {
+      const cmd = get('command');
+      return { icon: '$', accent: '#34d399', summary: cmd ? trunc(cmd, 90) : 'shell command' };
+    }
+    case 'Read': {
+      const p = get('file_path');
+      const ol = obj.offset && obj.limit ? ` · L${obj.offset}-${(obj.offset as number) + (obj.limit as number)}` : '';
+      return { icon: '◀', accent: '#a78bfa', summary: p ? `${basename(p)}${ol}` : 'read file' };
+    }
+    case 'Edit':
+    case 'MultiEdit': {
+      const p = get('file_path');
+      const old = get('old_string');
+      const replacements = Array.isArray(obj.edits) ? (obj.edits as unknown[]).length : 1;
+      return {
+        icon: '✎',
+        accent: '#a78bfa',
+        summary: p
+          ? `${basename(p)} · ${replacements} edit${replacements > 1 ? 's' : ''}${old ? ` · "${trunc(old.split('\n')[0], 30)}"` : ''}`
+          : 'edit file',
+      };
+    }
+    case 'Write': {
+      const p = get('file_path');
+      const sz = typeof obj.content === 'string' ? (obj.content as string).length : 0;
+      return {
+        icon: '⬇',
+        accent: '#a78bfa',
+        summary: p ? `${basename(p)}${sz ? ` · ${formatSize(sz)}` : ''}` : 'write file',
+      };
+    }
+    case 'NotebookEdit': {
+      const p = get('notebook_path');
+      return { icon: '✎', accent: '#a78bfa', summary: p ? basename(p) : 'edit notebook' };
+    }
+    case 'Grep': {
+      const pattern = get('pattern');
+      const path = get('path');
+      return {
+        icon: '⌕',
+        accent: '#fbbf24',
+        summary: `"${trunc(pattern, 40)}"${path ? ` in ${basename(path) || path}` : ''}`,
+      };
+    }
+    case 'Glob': {
+      const pattern = get('pattern');
+      return { icon: '⌕', accent: '#fbbf24', summary: pattern || 'glob' };
+    }
+    case 'WebFetch': {
+      const url = get('url');
+      return { icon: '⌲', accent: '#60a5fa', summary: url ? trunc(url.replace(/^https?:\/\//, ''), 70) : 'fetch web' };
+    }
+    case 'WebSearch': {
+      const q = get('query');
+      return { icon: '⌕', accent: '#60a5fa', summary: q ? `"${trunc(q, 60)}"` : 'web search' };
+    }
+    case 'Task':
+    case 'Agent': {
+      const desc = get('description') || get('subagent_type');
+      const prompt = get('prompt');
+      return {
+        icon: '⚙',
+        accent: '#f472b6',
+        summary: desc || (prompt ? trunc(prompt, 60) : 'subagent'),
+      };
+    }
+    case 'TodoWrite': {
+      const todos = Array.isArray(obj.todos) ? (obj.todos as unknown[]).length : 0;
+      return { icon: '☰', accent: '#9ca3af', summary: `${todos} todo${todos === 1 ? '' : 's'}` };
+    }
+    case 'AskUserQuestion': {
+      const q = get('question');
+      return { icon: '?', accent: '#f59e0b', summary: q ? trunc(q, 70) : 'ask user' };
+    }
+    case '(result)':
+      return { icon: '◀', accent: 'var(--color-border)', summary: 'tool result' };
+    default: {
+      // mcp__server__tool naming convention from claude code.
+      if (name.startsWith('mcp__')) {
+        const parts = name.replace(/^mcp__/, '').split('__');
+        return {
+          icon: '◇',
+          accent: '#ec4899',
+          summary: parts.length > 1 ? `${parts[0]} → ${parts.slice(1).join('.')}` : name,
+        };
+      }
+      return { icon: '✦', accent: 'var(--color-accent)', summary: name };
+    }
+  }
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function ToolBubble({
   m,
 }: {
   m: Extract<Message, { kind: 'tool_use' }>;
 }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const isResult = m.tool === '(result)';
+  const style = useMemo(() => summarizeTool(m.tool, m.input), [m.tool, m.input]);
+
+  // Auto-expand result bubbles since the result content IS the
+  // information the user wants. Tool calls stay collapsed because
+  // the summary is usually enough.
+  const showDetail = expanded || isResult;
+
   const inputPreview = useMemo(() => {
+    if (m.input == null) return '';
     try {
-      return JSON.stringify(m.input, null, 2).slice(0, 600);
+      return JSON.stringify(m.input, null, 2);
     } catch {
-      return String(m.input).slice(0, 600);
+      return String(m.input);
     }
   }, [m.input]);
+
   return (
     <div
+      className="dt-chat-msg"
       style={{
         alignSelf: 'flex-start',
         maxWidth: '92%',
         background: 'var(--color-bg-dark)',
-        border: '2px dashed var(--color-border)',
-        padding: '6px 10px',
+        border: '2px solid var(--color-border)',
+        borderLeft: `4px solid ${style.accent}`,
+        boxShadow: 'var(--shadow-pixel)',
         fontSize: '12px',
-        fontFamily: 'Menlo, Consolas, monospace',
       }}
     >
-      <div style={{ fontWeight: 'bold', marginBottom: 4, opacity: 0.85 }}>
-        🛠 {m.tool}
-      </div>
-      {m.input != null && inputPreview && (
-        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', opacity: 0.85 }}>
-          {inputPreview}
-        </pre>
-      )}
-      {m.result && (
-        <div
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        title={isResult ? '' : expanded ? 'Click to collapse' : 'Click to expand input'}
+        disabled={isResult}
+        style={{
+          all: 'unset',
+          width: '100%',
+          boxSizing: 'border-box',
+          padding: '6px 10px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          cursor: isResult ? 'default' : 'pointer',
+          fontFamily: 'var(--font-pixel)',
+        }}
+      >
+        <span
           style={{
-            marginTop: 4,
-            padding: '4px 6px',
-            background: m.result.isError ? 'var(--color-danger)' : 'var(--color-bg)',
-            color: m.result.isError ? 'var(--color-bg-dark)' : 'inherit',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            maxHeight: 200,
-            overflow: 'auto',
+            display: 'inline-flex',
+            width: 18,
+            height: 18,
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: style.accent,
+            color: 'var(--color-bg-dark)',
+            fontWeight: 'bold',
+            fontSize: 11,
+            flexShrink: 0,
           }}
         >
-          {m.result.text.slice(0, 4000)}
-        </div>
-      )}
+          {style.icon}
+        </span>
+        <span style={{ fontWeight: 'bold', color: style.accent, flexShrink: 0 }}>{m.tool}</span>
+        <span
+          style={{
+            opacity: 0.85,
+            fontFamily: 'Menlo, Consolas, monospace',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          {style.summary}
+        </span>
+        {!isResult && (
+          <span style={{ opacity: 0.4, fontSize: 11, flexShrink: 0 }}>
+            {expanded ? '▾' : '▸'}
+          </span>
+        )}
+      </button>
+      <div
+        className="dt-tool-detail"
+        style={{
+          maxHeight: showDetail ? 480 : 0,
+          opacity: showDetail ? 1 : 0,
+          padding: showDetail ? '0 10px 8px' : '0 10px',
+        }}
+      >
+        {!isResult && inputPreview && (
+          <pre
+            style={{
+              margin: 0,
+              padding: '6px 8px',
+              background: 'var(--color-bg)',
+              border: '1px solid var(--color-border)',
+              fontFamily: 'Menlo, Consolas, monospace',
+              fontSize: 11,
+              lineHeight: 1.4,
+              overflow: 'auto',
+              maxHeight: 280,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              color: 'var(--color-text)',
+            }}
+          >
+            {inputPreview}
+          </pre>
+        )}
+        {m.result && (
+          <div
+            style={{
+              marginTop: !isResult && inputPreview ? 6 : 0,
+              padding: '6px 8px',
+              background: m.result.isError ? 'var(--color-danger)' : 'var(--color-bg)',
+              color: m.result.isError ? 'var(--color-bg-dark)' : 'var(--color-text)',
+              border: '1px solid var(--color-border)',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              maxHeight: 280,
+              overflow: 'auto',
+              fontFamily: 'Menlo, Consolas, monospace',
+              fontSize: 11,
+              lineHeight: 1.4,
+            }}
+          >
+            {m.result.text.length > 4000
+              ? `${m.result.text.slice(0, 4000)}\n…(truncated)`
+              : m.result.text}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
