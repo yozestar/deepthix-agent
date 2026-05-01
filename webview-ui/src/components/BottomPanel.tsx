@@ -254,11 +254,20 @@ export function SessionsPane({
               // DPR), at the cost of losing the in-TTY slash commands
               // (/agents, /privacy, etc.) — those become future custom
               // UI in this pane.
+              //
+              // onSessionReady fires when claude emits its system/init
+              // event with the real session_id. We feed it back to
+              // useTerminals so the entry gets persisted with the
+              // right id (otherwise fresh sessions vanish on next
+              // launch — they were never saved with a non-null id).
               <ChatPane
                 cwd={t.cwd}
                 resumeSessionId={t.sessionId}
                 skipPermissions={t.skipPermissions}
                 bindTermId={t.id}
+                onSessionReady={({ termId, sessionId }) => {
+                  if (sessionId) terminals.setSessionId(termId, sessionId);
+                }}
               />
             ) : (
               <TerminalTab

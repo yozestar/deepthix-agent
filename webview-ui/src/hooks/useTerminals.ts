@@ -64,6 +64,13 @@ export interface UseTerminalsResult {
   rename: (id: string, label: string) => void;
   /** Update the per-session OVERVIEW notes — debounced-persisted at the call site. */
   updateNotes: (id: string, notes: string) => void;
+  /** Set / update a terminal's session UUID once it becomes known.
+   *  Used by the new chat flow: chat_spawn returns null at spawn time
+   *  because claude only emits its session_id in the system/init event
+   *  ~1s later. ChatPane calls this when init arrives so the entry is
+   *  persisted with the right id (otherwise the session vanishes on
+   *  next launch). */
+  setSessionId: (id: string, sessionId: string) => void;
 }
 
 function dispatchWebviewMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -388,6 +395,30 @@ export function useTerminals(): UseTerminalsResult {
     [persistProjectSessions],
   );
 
+  /** Set / update a terminal's session UUID. Idempotent — no-op if the
+   *  current sessionId already matches. Triggers a persist so the
+   *  session survives the next launch. */
+  const setSessionId = useCallback(
+    (id: string, sessionId: string): void => {
+      let projectId: string | null = null;
+      let needsPersist = false;
+      setTerminals((prev) =>
+        prev.map((t) => {
+          if (t.id !== id) return t;
+          if (t.sessionId === sessionId) return t;
+          projectId = t.projectId;
+          needsPersist = true;
+          return { ...t, sessionId };
+        }),
+      );
+      terminalsRef.current = terminalsRef.current.map((t) =>
+        t.id === id && t.sessionId !== sessionId ? { ...t, sessionId } : t,
+      );
+      if (needsPersist && projectId) persistProjectSessions(projectId);
+    },
+    [persistProjectSessions],
+  );
+
   const rename = useCallback((id: string, label: string): void => {
     const trimmed = label.trim();
     if (!trimmed) return;
@@ -421,7 +452,18 @@ export function useTerminals(): UseTerminalsResult {
       resumeProject,
       rename,
       updateNotes,
+      setSessionId,
     }),
-    [terminals, activeId, open, close, forProject, resumeProject, rename, updateNotes],
+    [
+      terminals,
+      activeId,
+      open,
+      close,
+      forProject,
+      resumeProject,
+      rename,
+      updateNotes,
+      setSessionId,
+    ],
   );
 }
