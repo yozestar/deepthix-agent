@@ -396,6 +396,34 @@ pub fn chat_send_user_text(
     Ok(())
 }
 
+/// Send SIGINT to the underlying claude process so it stops the
+/// current turn without losing the conversation. Mirrors the Ctrl+C
+/// the user would press in a TTY. The child usually exits — our
+/// exit_watcher picks that up and the webview can decide whether to
+/// auto-respawn with --resume.
+#[tauri::command]
+pub fn chat_interrupt(state: State<'_, ChatManager>, term_id: String) -> Result<(), String> {
+    tracing::info!(target: "deepthix::chat", %term_id, "chat_interrupt");
+    let map = state.inner.lock().unwrap();
+    let entry = map
+        .get(&term_id)
+        .ok_or_else(|| format!("no chat session {term_id}"))?;
+    let pid = entry.child.id();
+    drop(map);
+    // Shell out to /bin/kill so we don't pull in `nix` as a dependency
+    // just for one signal call. macOS / Linux only — Tauri windows
+    // build (when we get there) will need a different path.
+    let status = Command::new("/bin/kill")
+        .arg("-INT")
+        .arg(pid.to_string())
+        .status()
+        .map_err(|e| format!("kill spawn: {e}"))?;
+    if !status.success() {
+        return Err(format!("kill -INT exited {status}"));
+    }
+    Ok(())
+}
+
 /// Webview tells us the claude session UUID it just learned from the
 /// `system/init` event. We store it so the scheduler can resolve a
 /// stable session_id back to the live term_id.

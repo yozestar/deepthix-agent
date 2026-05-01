@@ -439,6 +439,15 @@ export async function chatKill(termId: string): Promise<void> {
   return await invoke<void>('chat_kill', { termId });
 }
 
+/** Send SIGINT to the underlying claude process so it stops the
+ *  current turn (preserves conversation state on disk; the JSONL is
+ *  already flushed). The child usually exits — caller can re-spawn
+ *  with --resume to keep going. */
+export async function chatInterrupt(termId: string): Promise<void> {
+  log('chat_interrupt', { termId });
+  return await invoke<void>('chat_interrupt', { termId });
+}
+
 export async function chatSetSessionId(termId: string, sessionId: string): Promise<void> {
   return await invoke<void>('chat_set_session_id', { termId, sessionId });
 }

@@ -18,6 +18,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import {
+  chatInterrupt,
   chatKill,
   chatLoadHistory,
   chatSendUserText,
@@ -864,9 +865,20 @@ export function ChatPane({
         setInput={setInput}
         send={send}
         slashCommands={slashCommands}
-        canSend={Boolean(termId) && !busy}
+        // Always enabled once spawned. claude code in
+        // --input-format=stream-json mode queues incoming user
+        // turns — you can type a follow-up while the previous one is
+        // still streaming and claude will pick it up after the
+        // current turn ends.
+        canSend={Boolean(termId)}
         spawning={!termId}
         busy={busy}
+        onInterrupt={() => {
+          if (!termId) return;
+          void chatInterrupt(termId).catch((e) =>
+            console.warn('[Deepthix][ChatPane] interrupt failed', e),
+          );
+        }}
       />
     </div>
   );
@@ -882,6 +894,7 @@ function ChatInput({
   canSend,
   spawning,
   busy,
+  onInterrupt,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -890,8 +903,33 @@ function ChatInput({
   canSend: boolean;
   spawning: boolean;
   busy: boolean;
+  /** Called when the user clicks Stop while claude is mid-turn. */
+  onInterrupt: () => void;
 }): React.JSX.Element {
   const [selectedIdx, setSelectedIdx] = useState(0);
+
+  // Shell-style history navigation. Up arrow when caret is on the
+  // first line goes to the previous sent message; Down comes back
+  // forward; past the newest the input restores to whatever the
+  // user was drafting before they navigated.
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIdx, setHistoryIdx] = useState<number | null>(null);
+  const [draftBeforeNav, setDraftBeforeNav] = useState<string>('');
+  // Wrap `send` so we can capture into the history without leaking
+  // that wiring into the parent.
+  const sendAndArchive = useCallback((): void => {
+    const text = input.trim();
+    if (!text) return;
+    setHistory((h) => {
+      // De-dupe consecutive identical sends so up-arrow doesn't make
+      // you press through five copies of the same message.
+      if (h[h.length - 1] === text) return h;
+      return [...h, text].slice(-100); // keep last 100
+    });
+    setHistoryIdx(null);
+    setDraftBeforeNav('');
+    send();
+  }, [input, send]);
 
   // Built-in claude code commands that aren't always present in the
   // system/init `slash_commands` array (it lists user-installed plugin
@@ -1023,7 +1061,12 @@ function ChatInput({
       >
         <textarea
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            // Any manual edit aborts history navigation — the user is
+            // composing fresh now, not browsing past sends.
+            if (historyIdx !== null) setHistoryIdx(null);
+          }}
           onKeyDown={(e) => {
             if (showSlash && filtered.length > 0) {
               if (e.key === 'ArrowDown') {
@@ -1047,17 +1090,47 @@ function ChatInput({
                 return;
               }
             }
+            // Shell-style history: Up/Down navigate sent messages
+            // when the caret is on the first line (so multi-line
+            // edit still does normal vertical cursor moves). Down
+            // doesn't need the on-first-line check — it's only ever
+            // active when historyIdx !== null, meaning the input was
+            // populated from history (always one or more lines).
+            const target = e.target as HTMLTextAreaElement;
+            const onFirstLine =
+              target.value.slice(0, target.selectionStart).indexOf('\n') === -1;
+            if (e.key === 'ArrowUp' && onFirstLine && history.length > 0) {
+              e.preventDefault();
+              const next =
+                historyIdx === null ? history.length - 1 : Math.max(0, historyIdx - 1);
+              if (historyIdx === null) setDraftBeforeNav(input);
+              setHistoryIdx(next);
+              setInput(history[next]);
+              return;
+            }
+            if (e.key === 'ArrowDown' && historyIdx !== null) {
+              e.preventDefault();
+              const next = historyIdx + 1;
+              if (next >= history.length) {
+                setHistoryIdx(null);
+                setInput(draftBeforeNav);
+              } else {
+                setHistoryIdx(next);
+                setInput(history[next]);
+              }
+              return;
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              send();
+              sendAndArchive();
             }
           }}
           placeholder={
             spawning
               ? 'Spawning claude…'
-              : 'Message claude (⏎ send, ⇧⏎ newline, / for commands)'
+              : 'Message claude (⏎ send, ⇧⏎ newline, ↑/↓ history, / for commands)'
           }
-          disabled={spawning || busy}
+          disabled={spawning}
           rows={3}
           style={{
             flex: 1,
@@ -1074,8 +1147,9 @@ function ChatInput({
         />
         <button
           type="button"
-          onClick={send}
+          onClick={sendAndArchive}
           disabled={!canSend || !input.trim()}
+          title={busy ? 'Send (queues — claude is still on previous turn)' : 'Send (⏎)'}
           style={{
             padding: '4px 16px',
             background: canSend && input.trim() ? 'var(--color-accent)' : 'transparent',
@@ -1088,8 +1162,27 @@ function ChatInput({
             opacity: canSend && input.trim() ? 1 : 0.4,
           }}
         >
-          {busy ? '…' : 'Send'}
+          {input.trim() && busy ? 'Queue' : 'Send'}
         </button>
+        {busy && (
+          <button
+            type="button"
+            onClick={onInterrupt}
+            title="Stop (interrupt the current turn)"
+            style={{
+              padding: '4px 12px',
+              background: 'var(--color-danger)',
+              color: 'var(--color-bg-dark)',
+              border: '2px solid var(--color-border)',
+              boxShadow: 'var(--shadow-pixel)',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-pixel)',
+              fontSize: '13px',
+            }}
+          >
+            ⏹ Stop
+          </button>
+        )}
         <MicButton disabled={spawning} />
       </div>
     </div>
