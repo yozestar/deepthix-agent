@@ -232,22 +232,27 @@ function stringifyToolResult(content: unknown): string {
   }
 }
 
-type ParseResult =
-  | { append: Message[] }
-  | { update: { blockKey: string; appendText: string } }
-  | { setSession: string }
-  | null;
+type ParseAction =
+  | { kind: 'append'; messages: Message[] }
+  | { kind: 'append_text'; blockKey: string; text: string }
+  | { kind: 'set_tool_input'; blockKey: string; input: unknown }
+  | { kind: 'set_session'; sessionId: string };
+
+type ParseResult = ParseAction[];
 
 function parseLine(line: string, ctx: ParseContext): ParseResult {
   let obj: Record<string, unknown>;
   try {
     obj = JSON.parse(line) as Record<string, unknown>;
   } catch {
-    return {
-      append: [
-        { kind: 'error', uid: uid(), ts: Date.now(), text: `(non-JSON line) ${line.slice(0, 200)}` },
-      ],
-    };
+    return [
+      {
+        kind: 'append',
+        messages: [
+          { kind: 'error', uid: uid(), ts: Date.now(), text: `(non-JSON line) ${line.slice(0, 200)}` },
+        ],
+      },
+    ];
   }
   const type = obj.type as string | undefined;
   switch (type) {
@@ -255,35 +260,27 @@ function parseLine(line: string, ctx: ParseContext): ParseResult {
       const subtype = (obj.subtype as string) ?? 'unknown';
       if (subtype === 'init') {
         const sid = obj.session_id as string | undefined;
-        return sid ? { setSession: sid } : null;
+        return sid ? [{ kind: 'set_session', sessionId: sid }] : [];
       }
-      // We already render `status: requesting` via the busy indicator;
-      // suppress its noisy system bubble.
-      if (subtype === 'status') return null;
+      // Already rendered as the "thinking…" header indicator.
+      if (subtype === 'status') return [];
       const summary =
         subtype === 'hook_started' || subtype === 'hook_response'
           ? `${subtype}: ${(obj.hook_name as string) ?? ''}`
           : subtype;
-      return {
-        append: [{ kind: 'system', uid: uid(), ts: Date.now(), subtype, summary }],
-      };
+      return [
+        {
+          kind: 'append',
+          messages: [{ kind: 'system', uid: uid(), ts: Date.now(), subtype, summary }],
+        },
+      ];
     }
     case 'user':
-      // claude echoes user messages back when --replay-user-messages is on.
-      // We already created our own user bubble at send time, so skip.
-      return null;
+      // We already created our own user bubble at send time.
+      return [];
     case 'stream_event': {
-      // Token-level streaming events emitted thanks to
-      // --include-partial-messages. The shape:
-      //   { type: 'stream_event', event: { type: 'message_start', ... } }
-      //   { type: 'stream_event', event: { type: 'content_block_start', index, content_block: {type, ...} } }
-      //   { type: 'stream_event', event: { type: 'content_block_delta', index, delta: {type, text|partial_json} } }
-      //   { type: 'stream_event', event: { type: 'content_block_stop', index } }
-      //   { type: 'stream_event', event: { type: 'message_stop' } }
-      // We map each (messageId, index) pair to one bubble; deltas
-      // append to it.
       const ev = obj.event as Record<string, unknown> | undefined;
-      if (!ev) return null;
+      if (!ev) return [];
       const evType = ev.type as string | undefined;
       switch (evType) {
         case 'message_start': {
@@ -291,159 +288,195 @@ function parseLine(line: string, ctx: ParseContext): ParseResult {
           const id = (msg?.id as string) ?? null;
           ctx.activeMessageId = id;
           if (id) ctx.streamedMessageIds.add(id);
-          return null;
+          return [];
         }
         case 'content_block_start': {
           const messageId = ctx.activeMessageId;
-          if (!messageId) return null;
+          if (!messageId) return [];
           const index = (ev.index as number) ?? 0;
           const cb = ev.content_block as Record<string, unknown> | undefined;
           const cbType = cb?.type as string | undefined;
           const key = blockKey(messageId, index);
-          if (ctx.openBlocks.has(key)) return null;
+          if (ctx.openBlocks.has(key)) return [];
           ctx.openBlocks.add(key);
           if (cbType === 'text') {
-            return {
-              append: [
-                {
-                  kind: 'assistant_text',
-                  uid: key,
-                  ts: Date.now(),
-                  text: '',
-                  messageId: key,
-                },
-              ],
-            };
+            return [
+              {
+                kind: 'append',
+                messages: [
+                  {
+                    kind: 'assistant_text',
+                    uid: key,
+                    ts: Date.now(),
+                    text: '',
+                    messageId: key,
+                  },
+                ],
+              },
+            ];
           }
           if (cbType === 'tool_use') {
-            return {
-              append: [
-                {
-                  kind: 'tool_use',
-                  uid: key,
-                  ts: Date.now(),
-                  tool: (cb?.name as string) ?? '?',
-                  input: cb?.input ?? null,
-                  toolUseId: (cb?.id as string) ?? key,
-                },
-              ],
-            };
+            return [
+              {
+                kind: 'append',
+                messages: [
+                  {
+                    kind: 'tool_use',
+                    uid: key,
+                    ts: Date.now(),
+                    tool: (cb?.name as string) ?? '?',
+                    // input arrives in input_json_delta chunks AFTER
+                    // this start event; the consolidated `assistant`
+                    // event below patches it in once everything's
+                    // accumulated.
+                    input: cb?.input ?? null,
+                    toolUseId: (cb?.id as string) ?? key,
+                  },
+                ],
+              },
+            ];
           }
-          return null;
+          return [];
         }
         case 'content_block_delta': {
           const messageId = ctx.activeMessageId;
-          if (!messageId) return null;
+          if (!messageId) return [];
           const index = (ev.index as number) ?? 0;
           const delta = ev.delta as Record<string, unknown> | undefined;
           const dType = delta?.type as string | undefined;
           if (dType === 'text_delta') {
             const text = (delta?.text as string) ?? '';
-            if (!text) return null;
-            return { update: { blockKey: blockKey(messageId, index), appendText: text } };
+            if (!text) return [];
+            return [{ kind: 'append_text', blockKey: blockKey(messageId, index), text }];
           }
-          // input_json_delta for tool_use input streaming — ignored
-          // for v1, the consolidated `assistant` event provides the
-          // final input. We just don't dedup it (handled below).
-          return null;
+          // input_json_delta accumulates into the tool_use input. We
+          // ignore the partial chunks and let the consolidated
+          // `assistant` event below patch the final input — saves a
+          // bunch of partial-JSON-parse complexity.
+          return [];
         }
         case 'message_stop': {
           ctx.activeMessageId = null;
-          // openBlocks intentionally not cleared — they correspond to
-          // bubbles in the visible log and we don't want to re-create
-          // them if a stale event arrives late.
-          return null;
+          return [];
         }
         default:
-          return null;
+          return [];
       }
     }
     case 'assistant': {
-      // Final consolidated assistant event. If we already streamed it
-      // via stream_event blocks (always, when --include-partial-messages
-      // is on), skip — otherwise we'd duplicate every bubble.
+      // Final consolidated assistant event arrives AFTER message_stop.
+      // - Text blocks: skip (we already streamed them via text_delta).
+      // - tool_use blocks: PATCH the corresponding bubble's input
+      //   field with the final accumulated input. The bubble created
+      //   at content_block_start had input=null/{}; this is where we
+      //   fill it in.
       const msg = obj.message as Record<string, unknown> | undefined;
       const messageId = (msg?.id as string) ?? null;
-      if (messageId && ctx.streamedMessageIds.has(messageId)) return null;
-      // Fallback path for runs without partial messages: emit the
-      // consolidated content as one bubble per block (legacy behavior).
       const content = msg?.content as Array<Record<string, unknown>> | undefined;
-      if (!Array.isArray(content)) return null;
-      const out: Message[] = [];
+      if (!Array.isArray(content)) return [];
+      const wasStreamed = messageId ? ctx.streamedMessageIds.has(messageId) : false;
+      const actions: ParseAction[] = [];
       content.forEach((block, idx) => {
         const key = messageId ? blockKey(messageId, idx) : uid();
         if (block.type === 'text') {
-          out.push({
-            kind: 'assistant_text',
-            uid: key,
-            ts: Date.now(),
-            text: (block.text as string) ?? '',
-            messageId: key,
-          });
+          if (!wasStreamed) {
+            // Fallback path for runs without --include-partial-messages.
+            actions.push({
+              kind: 'append',
+              messages: [
+                {
+                  kind: 'assistant_text',
+                  uid: key,
+                  ts: Date.now(),
+                  text: (block.text as string) ?? '',
+                  messageId: key,
+                },
+              ],
+            });
+          }
         } else if (block.type === 'tool_use') {
-          out.push({
-            kind: 'tool_use',
-            uid: key,
-            ts: Date.now(),
-            tool: (block.name as string) ?? '?',
-            input: block.input,
-            toolUseId: (block.id as string) ?? key,
-          });
+          if (wasStreamed) {
+            // Bubble already exists — patch in the now-complete input.
+            actions.push({ kind: 'set_tool_input', blockKey: key, input: block.input });
+          } else {
+            actions.push({
+              kind: 'append',
+              messages: [
+                {
+                  kind: 'tool_use',
+                  uid: key,
+                  ts: Date.now(),
+                  tool: (block.name as string) ?? '?',
+                  input: block.input,
+                  toolUseId: (block.id as string) ?? key,
+                },
+              ],
+            });
+          }
         }
       });
-      return out.length > 0 ? { append: out } : null;
+      return actions;
     }
     case 'tool_result': {
       const toolUseId = (obj.tool_use_id as string) ?? '';
       const resultText = String(obj.content ?? '');
       const isError = Boolean(obj.is_error);
-      return {
-        append: [
-          {
-            kind: 'tool_use',
-            uid: uid(),
-            ts: Date.now(),
-            tool: '(result)',
-            input: null,
-            toolUseId,
-            result: { text: resultText, isError },
-          },
-        ],
-      };
+      return [
+        {
+          kind: 'append',
+          messages: [
+            {
+              kind: 'tool_use',
+              uid: uid(),
+              ts: Date.now(),
+              tool: '(result)',
+              input: null,
+              toolUseId,
+              result: { text: resultText, isError },
+            },
+          ],
+        },
+      ];
     }
     case 'result': {
       const subtype = (obj.subtype as string) ?? '';
       const ok = subtype === 'success';
-      return {
-        append: [
-          {
-            kind: 'result',
-            uid: uid(),
-            ts: Date.now(),
-            ok,
-            durationMs: (obj.duration_ms as number) ?? 0,
-            costUsd: (obj.total_cost_usd as number) ?? 0,
-            text: (obj.result as string) ?? subtype,
-          },
-        ],
-      };
+      return [
+        {
+          kind: 'append',
+          messages: [
+            {
+              kind: 'result',
+              uid: uid(),
+              ts: Date.now(),
+              ok,
+              durationMs: (obj.duration_ms as number) ?? 0,
+              costUsd: (obj.total_cost_usd as number) ?? 0,
+              text: (obj.result as string) ?? subtype,
+            },
+          ],
+        },
+      ];
     }
     case 'rate_limit_event':
-      return {
-        append: [
-          {
-            kind: 'system',
-            uid: uid(),
-            ts: Date.now(),
-            subtype: 'rate_limit',
-            summary: `rate limit ${
-              ((obj.rate_limit_info as Record<string, unknown> | undefined)?.status as string) ?? '?'
-            }`,
-          },
-        ],
-      };
+      return [
+        {
+          kind: 'append',
+          messages: [
+            {
+              kind: 'system',
+              uid: uid(),
+              ts: Date.now(),
+              subtype: 'rate_limit',
+              summary: `rate limit ${
+                ((obj.rate_limit_info as Record<string, unknown> | undefined)?.status as string) ?? '?'
+              }`,
+            },
+          ],
+        },
+      ];
     default:
-      return null;
+      return [];
   }
 }
 
@@ -552,30 +585,48 @@ export function ChatPane({
         ]);
         return;
       }
-      const parsed = parseLine(evt.line, ctxRef.current);
-      if (!parsed) return;
-      if ('setSession' in parsed) {
-        const sid = parsed.setSession;
-        setSessionId(sid);
-        // Tell the Rust ChatManager so the scheduler can resolve
-        // session_id → term_id when firing scheduled jobs.
-        const tid = termIdRef.current as string;
-        void chatSetSessionId(tid, sid).catch((e) =>
-          console.warn('[Deepthix][ChatPane] chat_set_session_id failed', e),
-        );
-        onSessionReady?.({ termId: tid, sessionId: sid });
-      } else if ('append' in parsed) {
-        setMessages((prev) => [...prev, ...parsed.append]);
-        if (parsed.append.some((m) => m.kind === 'result')) setBusy(false);
-      } else if ('update' in parsed) {
-        const { blockKey, appendText } = parsed.update;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.kind === 'assistant_text' && m.messageId === blockKey
-              ? { ...m, text: m.text + appendText }
-              : m,
-          ),
-        );
+      const actions = parseLine(evt.line, ctxRef.current);
+      for (const a of actions) {
+        switch (a.kind) {
+          case 'set_session': {
+            setSessionId(a.sessionId);
+            const tid = termIdRef.current as string;
+            void chatSetSessionId(tid, a.sessionId).catch((e) =>
+              console.warn('[Deepthix][ChatPane] chat_set_session_id failed', e),
+            );
+            onSessionReady?.({ termId: tid, sessionId: a.sessionId });
+            break;
+          }
+          case 'append': {
+            setMessages((prev) => [...prev, ...a.messages]);
+            if (a.messages.some((m) => m.kind === 'result')) setBusy(false);
+            break;
+          }
+          case 'append_text': {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.kind === 'assistant_text' && m.messageId === a.blockKey
+                  ? { ...m, text: m.text + a.text }
+                  : m,
+              ),
+            );
+            break;
+          }
+          case 'set_tool_input': {
+            // The bubble created at content_block_start had input
+            // null/{} because input arrives in input_json_delta chunks
+            // we ignore. The consolidated assistant event hands us the
+            // final accumulated input — patch the bubble now.
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.kind === 'tool_use' && m.uid === a.blockKey
+                  ? { ...m, input: a.input }
+                  : m,
+              ),
+            );
+            break;
+          }
+        }
       }
     })
       .then((fn) => {
