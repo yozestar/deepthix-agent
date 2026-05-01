@@ -25,12 +25,15 @@ const END: &str = "<!-- DEEPTHIX_DASHBOARD_END -->";
 fn block() -> String {
     let body = r#"## Deepthix Dashboard
 
-This project is being run inside the Deepthix Agent. The OVERVIEW pane shows one
-HTML iframe per active session — populate yours so the user can glance at the
-important data without scrolling through your terminal.
+This project is being run inside the Deepthix Agent. The OVERVIEW pane shows
+ONE shared HTML iframe per project — every session in this project writes to
+the same `dashboard.html`. Treat it as the project's status board: any session
+that does meaningful work updates it so the user (and the other sessions) get
+a glanceable snapshot.
 
 - The path is in the `DEEPTHIX_DASHBOARD_PATH` environment variable. Use the
-  Write tool with that exact path.
+  Write tool with that exact path. (Same path for every session in this
+  project — last writer wins; merge thoughtfully when you change it.)
 - Self-contained HTML only (inline CSS, no external network). The iframe
   has `sandbox="allow-scripts"` so inline `<script>` works for charts/counters
   but `fetch` to other origins is blocked.

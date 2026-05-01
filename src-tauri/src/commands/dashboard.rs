@@ -1,39 +1,35 @@
-// Per-session HTML dashboard. Each claude session gets a stable file path
-// at `~/.deepthix/projects/<project_id>/dashboards/<session_id>.html`. The
-// session is meant to write into that file via its normal Write tool to
-// surface important context (campaign id, KPIs, blockers, links) — the
-// OVERVIEW pane renders the file's contents inside a sandboxed iframe and
-// auto-refreshes when it changes.
+// Project-level HTML dashboard. ONE file per project at
+// `~/.deepthix/projects/<project_id>/dashboard.html`. Any claude session
+// in the project can write into that file (via the Write tool) to surface
+// the project's current state — the OVERVIEW pane renders the contents
+// inside a sandboxed iframe and auto-refreshes when it changes.
 //
-// `dashboard_path` returns the absolute path so the UI can display it
-// (and the user can copy/paste it into a claude prompt). `read_session_dashboard`
-// returns the file contents as a string for the iframe srcdoc; `write_session_dashboard`
-// is exposed for completeness but the expected pattern is for claude itself
-// to write the file.
+// Was per-session before (one html per session_id under dashboards/).
+// User feedback: "l'overview ne doit plus être par session mais general
+// au projet". Per-session was confusing — multiple sessions in the same
+// project meant multiple dashboards to flip between, none of which
+// gave a project-wide picture. The single project file lets sessions
+// COLLABORATE on one shared status board (last writer wins).
+//
+// The session_id parameter is kept on `read_session_dashboard` /
+// `dashboard_mtime_ms` for frontend compat (callers were structured
+// around per-session paths) but it's IGNORED — every call returns
+// the same project-level file.
 
 use std::path::PathBuf;
 
 use crate::storage;
 
-fn dashboards_dir(project_id: &str) -> std::io::Result<PathBuf> {
-    let dir = storage::project_dir(project_id)?.join("dashboards");
+pub fn project_dashboard_file(project_id: &str) -> std::io::Result<PathBuf> {
+    let dir = storage::project_dir(project_id)?;
     std::fs::create_dir_all(&dir)?;
-    Ok(dir)
-}
-
-fn dashboard_file(project_id: &str, session_id: &str) -> std::io::Result<PathBuf> {
-    if session_id.contains('/') || session_id.contains("..") {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("invalid session_id for dashboard: {session_id}"),
-        ));
-    }
-    Ok(dashboards_dir(project_id)?.join(format!("{session_id}.html")))
+    Ok(dir.join("dashboard.html"))
 }
 
 #[tauri::command]
 pub fn dashboard_path(project_id: String, session_id: String) -> Result<String, String> {
-    let path = dashboard_file(&project_id, &session_id).map_err(|e| e.to_string())?;
+    let _ = session_id; // see module doc — ignored for project-level dashboards
+    let path = project_dashboard_file(&project_id).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -42,13 +38,14 @@ pub fn read_session_dashboard(
     project_id: String,
     session_id: String,
 ) -> Result<Option<String>, String> {
-    let path = dashboard_file(&project_id, &session_id).map_err(|e| e.to_string())?;
+    let _ = session_id;
+    let path = project_dashboard_file(&project_id).map_err(|e| e.to_string())?;
     match std::fs::read_to_string(&path) {
         Ok(s) => {
             tracing::debug!(
                 target: "deepthix::commands",
-                %project_id, %session_id, bytes = s.len(),
-                "read_session_dashboard hit",
+                %project_id, bytes = s.len(),
+                "read_session_dashboard hit (project-level)",
             );
             Ok(Some(s))
         }
@@ -63,11 +60,12 @@ pub fn write_session_dashboard(
     session_id: String,
     html: String,
 ) -> Result<(), String> {
-    let path = dashboard_file(&project_id, &session_id).map_err(|e| e.to_string())?;
+    let _ = session_id;
+    let path = project_dashboard_file(&project_id).map_err(|e| e.to_string())?;
     tracing::debug!(
         target: "deepthix::commands",
-        %project_id, %session_id, bytes = html.len(),
-        "write_session_dashboard",
+        %project_id, bytes = html.len(),
+        "write_session_dashboard (project-level)",
     );
     let tmp = path.with_extension("html.tmp");
     std::fs::write(&tmp, html.as_bytes()).map_err(|e| e.to_string())?;
@@ -80,7 +78,8 @@ pub fn write_session_dashboard(
 /// (potentially large) HTML body.
 #[tauri::command]
 pub fn dashboard_mtime_ms(project_id: String, session_id: String) -> Result<u64, String> {
-    let path = dashboard_file(&project_id, &session_id).map_err(|e| e.to_string())?;
+    let _ = session_id;
+    let path = project_dashboard_file(&project_id).map_err(|e| e.to_string())?;
     match std::fs::metadata(&path) {
         Ok(meta) => {
             let mtime = meta
@@ -101,12 +100,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn write_then_read_roundtrip() {
+    fn write_then_read_roundtrip_ignores_session_id() {
         let pid = format!("test-dash-{}", uuid::Uuid::new_v4());
-        let sid = "abc-123".to_string();
         let html = "<h1>Hello</h1>".to_string();
-        write_session_dashboard(pid.clone(), sid.clone(), html.clone()).unwrap();
-        let loaded = read_session_dashboard(pid.clone(), sid.clone()).unwrap();
+        write_session_dashboard(pid.clone(), "abc".into(), html.clone()).unwrap();
+        // Different session_id, same project — should hit the same file.
+        let loaded = read_session_dashboard(pid.clone(), "different".into()).unwrap();
         assert_eq!(loaded, Some(html));
         let _ = std::fs::remove_dir_all(
             storage::deepthix_dir().unwrap().join("projects").join(&pid),
@@ -124,17 +123,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_path_traversal() {
-        assert!(dashboard_file("p", "../etc/passwd").is_err());
-        assert!(dashboard_file("p", "a/b").is_err());
-    }
-
-    #[test]
-    fn dashboard_path_is_under_deepthix_projects() {
+    fn dashboard_path_is_at_project_root() {
         let pid = "abc123".to_string();
-        let sid = "def456".to_string();
-        let path = dashboard_path(pid.clone(), sid.clone()).unwrap();
-        assert!(path.contains("/.deepthix/projects/abc123/dashboards/def456.html"), "got {path}");
+        let path = dashboard_path(pid.clone(), "ignored".into()).unwrap();
+        assert!(path.ends_with("/.deepthix/projects/abc123/dashboard.html"), "got {path}");
     }
 
     #[test]

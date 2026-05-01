@@ -314,11 +314,27 @@ export function VoiceRecorder({
       ev.preventDefault();
       void stopAndTranscribe();
     }
+    // Bridge so on-screen mic buttons (e.g. the one in ChatPane next
+    // to Send) can drive the same start/stop logic. They dispatch
+    // `deepthix:voice:start` on mousedown, `deepthix:voice:stop` on
+    // mouseup. Same effect as holding ⌘M without the user having to
+    // remember the shortcut.
+    function onCustomStart(): void {
+      void startRecording();
+    }
+    function onCustomStop(): void {
+      if (stateRef.current.kind !== 'recording') return;
+      void stopAndTranscribe();
+    }
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('keyup', onKeyUp, true);
+    window.addEventListener('deepthix:voice:start', onCustomStart);
+    window.addEventListener('deepthix:voice:stop', onCustomStop);
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('keyup', onKeyUp, true);
+      window.removeEventListener('deepthix:voice:start', onCustomStart);
+      window.removeEventListener('deepthix:voice:stop', onCustomStop);
     };
   }, [startRecording, stopAndTranscribe]);
 

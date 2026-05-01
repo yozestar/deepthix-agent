@@ -190,6 +190,30 @@ pub fn chat_spawn(
         cmd.arg("--model").arg(m);
     }
 
+    // Same env-var injection pty.rs does for the legacy spawn:
+    // - DEEPTHIX_DASHBOARD_PATH lets claude `Write` straight into the
+    //   project's dashboard.html without the user copy/pasting a path.
+    // - DEEPTHIX_PROJECT_ID is exposed for plugins / scripts that
+    //   want to know which Deepthix project this claude belongs to.
+    // (No DEEPTHIX_SESSION_ID at spawn time — the real UUID isn't
+    // known until claude emits the system/init event later.)
+    let project_id = crate::state::project_id_for_path(&args.cwd);
+    if let Ok(home) = std::env::var("HOME") {
+        let dashboard_path = PathBuf::from(home)
+            .join(".deepthix")
+            .join("projects")
+            .join(&project_id)
+            .join("dashboard.html");
+        if let Some(parent) = dashboard_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        cmd.env(
+            "DEEPTHIX_DASHBOARD_PATH",
+            dashboard_path.to_string_lossy().to_string(),
+        );
+        cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
+    }
+
     // Pipe all three handles. We need stdin to send user turns and
     // stdout for the JSON event stream. stderr captures claude's own
     // warnings (rate limits, hook failures) — we forward them too.

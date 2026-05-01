@@ -177,20 +177,14 @@ function ProjectGroupView({
   status,
   onPickSession,
 }: GroupViewProps): React.JSX.Element {
-  // Active session for the iframe. If the user clicks a tab, switch to
-  // that one. Default to the first session and re-sync if it gets
-  // removed (e.g. session closed externally).
-  const [activeSessionId, setActiveSessionId] = useState<string>(group.sessions[0]?.id ?? '');
-  useEffect(() => {
-    if (!group.sessions.some((s) => s.id === activeSessionId)) {
-      setActiveSessionId(group.sessions[0]?.id ?? '');
-    }
-  }, [group.sessions, activeSessionId]);
-
-  const activeSession = group.sessions.find((s) => s.id === activeSessionId) ?? group.sessions[0];
-  const activeIdx = activeSession ? group.sessions.indexOf(activeSession) : 0;
   const anyWorking = group.sessions.some((s) => status(s.agentId) === 'working');
   const projectStatus = anyWorking ? 'working' : 'idle';
+  // Pick a representative term_id to wire the dashboard buttons to.
+  // The dashboard is project-level now, but per-button click events
+  // still need to land in SOME live session — we use the first claude
+  // session and let claude figure out coordination from there.
+  const proxySession = group.sessions[0];
+  const seed = `${group.projectId}#0`;
 
   return (
     <div
@@ -202,18 +196,14 @@ function ProjectGroupView({
         display: 'flex',
         flexDirection: 'column',
         gap: '10px',
-        // Fill the OVERVIEW pane vertically — the iframe inside is the
-        // main content.
         flex: 1,
         minHeight: 0,
         fontFamily: 'var(--font-pixel)',
       }}
     >
-      {/* Top bar: project info on the left, session pills on the right.
-          Pills switch which session's iframe is shown below; jump-to-
-          session-terminal still works via the FOCUS button so the user
-          can flip to the SESSIONS pane without losing the dashboard
-          view they're inspecting. */}
+      {/* Top bar: project info + session FOCUS pills (no longer toggle
+          which dashboard is shown — the dashboard is project-level —
+          but they still let you jump straight into a session's chat). */}
       <div
         style={{
           display: 'flex',
@@ -257,28 +247,28 @@ function ProjectGroupView({
               terminal={s}
               seed={`${s.projectId}#${idx}`}
               status={status(s.agentId)}
-              isActive={s.id === activeSession?.id}
-              onClick={() => setActiveSessionId(s.id)}
+              isActive={false}
+              onClick={() => onPickSession(s)}
               onFocus={() => onPickSession(s)}
             />
           ))}
         </div>
       </div>
 
-      {/* Pleine hauteur — l'iframe occupe tout le reste de la pane. */}
-      {activeSession && (
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <SessionDashboard
-            key={activeSession.id}
-            termId={activeSession.id}
-            projectId={activeSession.projectId}
-            sessionId={activeSession.sessionId}
-            seed={`${activeSession.projectId}#${activeIdx}`}
-            sessionLabel={activeSession.label}
-            isWorking={status(activeSession.agentId) === 'working'}
-          />
-        </div>
-      )}
+      {/* One project-level dashboard iframe. All sessions in this
+          project write to the same dashboard.html (env var
+          DEEPTHIX_DASHBOARD_PATH); last writer wins. */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <SessionDashboard
+          key={group.projectId}
+          termId={proxySession?.id ?? ''}
+          projectId={group.projectId}
+          sessionId={null}
+          seed={seed}
+          sessionLabel={group.projectName}
+          isWorking={anyWorking}
+        />
+      </div>
     </div>
   );
 }

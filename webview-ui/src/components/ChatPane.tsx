@@ -893,24 +893,61 @@ function ChatInput({
 }): React.JSX.Element {
   const [selectedIdx, setSelectedIdx] = useState(0);
 
+  // Built-in claude code commands that aren't always present in the
+  // system/init `slash_commands` array (it lists user-installed plugin
+  // commands; the native ones are TUI-internal). We hardcode the
+  // common ones so `/` autocomplete shows everything the user expects.
+  // De-duped against the dynamic list before rendering.
+  const allSlashCommands = useMemo(() => {
+    const builtins = [
+      'help',
+      'clear',
+      'compact',
+      'cost',
+      'context',
+      'usage',
+      'model',
+      'agents',
+      'privacy',
+      'upgrade',
+      'init',
+      'review',
+      'security-review',
+      'extra-usage',
+      'insights',
+      'team-onboarding',
+      'heapdump',
+      'exit',
+      'reset',
+    ];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of [...slashCommands, ...builtins]) {
+      if (seen.has(c)) continue;
+      seen.add(c);
+      out.push(c);
+    }
+    return out.sort();
+  }, [slashCommands]);
+
   // Show the slash popup when the input starts with `/` and the user
   // has typed at most one line (still composing the command name —
   // multi-line means they're past the command).
   const showSlash = useMemo(() => {
-    if (slashCommands.length === 0) return false;
+    if (allSlashCommands.length === 0) return false;
     if (!input.startsWith('/')) return false;
     if (input.includes('\n')) return false;
     return true;
-  }, [input, slashCommands]);
+  }, [input, allSlashCommands]);
 
   const filtered = useMemo(() => {
     if (!showSlash) return [];
     const q = input.slice(1).toLowerCase();
-    const matches = slashCommands.filter((c) => c.toLowerCase().startsWith(q));
-    // Cap to 8 — anything more becomes a wall of text. The user can
-    // narrow by typing more.
-    return matches.slice(0, 8);
-  }, [input, slashCommands, showSlash]);
+    const matches = allSlashCommands.filter((c) => c.toLowerCase().includes(q));
+    // Surface all matches (capped at 30) — the popup scrolls. Users
+    // narrow by typing more, not by being forced to memorise.
+    return matches.slice(0, 30);
+  }, [input, allSlashCommands, showSlash]);
 
   // Reset selection whenever the filter changes shape.
   useEffect(() => {
@@ -1053,8 +1090,62 @@ function ChatInput({
         >
           {busy ? '…' : 'Send'}
         </button>
+        <MicButton disabled={spawning} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Push-to-talk mic button next to Send. mousedown starts recording,
+ * mouseup stops + transcribes + injects the result via the existing
+ * VoiceRecorder pipeline (it listens for `deepthix:voice:start` /
+ * `deepthix:voice:stop` window events). Equivalent to holding ⌘M
+ * — both work, the button is just discoverable.
+ */
+function MicButton({ disabled }: { disabled: boolean }): React.JSX.Element {
+  const [holding, setHolding] = useState(false);
+
+  const start = useCallback(() => {
+    if (disabled) return;
+    setHolding(true);
+    window.dispatchEvent(new Event('deepthix:voice:start'));
+  }, [disabled]);
+  const stop = useCallback(() => {
+    if (!holding) return;
+    setHolding(false);
+    window.dispatchEvent(new Event('deepthix:voice:stop'));
+  }, [holding]);
+
+  return (
+    <button
+      type="button"
+      title="Push to talk (⌘M)"
+      disabled={disabled}
+      onMouseDown={start}
+      onMouseUp={stop}
+      onMouseLeave={stop}
+      onTouchStart={start}
+      onTouchEnd={stop}
+      style={{
+        padding: '4px 10px',
+        background: holding ? 'var(--color-danger)' : 'transparent',
+        color: holding ? 'var(--color-bg-dark)' : 'inherit',
+        border: '2px solid var(--color-border)',
+        boxShadow: holding ? 'var(--shadow-pixel)' : 'none',
+        cursor: disabled ? 'default' : 'pointer',
+        fontFamily: 'var(--font-pixel)',
+        fontSize: '13px',
+        opacity: disabled ? 0.4 : 1,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        userSelect: 'none',
+      }}
+    >
+      <span>{holding ? '🔴' : '🎙'}</span>
+      <span style={{ fontSize: 10, opacity: 0.7 }}>⌘M</span>
+    </button>
   );
 }
 
