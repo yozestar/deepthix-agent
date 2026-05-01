@@ -247,7 +247,13 @@ export function useTerminals(): UseTerminalsResult {
             skip_permissions: opts?.skipPermissions ?? false,
           });
           resultId = r.term_id;
-          resultSessionId = r.session_id; // usually null at spawn — filled in by the system/init event
+          // chat_spawn returns null at spawn time — the real session_id
+          // is emitted later via the system/init event. But if WE
+          // initiated a resume we already know the UUID; seed the entry
+          // with it now so ChatPane can hydrate history immediately
+          // instead of waiting for init (and so the scheduler /
+          // sessionsPersist code paths see the right id from frame 1).
+          resultSessionId = r.session_id ?? opts?.resumeSessionId ?? null;
         } else {
           const r = await cmdSpawnTerminal(cwd, kind, undefined, undefined, {
             skipPermissions: opts?.skipPermissions,
