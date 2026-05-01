@@ -235,7 +235,12 @@ function stringifyToolResult(content: unknown): string {
 type ParseAction =
   | { kind: 'append'; messages: Message[] }
   | { kind: 'append_text'; blockKey: string; text: string }
-  | { kind: 'set_tool_input'; blockKey: string; input: unknown }
+  /** Patch the input of an existing tool_use bubble. Indexed by
+   *  `toolUseId` (toolu_xxx) instead of blockKey because the
+   *  consolidated `assistant` event with --include-partial-messages
+   *  fires once per block with `content` length 1 and index 0,
+   *  losing the original block index — but the toolUseId is stable. */
+  | { kind: 'set_tool_input'; toolUseId: string; input: unknown }
   | { kind: 'set_session'; sessionId: string }
   | { kind: 'set_slash_commands'; commands: string[] }
   | { kind: 'turn_end'; ok: boolean; durationMs: number; costUsd: number };
@@ -402,8 +407,16 @@ function parseLine(line: string, ctx: ParseContext): ParseResult {
           }
         } else if (block.type === 'tool_use') {
           if (wasStreamed) {
-            // Bubble already exists — patch in the now-complete input.
-            actions.push({ kind: 'set_tool_input', blockKey: key, input: block.input });
+            // Bubble already exists — patch in the now-complete input
+            // by toolUseId (the block's positional `idx` here is 0
+            // because each consolidated event with --include-partial-
+            // messages carries only one block, so it can't tell us the
+            // bubble's real index in the streamed message).
+            actions.push({
+              kind: 'set_tool_input',
+              toolUseId: (block.id as string) ?? '',
+              input: block.input,
+            });
           } else {
             actions.push({
               kind: 'append',
@@ -634,13 +647,15 @@ export function ChatPane({
             break;
           }
           case 'set_tool_input': {
-            // The bubble created at content_block_start had input
-            // null/{} because input arrives in input_json_delta chunks
-            // we ignore. The consolidated assistant event hands us the
-            // final accumulated input — patch the bubble now.
+            // The bubble created at content_block_start had input {}
+            // because input arrives in input_json_delta chunks we
+            // ignore. The per-block `assistant` event (one per block
+            // with --include-partial-messages) hands us the final
+            // accumulated input. Match by toolUseId — positional
+            // indexes don't survive the per-block fragmentation.
             setMessages((prev) =>
               prev.map((m) =>
-                m.kind === 'tool_use' && m.uid === a.blockKey
+                m.kind === 'tool_use' && m.toolUseId === a.toolUseId
                   ? { ...m, input: a.input }
                   : m,
               ),
