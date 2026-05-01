@@ -14,6 +14,8 @@
 // the matching response.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 import {
   chatKill,
@@ -78,28 +80,49 @@ function uid(): string {
 // ─── Stream parser ──────────────────────────────────────────────────────
 
 interface ParseContext {
-  /** Buffer per-message-id so streaming text deltas concat into one
-   *  message instead of producing one bubble per token. */
-  assistantByMsgId: Map<string, string>;
+  /** Currently-streaming message id (set by message_start, cleared by
+   *  message_stop). Used to attach content_block events to the right
+   *  bubble. */
+  activeMessageId: string | null;
+  /** Set of (messageId|index) keys we've already created a bubble for.
+   *  Lets us choose between "create new bubble" and "append to
+   *  existing" when a content_block_delta arrives. */
+  openBlocks: Set<string>;
+  /** Set of message ids we've already streamed in full. Used to skip
+   *  the consolidated `assistant` event that claude emits AFTER the
+   *  stream_event chain — without this the user sees their message
+   *  twice (once streamed, once duplicated). */
+  streamedMessageIds: Set<string>;
 }
 
 function makeContext(): ParseContext {
-  return { assistantByMsgId: new Map() };
+  return {
+    activeMessageId: null,
+    openBlocks: new Set(),
+    streamedMessageIds: new Set(),
+  };
 }
 
-function parseLine(
-  line: string,
-  ctx: ParseContext,
-):
+function blockKey(messageId: string, index: number): string {
+  return `${messageId}|${index}`;
+}
+
+type ParseResult =
   | { append: Message[] }
-  | { update: { messageId: string; appendText: string } }
+  | { update: { blockKey: string; appendText: string } }
   | { setSession: string }
-  | null {
+  | null;
+
+function parseLine(line: string, ctx: ParseContext): ParseResult {
   let obj: Record<string, unknown>;
   try {
     obj = JSON.parse(line) as Record<string, unknown>;
   } catch {
-    return { append: [{ kind: 'error', uid: uid(), ts: Date.now(), text: `(non-JSON line) ${line.slice(0, 200)}` }] };
+    return {
+      append: [
+        { kind: 'error', uid: uid(), ts: Date.now(), text: `(non-JSON line) ${line.slice(0, 200)}` },
+      ],
+    };
   }
   const type = obj.type as string | undefined;
   switch (type) {
@@ -109,60 +132,143 @@ function parseLine(
         const sid = obj.session_id as string | undefined;
         return sid ? { setSession: sid } : null;
       }
-      const summary = subtype === 'hook_started' || subtype === 'hook_response'
-        ? `${subtype}: ${(obj.hook_name as string) ?? ''}`
-        : subtype;
+      // We already render `status: requesting` via the busy indicator;
+      // suppress its noisy system bubble.
+      if (subtype === 'status') return null;
+      const summary =
+        subtype === 'hook_started' || subtype === 'hook_response'
+          ? `${subtype}: ${(obj.hook_name as string) ?? ''}`
+          : subtype;
       return {
         append: [{ kind: 'system', uid: uid(), ts: Date.now(), subtype, summary }],
       };
     }
-    case 'user': {
+    case 'user':
       // claude echoes user messages back when --replay-user-messages is on.
       // We already created our own user bubble at send time, so skip.
       return null;
+    case 'stream_event': {
+      // Token-level streaming events emitted thanks to
+      // --include-partial-messages. The shape:
+      //   { type: 'stream_event', event: { type: 'message_start', ... } }
+      //   { type: 'stream_event', event: { type: 'content_block_start', index, content_block: {type, ...} } }
+      //   { type: 'stream_event', event: { type: 'content_block_delta', index, delta: {type, text|partial_json} } }
+      //   { type: 'stream_event', event: { type: 'content_block_stop', index } }
+      //   { type: 'stream_event', event: { type: 'message_stop' } }
+      // We map each (messageId, index) pair to one bubble; deltas
+      // append to it.
+      const ev = obj.event as Record<string, unknown> | undefined;
+      if (!ev) return null;
+      const evType = ev.type as string | undefined;
+      switch (evType) {
+        case 'message_start': {
+          const msg = ev.message as Record<string, unknown> | undefined;
+          const id = (msg?.id as string) ?? null;
+          ctx.activeMessageId = id;
+          if (id) ctx.streamedMessageIds.add(id);
+          return null;
+        }
+        case 'content_block_start': {
+          const messageId = ctx.activeMessageId;
+          if (!messageId) return null;
+          const index = (ev.index as number) ?? 0;
+          const cb = ev.content_block as Record<string, unknown> | undefined;
+          const cbType = cb?.type as string | undefined;
+          const key = blockKey(messageId, index);
+          if (ctx.openBlocks.has(key)) return null;
+          ctx.openBlocks.add(key);
+          if (cbType === 'text') {
+            return {
+              append: [
+                {
+                  kind: 'assistant_text',
+                  uid: key,
+                  ts: Date.now(),
+                  text: '',
+                  messageId: key,
+                },
+              ],
+            };
+          }
+          if (cbType === 'tool_use') {
+            return {
+              append: [
+                {
+                  kind: 'tool_use',
+                  uid: key,
+                  ts: Date.now(),
+                  tool: (cb?.name as string) ?? '?',
+                  input: cb?.input ?? null,
+                  toolUseId: (cb?.id as string) ?? key,
+                },
+              ],
+            };
+          }
+          return null;
+        }
+        case 'content_block_delta': {
+          const messageId = ctx.activeMessageId;
+          if (!messageId) return null;
+          const index = (ev.index as number) ?? 0;
+          const delta = ev.delta as Record<string, unknown> | undefined;
+          const dType = delta?.type as string | undefined;
+          if (dType === 'text_delta') {
+            const text = (delta?.text as string) ?? '';
+            if (!text) return null;
+            return { update: { blockKey: blockKey(messageId, index), appendText: text } };
+          }
+          // input_json_delta for tool_use input streaming — ignored
+          // for v1, the consolidated `assistant` event provides the
+          // final input. We just don't dedup it (handled below).
+          return null;
+        }
+        case 'message_stop': {
+          ctx.activeMessageId = null;
+          // openBlocks intentionally not cleared — they correspond to
+          // bubbles in the visible log and we don't want to re-create
+          // them if a stale event arrives late.
+          return null;
+        }
+        default:
+          return null;
+      }
     }
     case 'assistant': {
+      // Final consolidated assistant event. If we already streamed it
+      // via stream_event blocks (always, when --include-partial-messages
+      // is on), skip — otherwise we'd duplicate every bubble.
       const msg = obj.message as Record<string, unknown> | undefined;
-      if (!msg) return null;
-      const messageId = (msg.id as string) ?? uid();
-      const content = msg.content as Array<Record<string, unknown>> | undefined;
+      const messageId = (msg?.id as string) ?? null;
+      if (messageId && ctx.streamedMessageIds.has(messageId)) return null;
+      // Fallback path for runs without partial messages: emit the
+      // consolidated content as one bubble per block (legacy behavior).
+      const content = msg?.content as Array<Record<string, unknown>> | undefined;
       if (!Array.isArray(content)) return null;
       const out: Message[] = [];
-      for (const block of content) {
+      content.forEach((block, idx) => {
+        const key = messageId ? blockKey(messageId, idx) : uid();
         if (block.type === 'text') {
-          const text = (block.text as string) ?? '';
-          // Dedupe-by-messageId: if we already have a message bubble
-          // with this id, append to it instead of creating a new one.
-          if (ctx.assistantByMsgId.has(messageId)) {
-            const prev = ctx.assistantByMsgId.get(messageId) ?? '';
-            ctx.assistantByMsgId.set(messageId, prev + text);
-            return { update: { messageId, appendText: text } };
-          }
-          ctx.assistantByMsgId.set(messageId, text);
           out.push({
             kind: 'assistant_text',
-            uid: uid(),
+            uid: key,
             ts: Date.now(),
-            text,
-            messageId,
+            text: (block.text as string) ?? '',
+            messageId: key,
           });
         } else if (block.type === 'tool_use') {
           out.push({
             kind: 'tool_use',
-            uid: uid(),
+            uid: key,
             ts: Date.now(),
             tool: (block.name as string) ?? '?',
             input: block.input,
-            toolUseId: (block.id as string) ?? uid(),
+            toolUseId: (block.id as string) ?? key,
           });
         }
-      }
+      });
       return out.length > 0 ? { append: out } : null;
     }
     case 'tool_result': {
-      // Some claude versions emit tool_result as its own top-level
-      // event; others fold it into a user message with content
-      // [{type:"tool_result"...}]. We accept both shapes.
       const toolUseId = (obj.tool_use_id as string) ?? '';
       const resultText = String(obj.content ?? '');
       const isError = Boolean(obj.is_error);
@@ -198,7 +304,6 @@ function parseLine(
       };
     }
     case 'rate_limit_event':
-      // Rendered as a small system note.
       return {
         append: [
           {
@@ -306,10 +411,10 @@ export function ChatPane({
         setMessages((prev) => [...prev, ...parsed.append]);
         if (parsed.append.some((m) => m.kind === 'result')) setBusy(false);
       } else if ('update' in parsed) {
-        const { messageId, appendText } = parsed.update;
+        const { blockKey, appendText } = parsed.update;
         setMessages((prev) =>
           prev.map((m) =>
-            m.kind === 'assistant_text' && m.messageId === messageId
+            m.kind === 'assistant_text' && m.messageId === blockKey
               ? { ...m, text: m.text + appendText }
               : m,
           ),
@@ -515,9 +620,27 @@ export function ChatPane({
 function MessageBubble({ m }: { m: Message }): React.JSX.Element {
   switch (m.kind) {
     case 'user':
-      return <Bubble align="right" bg="var(--color-accent)" fg="var(--color-bg-dark)" label="you" body={m.text} />;
+      return (
+        <Bubble
+          align="right"
+          bg="var(--color-accent)"
+          fg="var(--color-bg-dark)"
+          label="you"
+          body={m.text}
+          markdown={false}
+        />
+      );
     case 'assistant_text':
-      return <Bubble align="left" bg="var(--color-bg-dark)" fg="var(--color-text)" label="claude" body={m.text} />;
+      return (
+        <Bubble
+          align="left"
+          bg="var(--color-bg-dark)"
+          fg="var(--color-text)"
+          label="claude"
+          body={m.text}
+          markdown={true}
+        />
+      );
     case 'tool_use':
       return <ToolBubble m={m} />;
     case 'system':
@@ -574,12 +697,16 @@ function Bubble({
   fg,
   label,
   body,
+  markdown,
 }: {
   align: 'left' | 'right';
   bg: string;
   fg: string;
   label: string;
   body: string;
+  /** When true, render `body` as Markdown (assistant messages). User
+   *  messages stay as plain text — they're already what the user typed. */
+  markdown: boolean;
 }): React.JSX.Element {
   return (
     <div
@@ -593,12 +720,181 @@ function Bubble({
         padding: '8px 10px',
         fontSize: '13px',
         lineHeight: 1.45,
-        whiteSpace: 'pre-wrap',
+        // pre-wrap is the right default for plain text bubbles; the
+        // markdown bubble below has its own block formatting and will
+        // override per-element.
+        whiteSpace: markdown ? 'normal' : 'pre-wrap',
         wordBreak: 'break-word',
       }}
     >
       <div style={{ fontSize: '10px', opacity: 0.6, marginBottom: 4 }}>{label}</div>
-      {body}
+      {markdown ? (
+        // Empty body = the streaming bubble was just opened, no
+        // tokens yet. Show a thin caret so the user knows something
+        // is coming.
+        body.length === 0 ? (
+          <span style={{ opacity: 0.4 }}>▌</span>
+        ) : (
+          <MarkdownBody source={body} />
+        )
+      ) : (
+        body
+      )}
+    </div>
+  );
+}
+
+/**
+ * react-markdown wrapper with custom code/inline-code styling.
+ *
+ * GitHub-flavored: tables, task lists, strikethrough via remark-gfm.
+ * Code blocks get a dark background + monospace, inline code gets a
+ * lighter chip with rounded corners. Default react-markdown classes
+ * are reset by inline styles since we're inside a pixel-themed bubble
+ * with no global Tailwind typography plugin.
+ */
+function MarkdownBody({ source }: { source: string }): React.JSX.Element {
+  return (
+    <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p style={{ margin: '0 0 8px 0' }}>{children}</p>,
+          ul: ({ children }) => (
+            <ul style={{ margin: '0 0 8px 0', paddingLeft: 20 }}>{children}</ul>
+          ),
+          ol: ({ children }) => (
+            <ol style={{ margin: '0 0 8px 0', paddingLeft: 20 }}>{children}</ol>
+          ),
+          li: ({ children }) => <li style={{ margin: '2px 0' }}>{children}</li>,
+          h1: ({ children }) => (
+            <h1 style={{ fontSize: '15px', fontWeight: 'bold', margin: '8px 0 4px' }}>{children}</h1>
+          ),
+          h2: ({ children }) => (
+            <h2 style={{ fontSize: '14px', fontWeight: 'bold', margin: '8px 0 4px' }}>{children}</h2>
+          ),
+          h3: ({ children }) => (
+            <h3 style={{ fontSize: '13px', fontWeight: 'bold', margin: '6px 0 3px' }}>{children}</h3>
+          ),
+          strong: ({ children }) => <strong style={{ fontWeight: 'bold' }}>{children}</strong>,
+          em: ({ children }) => <em style={{ fontStyle: 'italic' }}>{children}</em>,
+          a: ({ children, href }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: 'var(--color-accent)', textDecoration: 'underline' }}
+            >
+              {children}
+            </a>
+          ),
+          code: ({ children, className }) => {
+            // react-markdown@9 routes both inline and block code through
+            // the `code` component. Block code is wrapped in a `pre`
+            // by the default `pre` component below; inline code lands
+            // here without any language className, so we differentiate
+            // by `className` (block code has language-* set).
+            const isBlock = typeof className === 'string' && className.startsWith('language-');
+            if (isBlock) {
+              return (
+                <code
+                  className={className}
+                  style={{
+                    fontFamily: 'Menlo, Consolas, monospace',
+                    fontSize: '12px',
+                    color: 'var(--color-text)',
+                  }}
+                >
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <code
+                style={{
+                  fontFamily: 'Menlo, Consolas, monospace',
+                  fontSize: '12px',
+                  background: 'var(--color-bg)',
+                  border: '1px solid var(--color-border)',
+                  padding: '0 4px',
+                  borderRadius: 0,
+                }}
+              >
+                {children}
+              </code>
+            );
+          },
+          pre: ({ children }) => (
+            <pre
+              style={{
+                margin: '4px 0 8px',
+                padding: '8px 10px',
+                background: 'var(--color-bg)',
+                border: '2px solid var(--color-border)',
+                overflow: 'auto',
+                fontFamily: 'Menlo, Consolas, monospace',
+                fontSize: '12px',
+                whiteSpace: 'pre',
+                lineHeight: 1.4,
+              }}
+            >
+              {children}
+            </pre>
+          ),
+          blockquote: ({ children }) => (
+            <blockquote
+              style={{
+                margin: '4px 0 8px',
+                padding: '4px 10px',
+                borderLeft: '3px solid var(--color-border)',
+                opacity: 0.85,
+              }}
+            >
+              {children}
+            </blockquote>
+          ),
+          table: ({ children }) => (
+            <div style={{ overflow: 'auto', margin: '4px 0 8px' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '12px' }}>
+                {children}
+              </table>
+            </div>
+          ),
+          th: ({ children }) => (
+            <th
+              style={{
+                border: '1px solid var(--color-border)',
+                padding: '4px 6px',
+                textAlign: 'left',
+                background: 'var(--color-bg)',
+              }}
+            >
+              {children}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td
+              style={{
+                border: '1px solid var(--color-border)',
+                padding: '4px 6px',
+              }}
+            >
+              {children}
+            </td>
+          ),
+          hr: () => (
+            <hr
+              style={{
+                border: 0,
+                borderTop: '2px solid var(--color-border)',
+                margin: '8px 0',
+              }}
+            />
+          ),
+        }}
+      >
+        {source}
+      </ReactMarkdown>
     </div>
   );
 }

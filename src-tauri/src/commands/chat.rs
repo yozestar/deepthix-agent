@@ -174,7 +174,12 @@ pub fn chat_spawn(
         .arg("stream-json")
         // --verbose is mandatory with --output-format=stream-json
         // (claude refuses to start otherwise).
-        .arg("--verbose");
+        .arg("--verbose")
+        // Token-level streaming: claude emits stream_event JSON lines
+        // with content_block_delta as the assistant generates, so the
+        // ChatPane can paint text incrementally instead of waiting
+        // for the whole turn.
+        .arg("--include-partial-messages");
     if args.skip_permissions {
         cmd.arg("--dangerously-skip-permissions");
     }
