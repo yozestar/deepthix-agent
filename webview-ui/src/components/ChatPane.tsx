@@ -24,6 +24,10 @@ import {
   chatSendUserText,
   chatSetSessionId,
   chatSpawn,
+  openExternalUrl,
+  readClaudeDailyActivity,
+  readClaudeSubscription,
+  readClaudeUsageLimits,
 } from '../tauri/commands';
 import { onChatEvent, onChatExit } from '../tauri/events';
 
@@ -737,7 +741,18 @@ export function ChatPane({
       switch (cmd) {
         case 'help':
           dropMessage(
-            'Commands available in chat: /clear (reset session) · /cost (show last turn cost) · /help (this list). Shortcuts: ⏎ send · ⇧⏎ newline · ↑/↓ history · / autocomplete · ⌘M push-to-talk',
+            [
+              'Commands available in chat:',
+              '  /usage — current plan + today\'s msg/sess + window utilisation',
+              '  /cost — duration + cost of the last turn',
+              '  /clear — reset the local view (on-disk context preserved)',
+              '  /agents — open claude.ai/agents in your browser',
+              '  /privacy — open Anthropic privacy in your browser',
+              '  /upgrade — open the upgrade page in your browser',
+              '  /help — this list',
+              '',
+              'Shortcuts: ⏎ send · ⇧⏎ newline · ↑/↓ history · / autocomplete · ⌘M push-to-talk',
+            ].join('\n'),
           );
           return true;
         case 'cost':
@@ -752,22 +767,78 @@ export function ChatPane({
         case 'clear':
           // Clear local message log only. Claude's actual context is
           // still on disk (the JSONL); the next message will reference
-          // it via --resume. To start truly fresh the user should
-          // close + reopen the session.
+          // it via --resume.
           setMessages([]);
           ctxRef.current = makeContext();
           dropMessage('Local view cleared. Conversation context preserved on disk.');
           return true;
-        case 'context':
-        case 'usage':
-        case 'compact':
-          dropMessage(
-            `/${cmd} is a TUI-only command in claude code; not yet supported in chat mode. Open the OVERVIEW tab to track usage manually.`,
-          );
+        case 'usage': {
+          // Pull every usage source we have and render a summary
+          // bubble. Same data the sidebar's USAGE block shows, plus
+          // the live limits from claude.ai/api/oauth/usage when it
+          // can be reached.
+          dropMessage('📊 reading usage…');
+          void Promise.all([
+            readClaudeSubscription().catch(() => null),
+            readClaudeDailyActivity().catch(() => null),
+            readClaudeUsageLimits().catch(() => null),
+          ]).then(([sub, activity, limits]) => {
+            const lines: string[] = [];
+            if (sub?.subscription_type) {
+              const tier = sub.subscription_type.toUpperCase();
+              const tierLabel = sub.rate_limit_tier
+                ? `${tier} (${sub.rate_limit_tier})`
+                : tier;
+              lines.push(`Plan: ${tierLabel}`);
+            }
+            if (activity?.today) {
+              lines.push(
+                `Today: ${activity.today.message_count} msg · ${activity.today.session_count} sess · ${activity.today.tool_call_count} tool calls`,
+              );
+            }
+            if (activity?.all_time) {
+              lines.push(
+                `All time: ${activity.all_time.message_count.toLocaleString()} msg · ${activity.all_time.session_count.toLocaleString()} sess`,
+              );
+            }
+            if (limits && !limits.error) {
+              const pct = (b: { utilization: number }): string =>
+                `${(b.utilization * 100).toFixed(0)}%`;
+              const at = (b: { resets_at: string }): string => {
+                const d = new Date(b.resets_at);
+                return Number.isNaN(d.getTime()) ? '?' : d.toLocaleString();
+              };
+              lines.push(
+                `5h window: ${pct(limits.five_hour)} · resets ${at(limits.five_hour)}`,
+              );
+              lines.push(
+                `7d all: ${pct(limits.seven_day)} · 7d sonnet: ${pct(limits.seven_day_sonnet)} · resets ${at(limits.seven_day)}`,
+              );
+            } else if (limits?.error) {
+              lines.push(`(live limits unavailable: ${limits.error})`);
+            }
+            if (lines.length === 0) {
+              dropMessage('No usage data available — try `claude login` first.');
+            } else {
+              dropMessage(lines.join('\n'));
+            }
+          });
           return true;
+        }
         case 'agents':
+          void openExternalUrl('https://claude.ai/agents').catch(() => {});
+          dropMessage('Opening claude.ai/agents…');
+          return true;
         case 'privacy':
+          void openExternalUrl('https://www.anthropic.com/privacy').catch(() => {});
+          dropMessage('Opening anthropic.com/privacy…');
+          return true;
         case 'upgrade':
+          void openExternalUrl('https://claude.ai/upgrade').catch(() => {});
+          dropMessage('Opening claude.ai/upgrade…');
+          return true;
+        case 'context':
+        case 'compact':
         case 'model':
         case 'init':
         case 'review':
@@ -779,7 +850,7 @@ export function ChatPane({
         case 'exit':
         case 'reset':
           dropMessage(
-            `/${cmd} only runs in claude's native TUI. Use the system terminal if you need it.`,
+            `/${cmd} only runs in claude's native TUI. Not yet implemented in chat mode.`,
           );
           return true;
         default:
@@ -1030,7 +1101,15 @@ function ChatInput({
   // Hidden now — handleSlashCommand still catches them if typed and
   // shows a friendlier "not supported" notice.
   const allSlashCommands = useMemo(() => {
-    const clientSide = ['help', 'clear', 'cost'];
+    const clientSide = [
+      'help',
+      'clear',
+      'cost',
+      'usage',
+      'agents',
+      'privacy',
+      'upgrade',
+    ];
     const seen = new Set<string>();
     const out: string[] = [];
     for (const c of [...slashCommands, ...clientSide]) {

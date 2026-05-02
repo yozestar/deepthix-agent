@@ -31,9 +31,17 @@ import { onChatEvent, onChatExit } from '../tauri/events';
 
 const COACH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 const EXCERPT_TURNS_PER_SESSION = 10;
-const COACH_PROMPT_PREFIX = `You are a coaching agent watching multiple claude sessions in a project. Be terse and actionable.
+const COACH_PROMPT_PREFIX = `You are a coaching agent watching multiple claude sessions in a project. Your output is rendered as discrete proposal cards with Accept/Reject buttons — NOT as free prose.
 
-For each session below, suggest at most 1-2 improvements (≤ 2 sentences each). Then end with a single \`SUMMARY\` block listing the top take-aways the user might want to copy into the project's CLAUDE.md.
+For each issue you spot, output ONE block in this EXACT format (XML-like, parser-friendly):
+
+<proposal>
+<title>One short sentence — what to change</title>
+<why>One sentence — why it would help (productivity, cost, correctness, clarity)</why>
+<memory>If accepted, this exact text will be appended to the project's CLAUDE.md so the main sessions inherit the rule. Write it as a directive (e.g. "When editing X, always Y because Z.") Skip this block if the suggestion isn't a memory-worthy rule.</memory>
+</proposal>
+
+Aim for 1–4 proposals. Skip the small stuff. No preamble or postamble — only the <proposal> blocks.
 
 Recent activity follows.
 
@@ -84,7 +92,6 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
   const [messages, setMessages] = useState<CoachMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState<string | null>(null);
   // Refs the timer can read without re-binding.
   const coachTermIdRef = useRef<string | null>(null);
   const sessionsRef = useRef<SessionRef[]>(sessions);
@@ -387,22 +394,6 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     );
   }, [coachTermId]);
 
-  const addToMemory = useCallback(
-    async (m: CoachMessage): Promise<void> => {
-      setAdding(m.uid);
-      try {
-        await appendToClaudeMd(cwd, m.text);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error('[Deepthix][CoachPane] addToMemory failed', e);
-        setError(msg);
-      } finally {
-        setTimeout(() => setAdding(null), 1500);
-      }
-    },
-    [cwd],
-  );
-
   // Auto-scroll on new content.
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -504,14 +495,7 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
         {!state.enabled && messages.length === 0 ? (
           <EmptyCoach hasSessions={sessions.length > 0} />
         ) : (
-          messages.map((m) => (
-            <CoachBubble
-              key={m.uid}
-              m={m}
-              onAdd={() => void addToMemory(m)}
-              addingUid={adding}
-            />
-          ))
+          messages.map((m) => <CoachBubble key={m.uid} m={m} cwd={cwd} />)
         )}
       </div>
     </div>
@@ -589,16 +573,42 @@ function EmptyCoach({ hasSessions }: { hasSessions: boolean }): React.JSX.Elemen
   );
 }
 
+/**
+ * Parse `<proposal><title>…</title><why>…</why><memory>…</memory></proposal>`
+ * blocks from the coach's free-form text. Returns an empty array if
+ * none are found — caller falls back to plain markdown render.
+ *
+ * Tolerant: missing <memory> is allowed (proposal without memory ask),
+ * tags can have whitespace, content can span multiple lines.
+ */
+interface Proposal {
+  title: string;
+  why: string;
+  memory: string;
+}
+function parseProposals(text: string): Proposal[] {
+  const out: Proposal[] = [];
+  const blockRe = /<proposal>([\s\S]*?)<\/proposal>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = blockRe.exec(text)) !== null) {
+    const inner = m[1];
+    const title = (inner.match(/<title>([\s\S]*?)<\/title>/i)?.[1] ?? '').trim();
+    const why = (inner.match(/<why>([\s\S]*?)<\/why>/i)?.[1] ?? '').trim();
+    const memory = (inner.match(/<memory>([\s\S]*?)<\/memory>/i)?.[1] ?? '').trim();
+    if (title || why || memory) out.push({ title, why, memory });
+  }
+  return out;
+}
+
+type ProposalDecision = 'pending' | 'accepted' | 'dismissed';
+
 function CoachBubble({
   m,
-  onAdd,
-  addingUid,
+  cwd,
 }: {
   m: CoachMessage;
-  onAdd: () => void;
-  addingUid: string | null;
+  cwd: string;
 }): React.JSX.Element {
-  const justAdded = addingUid === m.uid;
   if (m.role === 'system') {
     return (
       <div
@@ -615,57 +625,202 @@ function CoachBubble({
       </div>
     );
   }
+  // Streaming with no content yet → just a caret.
+  if (m.streaming && m.text.length === 0) {
+    return (
+      <div
+        className="dt-chat-msg"
+        style={{
+          alignSelf: 'flex-start',
+          padding: '8px 10px',
+          background: 'var(--color-bg-dark)',
+          border: '2px solid var(--color-border)',
+          boxShadow: 'var(--shadow-pixel)',
+          fontSize: 13,
+        }}
+      >
+        <span style={{ opacity: 0.5 }}>▌</span>
+      </div>
+    );
+  }
+
+  const proposals = parseProposals(m.text);
+
+  // No structured proposals → coach went off-format. Render as
+  // markdown so we never lose information.
+  if (proposals.length === 0) {
+    return (
+      <div
+        className="dt-chat-msg"
+        style={{
+          alignSelf: 'flex-start',
+          maxWidth: '92%',
+          background: 'var(--color-bg-dark)',
+          color: 'var(--color-text)',
+          border: '2px solid var(--color-border)',
+          boxShadow: 'var(--shadow-pixel)',
+          padding: '8px 10px',
+          fontSize: 13,
+          lineHeight: 1.45,
+          wordBreak: 'break-word',
+        }}
+      >
+        <div style={{ fontSize: 10, opacity: 0.6, marginBottom: 4 }}>
+          coach · {new Date(m.ts).toLocaleTimeString()}
+        </div>
+        {m.streaming ? (
+          <span style={{ opacity: 0.5 }}>▌ {m.text}</span>
+        ) : (
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="dt-chat-msg" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div
+        style={{
+          alignSelf: 'flex-start',
+          fontSize: 10,
+          opacity: 0.6,
+          padding: '0 4px',
+        }}
+      >
+        coach · {new Date(m.ts).toLocaleTimeString()} · {proposals.length} proposal
+        {proposals.length === 1 ? '' : 's'}
+      </div>
+      {proposals.map((p, idx) => (
+        <ProposalCard key={`${m.uid}-${idx}`} proposal={p} cwd={cwd} />
+      ))}
+    </div>
+  );
+}
+
+function ProposalCard({
+  proposal,
+  cwd,
+}: {
+  proposal: Proposal;
+  cwd: string;
+}): React.JSX.Element {
+  const [decision, setDecision] = useState<ProposalDecision>('pending');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onAccept = useCallback(async (): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (proposal.memory) {
+        await appendToClaudeMd(cwd, proposal.memory);
+      }
+      setDecision('accepted');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Deepthix][CoachPane] append failed', e);
+      setErr(msg);
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, proposal.memory, cwd]);
+
+  const onDismiss = useCallback((): void => {
+    setDecision('dismissed');
+  }, []);
+
+  const accent =
+    decision === 'accepted'
+      ? 'var(--color-success, #34d399)'
+      : decision === 'dismissed'
+        ? 'var(--color-border)'
+        : 'var(--color-accent)';
+
   return (
     <div
-      className="dt-chat-msg"
       style={{
         alignSelf: 'flex-start',
         maxWidth: '92%',
         background: 'var(--color-bg-dark)',
         color: 'var(--color-text)',
         border: '2px solid var(--color-border)',
+        borderLeft: `4px solid ${accent}`,
         boxShadow: 'var(--shadow-pixel)',
-        padding: '8px 10px',
+        padding: '10px 12px',
         fontSize: 13,
-        lineHeight: 1.45,
-        wordBreak: 'break-word',
+        opacity: decision === 'dismissed' ? 0.45 : 1,
+        textDecoration: decision === 'dismissed' ? 'line-through' : 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          fontSize: 10,
-          opacity: 0.6,
-          marginBottom: 4,
-        }}
-      >
-        <span>coach · {new Date(m.ts).toLocaleTimeString()}</span>
-        {!m.streaming && m.text.trim().length > 20 && (
+      <div style={{ fontWeight: 'bold', lineHeight: 1.3 }}>{proposal.title || '(no title)'}</div>
+      {proposal.why && (
+        <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>{proposal.why}</div>
+      )}
+      {proposal.memory && (
+        <pre
+          style={{
+            margin: 0,
+            padding: '6px 8px',
+            background: 'var(--color-bg)',
+            border: '1px solid var(--color-border)',
+            fontFamily: 'Menlo, Consolas, monospace',
+            fontSize: 11,
+            lineHeight: 1.4,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            maxHeight: 140,
+            overflow: 'auto',
+          }}
+        >
+          {proposal.memory}
+        </pre>
+      )}
+      {err && <div style={{ fontSize: 11, color: 'var(--color-danger)' }}>error: {err}</div>}
+      {decision === 'pending' ? (
+        <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
           <button
             type="button"
-            onClick={onAdd}
-            title="Append this suggestion to the project's CLAUDE.md"
-            style={{
-              background: justAdded ? 'var(--color-success, #34d399)' : 'transparent',
-              color: justAdded ? 'var(--color-bg-dark)' : 'inherit',
-              border: '1px solid var(--color-border)',
-              padding: '1px 6px',
-              fontFamily: 'var(--font-pixel)',
-              fontSize: 10,
-              cursor: 'pointer',
-            }}
+            onClick={() => void onAccept()}
+            disabled={busy}
+            title={
+              proposal.memory
+                ? 'Append the memory block to CLAUDE.md'
+                : 'Mark as accepted (no memory text to add)'
+            }
+            style={cardBtn(true, busy)}
           >
-            {justAdded ? '✓ added' : '+ memory'}
+            {busy ? '…' : proposal.memory ? '✓ Yes — add to CLAUDE.md' : '✓ Yes'}
           </button>
-        )}
-      </div>
-      {m.text.length === 0 && m.streaming ? (
-        <span style={{ opacity: 0.5 }}>▌</span>
+          <button type="button" onClick={onDismiss} style={cardBtn(false, false)}>
+            ✗ No
+          </button>
+        </div>
       ) : (
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
+        <div style={{ fontSize: 10, opacity: 0.7 }}>
+          {decision === 'accepted'
+            ? proposal.memory
+              ? '✓ added to CLAUDE.md'
+              : '✓ accepted'
+            : '✗ dismissed'}
+        </div>
       )}
     </div>
   );
+}
+
+function cardBtn(primary: boolean, busy: boolean): React.CSSProperties {
+  return {
+    padding: '4px 12px',
+    background: primary && !busy ? 'var(--color-accent)' : 'transparent',
+    color: primary && !busy ? 'var(--color-bg-dark)' : 'inherit',
+    border: '2px solid var(--color-border)',
+    boxShadow: primary && !busy ? 'var(--shadow-pixel)' : 'none',
+    cursor: busy ? 'default' : 'pointer',
+    fontFamily: 'var(--font-pixel)',
+    fontSize: 11,
+    opacity: busy ? 0.5 : 1,
+  };
 }
