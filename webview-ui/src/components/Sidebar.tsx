@@ -87,6 +87,7 @@ export function Sidebar({
           display: 'flex',
           flexDirection: 'column',
           fontFamily: 'var(--font-pixel)',
+          borderRight: '1px solid var(--color-border)',
         }}
       >
         <ProjectList
@@ -100,13 +101,7 @@ export function Sidebar({
           onOpenSettings={onOpenSettings}
           settingsActive={settingsActive}
         />
-        <div
-          style={{
-            height: '2px',
-            background: 'var(--color-border)',
-            margin: '0',
-          }}
-        />
+        <hr className="dt-divider" />
         <FileTree tree={fileTree} onFileClick={onFileClick} />
         <UsagePane />
       </div>
@@ -114,10 +109,18 @@ export function Sidebar({
         onMouseDown={onMouseDown}
         title="Drag to resize sidebar"
         style={{
-          width: '6px',
+          width: '4px',
           cursor: 'ew-resize',
-          background: 'var(--color-border)',
+          background: 'transparent',
           flexShrink: 0,
+          transition: 'background 120ms ease',
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLDivElement).style.background = 'var(--color-accent)';
+        }}
+        onMouseLeave={(e) => {
+          if (!draggingRef.current)
+            (e.currentTarget as HTMLDivElement).style.background = 'transparent';
         }}
       />
     </div>

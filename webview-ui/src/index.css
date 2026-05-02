@@ -173,3 +173,128 @@
   backface-visibility: hidden;
   will-change: transform;
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Global UI utilities — picked up by every pane via class names.
+ * Keeps inline styles uncluttered and gives us one place to retune.
+ * ────────────────────────────────────────────────────────────────────── */
+
+/* Custom scrollbars: thin pixel rail in the muted bg, accent on hover.
+ * Applied app-wide so panes feel cohesive instead of mixing
+ * Webkit defaults with our pixel chrome. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 0;
+  border: 1px solid var(--color-bg);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent);
+}
+
+/* Section header style — used by sidebar groups (PROJECTS, FILES,
+ * USAGE, etc.). Compact uppercase label with a subtle bottom rule. */
+.dt-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px 4px;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Hoverable list row (project items, file tree entries, etc.). */
+.dt-row {
+  transition: background 120ms ease, color 120ms ease;
+}
+.dt-row:hover {
+  background: var(--color-btn-hover);
+}
+
+/* Pixel button base — replaces dozens of inline button styles. */
+.dt-btn {
+  font-family: var(--font-pixel);
+  border: 2px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  padding: 6px 12px;
+  transition: background 120ms ease, color 120ms ease, transform 80ms ease;
+}
+.dt-btn:hover:not(:disabled) {
+  background: var(--color-btn-hover);
+}
+.dt-btn:active:not(:disabled) {
+  transform: translate(1px, 1px);
+}
+.dt-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.dt-btn--primary {
+  background: var(--color-accent);
+  color: var(--color-bg-dark);
+  box-shadow: var(--shadow-pixel);
+}
+.dt-btn--primary:hover:not(:disabled) {
+  background: var(--color-accent-bright);
+}
+.dt-btn--danger {
+  background: var(--color-danger);
+  color: var(--color-bg-dark);
+  box-shadow: var(--shadow-pixel);
+}
+
+/* Subtle divider used between sidebar groups. */
+.dt-divider {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 0;
+  opacity: 0.5;
+}
+
+/* Empty-state container reused by every pane. */
+.dt-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 24px;
+  gap: 10px;
+  color: var(--color-text-muted);
+  font-family: var(--font-pixel);
+}
+.dt-empty-title {
+  font-size: 13px;
+  color: var(--color-text);
+  letter-spacing: 0.04em;
+}
+.dt-empty-sub {
+  font-size: 11px;
+  opacity: 0.85;
+  max-width: 360px;
+  line-height: 1.5;
+}
+
+/* Soft tinted card — used for grouped controls (form fields, info
+ * boxes) that don't deserve the heavy pixel-shadow treatment. */
+.dt-card {
+  background: var(--color-bg-dark);
+  border: 2px solid var(--color-border);
+  padding: 12px;
+}

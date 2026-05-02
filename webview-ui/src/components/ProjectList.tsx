@@ -85,16 +85,10 @@ export function ProjectList({
       <button
         type="button"
         onClick={onOpenSettings}
+        className={settingsActive ? 'dt-btn dt-btn--primary' : 'dt-btn'}
         style={{
-          padding: '6px 8px',
           marginBottom: '6px',
-          background: settingsActive ? 'var(--color-accent)' : 'transparent',
-          color: settingsActive ? 'var(--color-bg-dark)' : 'inherit',
-          border: '2px solid var(--color-border)',
-          boxShadow: 'var(--shadow-pixel)',
-          cursor: 'pointer',
           fontSize: '13px',
-          fontFamily: 'var(--font-pixel)',
           letterSpacing: '0.06em',
           display: 'flex',
           alignItems: 'center',
@@ -106,15 +100,9 @@ export function ProjectList({
         <span>SETTINGS</span>
       </button>
 
-      <div
-        style={{
-          fontSize: '12px',
-          opacity: 0.7,
-          letterSpacing: '0.1em',
-          padding: '4px',
-        }}
-      >
-        PROJECTS
+      <div className="dt-section-header" style={{ paddingLeft: 4, paddingTop: 6 }}>
+        <span>Projects</span>
+        <span style={{ opacity: 0.65, fontSize: 9 }}>{projects.length}</span>
       </div>
       {projects.length === 0 && (
         <div style={{ fontSize: '13px', opacity: 0.6, padding: '4px' }}>
@@ -136,6 +124,7 @@ export function ProjectList({
         return (
           <div
             key={p.id}
+            className={isActive ? '' : 'dt-row'}
             role="button"
             tabIndex={0}
             onClick={() => !isEditing && onSwitch(p.id)}
@@ -150,12 +139,13 @@ export function ProjectList({
             }}
             style={{
               cursor: isEditing ? 'text' : 'pointer',
-              padding: '4px 6px',
+              padding: '5px 8px',
               background: isActive ? 'var(--color-accent)' : 'transparent',
               color: isActive ? 'var(--color-bg-dark)' : 'inherit',
-              border: isActive ? '2px solid var(--color-border)' : '2px solid transparent',
-              boxShadow: isActive ? 'var(--shadow-pixel)' : 'none',
-              fontSize: '14px',
+              borderLeft: isActive
+                ? '3px solid var(--color-bg-dark)'
+                : '3px solid transparent',
+              fontSize: '13px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',

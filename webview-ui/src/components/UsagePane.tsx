@@ -227,8 +227,8 @@ export function UsagePane(): React.JSX.Element {
   return (
     <div
       style={{
-        borderTop: '2px solid var(--color-border)',
-        padding: '8px 10px',
+        borderTop: '1px solid var(--color-border)',
+        padding: '6px 10px 10px',
         fontFamily: 'var(--font-pixel)',
         fontSize: '12px',
         display: 'flex',
@@ -246,18 +246,15 @@ export function UsagePane(): React.JSX.Element {
             setCollapsed((c) => !c);
           }
         }}
+        className="dt-section-header"
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
           cursor: 'pointer',
-          opacity: 0.8,
-          letterSpacing: '0.06em',
+          padding: '6px 0 4px',
         }}
         title="Click to collapse / expand"
       >
-        <span>USAGE</span>
-        <span style={{ fontSize: '10px', opacity: 0.6 }}>{collapsed ? '▸' : '▾'}</span>
+        <span>Usage</span>
+        <span style={{ fontSize: '10px', opacity: 0.55 }}>{collapsed ? '▸' : '▾'}</span>
       </div>
 
       {!collapsed && (

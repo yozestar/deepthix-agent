@@ -162,10 +162,12 @@ function Toast({
         if (e.key === 'Enter' || e.key === ' ') onTogglePin();
       }}
       title={toast.pinned ? 'Click to un-pin (auto-dismiss in 6s)' : 'Click to pin'}
+      className="dt-chat-msg"
       style={{
         background: palette.bg,
         color: palette.fg,
         border: `2px solid ${palette.border}`,
+        borderLeft: `4px solid ${palette.border}`,
         boxShadow: 'var(--shadow-pixel)',
         padding: '10px 12px',
         fontFamily: 'var(--font-pixel)',
@@ -179,7 +181,7 @@ function Toast({
         opacity: toast.pinned ? 1 : 0.97,
       }}
     >
-      <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>{icon}</span>
+      <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: -1 }}>{icon}</span>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <span

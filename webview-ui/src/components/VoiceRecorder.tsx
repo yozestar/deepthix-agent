@@ -370,23 +370,27 @@ export function VoiceRecorder({
   }
   return (
     <div
+      className="dt-chat-msg"
       style={{
         position: 'fixed',
-        bottom: '24px',
+        bottom: '32px',
         left: '50%',
         transform: 'translateX(-50%)',
         background: bg,
         color: 'var(--color-bg-dark)',
-        padding: '8px 16px',
+        padding: '10px 18px',
         border: '2px solid var(--color-border)',
+        borderLeft: `4px solid ${state.kind === 'recording' ? 'var(--color-bg-dark)' : 'var(--color-bg-dark)'}`,
         boxShadow: 'var(--shadow-pixel)',
         fontFamily: 'var(--font-pixel)',
         fontSize: '13px',
+        fontWeight: 'bold',
+        letterSpacing: '0.04em',
         zIndex: 100,
         pointerEvents: 'none',
         display: 'flex',
         alignItems: 'center',
-        gap: '8px',
+        gap: '10px',
         maxWidth: '80vw',
       }}
     >

@@ -1023,12 +1023,12 @@ export function ChatPane({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '4px 10px',
+          padding: '6px 12px',
           background: 'var(--color-bg-dark)',
-          borderBottom: '2px solid var(--color-border)',
+          borderBottom: '1px solid var(--color-border)',
           fontSize: '11px',
-          opacity: 0.9,
           gap: 8,
+          flexShrink: 0,
         }}
       >
         <span
@@ -1502,11 +1502,12 @@ function ChatInput({
       )}
       <div
         style={{
-          padding: '8px',
+          padding: '10px 12px',
           background: 'var(--color-bg-dark)',
-          borderTop: '2px solid var(--color-border)',
+          borderTop: '1px solid var(--color-border)',
           display: 'flex',
           gap: 8,
+          flexShrink: 0,
         }}
       >
         <textarea

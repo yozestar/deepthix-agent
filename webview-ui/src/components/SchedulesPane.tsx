@@ -365,8 +365,13 @@ export function SchedulesPane({ terminals }: Props): React.JSX.Element {
 
       {/* Job list */}
       {schedules.length === 0 ? (
-        <div style={{ opacity: 0.55, padding: '24px', textAlign: 'center', fontSize: '13px' }}>
-          No schedules yet. Click + New job to add one.
+        <div className="dt-empty">
+          <div style={{ fontSize: 36, opacity: 0.5 }}>⌛</div>
+          <div className="dt-empty-title">No schedules yet</div>
+          <div className="dt-empty-sub">
+            Click <strong>+ New job</strong> to declare a recurring or one-shot prompt that fires
+            into a session automatically.
+          </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

@@ -130,17 +130,40 @@ export function SessionsPane({
         overflow: 'hidden',
       }}
     >
-      {/* Resize handle */}
+      {/* Resize handle — thin idle, accent on hover so it's discoverable. */}
       <div
         onMouseDown={onMouseDown}
         title="Drag to resize terminal area"
         style={{
-          height: '6px',
+          height: '5px',
           cursor: 'ns-resize',
           background: 'var(--color-border)',
           flexShrink: 0,
+          position: 'relative',
+          transition: 'background 120ms ease',
         }}
-      />
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLDivElement).style.background = 'var(--color-accent)';
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLDivElement).style.background = 'var(--color-border)';
+        }}
+      >
+        {/* center grip pip — gives the user a visual cue that it's draggable */}
+        <span
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: 28,
+            height: 1,
+            background: 'var(--color-bg)',
+            opacity: 0.6,
+            pointerEvents: 'none',
+          }}
+        />
+      </div>
 
       {/* Per-session sub-tab strip */}
       <div
@@ -168,16 +191,19 @@ export function SessionsPane({
                 setEditingValue(t.label);
               }}
               style={{
-                padding: '6px 12px',
-                background: isActive ? 'var(--color-accent)' : 'transparent',
-                color: isActive ? 'var(--color-bg-dark)' : 'inherit',
-                border: '2px solid var(--color-border)',
+                padding: '5px 12px',
+                background: isActive ? 'var(--color-bg)' : 'transparent',
+                color: isActive ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                border: 'none',
+                borderTop: `2px solid ${isActive ? 'var(--color-accent)' : 'transparent'}`,
                 cursor: isEditing ? 'text' : 'pointer',
                 fontFamily: 'var(--font-pixel)',
-                fontSize: '13px',
+                fontSize: '12px',
+                fontWeight: isActive ? 'bold' : 'normal',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
+                transition: 'color 120ms ease, border-color 120ms ease, background 120ms ease',
               }}
               title="Double-click to rename"
             >

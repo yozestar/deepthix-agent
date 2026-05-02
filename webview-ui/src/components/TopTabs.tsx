@@ -49,32 +49,32 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
         minHeight: '44px',
       }}
     >
-      {/* Left: project name badge (replaces the floating badge that used to
-          live inside the tamagotchi). Falls back to the app name when no
-          project is selected. */}
+      {/* Left: project name. No more heavy box — just a clean label with a
+          discrete "▸" path hint on hover. */}
       <div
         style={{
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'baseline',
           gap: '8px',
-          padding: '6px 12px',
-          background: 'var(--color-bg)',
-          border: '2px solid var(--color-border)',
-          boxShadow: 'var(--shadow-pixel)',
+          padding: '4px 8px',
           fontSize: '15px',
-          letterSpacing: '0.05em',
+          letterSpacing: '0.04em',
           maxWidth: '50%',
           overflow: 'hidden',
           whiteSpace: 'nowrap',
           textOverflow: 'ellipsis',
+          fontWeight: 'bold',
+          color: 'var(--color-text)',
         }}
         title={projectName ?? 'Deepthix Agent'}
       >
-        <span style={{ opacity: 0.85 }}>{projectName ?? 'Deepthix Agent'}</span>
+        <span style={{ color: 'var(--color-accent)' }}>▸</span>
+        <span>{projectName ?? 'Deepthix Agent'}</span>
       </div>
 
-      {/* Right: mode tabs */}
-      <div style={{ display: 'flex', gap: '6px' }}>
+      {/* Right: mode tabs. Active tab gets an underline-style accent
+          instead of full-fill — calmer chrome. */}
+      <div style={{ display: 'flex', gap: '2px' }}>
         {VISIBLE_MODES.map((m) => {
           const active = m === mode;
           return (
@@ -86,16 +86,25 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
                 onChangeMode(m);
               }}
               style={{
-                padding: '6px 14px',
-                background: active ? 'var(--color-accent)' : 'transparent',
-                color: active ? 'var(--color-bg-dark)' : 'inherit',
-                border: '2px solid var(--color-border)',
-                boxShadow: active ? 'var(--shadow-pixel)' : 'none',
+                padding: '6px 12px',
+                background: active ? 'var(--color-bg)' : 'transparent',
+                color: active ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                border: 'none',
+                borderBottom: `2px solid ${active ? 'var(--color-accent)' : 'transparent'}`,
                 cursor: 'pointer',
                 fontFamily: 'var(--font-pixel)',
-                fontSize: '13px',
+                fontSize: '12px',
                 textTransform: 'uppercase',
-                letterSpacing: '0.06em',
+                letterSpacing: '0.08em',
+                fontWeight: active ? 'bold' : 'normal',
+                transition: 'color 120ms ease, border-color 120ms ease, background 120ms ease',
+              }}
+              onMouseEnter={(e) => {
+                if (!active) (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text)';
+              }}
+              onMouseLeave={(e) => {
+                if (!active)
+                  (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-muted)';
               }}
               title={`Switch to ${m} mode`}
             >
