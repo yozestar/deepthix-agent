@@ -568,6 +568,57 @@ fn short(s: &str, max: usize) -> String {
     format!("{truncated}…")
 }
 
+// ─── Coach state (per-project on/off + persistent session id) ──────────
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct CoachState {
+    /// Whether the coach is currently ON for this project. When true,
+    /// the webview keeps a 10-minute interval going and feeds the
+    /// coach excerpts of recent activity.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Persistent claude session UUID for the coach. Saved once the
+    /// system/init event reveals it, so re-opening the project resumes
+    /// the same coach instead of spawning a fresh one each time.
+    #[serde(default)]
+    pub coach_session_id: Option<String>,
+    /// Last analysis tick (epoch ms). Used by the webview to decide
+    /// whether to fire the next tick immediately on launch (if it's
+    /// been > interval since the last one) or wait the full interval.
+    #[serde(default)]
+    pub last_run_ms: u64,
+}
+
+fn coach_state_path(project_id: &str) -> std::io::Result<PathBuf> {
+    Ok(crate::storage::project_dir(project_id)?.join("coach.json"))
+}
+
+#[tauri::command]
+pub fn read_project_coach_state(project_id: String) -> Result<CoachState, String> {
+    let path = coach_state_path(&project_id).map_err(|e| e.to_string())?;
+    match std::fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str(&s).map_err(|e| e.to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(CoachState::default()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn write_project_coach_state(
+    project_id: String,
+    state: CoachState,
+) -> Result<(), String> {
+    let path = coach_state_path(&project_id).map_err(|e| e.to_string())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let body = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, body.as_bytes()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Append a coach-suggested note to the project's `CLAUDE.md`. Used
 /// by the Coach pane's "Add to memory" button so insights persist
 /// into the main session's context on next launch.

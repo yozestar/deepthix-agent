@@ -223,7 +223,8 @@ function App(): React.JSX.Element {
               <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                 <SessionsTopArea
                   visibleTerminals={visibleAgents}
-                  activeTermId={terminals.activeId}
+                  activeProjectId={projects.activeProjectId}
+                  activeProjectPath={projects.activeProject?.path ?? null}
                 />
                 <div
                   style={{

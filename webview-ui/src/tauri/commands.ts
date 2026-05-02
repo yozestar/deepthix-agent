@@ -472,6 +472,23 @@ export async function appendToClaudeMd(projectCwd: string, text: string): Promis
   return await invoke<void>('append_to_claude_md', { projectCwd, text });
 }
 
+export interface CoachState {
+  enabled: boolean;
+  coach_session_id: string | null;
+  last_run_ms: number;
+}
+
+export async function readProjectCoachState(projectId: string): Promise<CoachState> {
+  return await invoke<CoachState>('read_project_coach_state', { projectId });
+}
+
+export async function writeProjectCoachState(
+  projectId: string,
+  state: CoachState,
+): Promise<void> {
+  return await invoke<void>('write_project_coach_state', { projectId, state });
+}
+
 // ─── Schedules ──────────────────────────────────────────────────────────
 
 export type Cadence =
