@@ -248,6 +248,7 @@ type ParseAction =
    *  losing the original block index — but the toolUseId is stable. */
   | { kind: 'set_tool_input'; toolUseId: string; input: unknown }
   | { kind: 'set_session'; sessionId: string }
+  | { kind: 'set_model'; model: string }
   | { kind: 'set_slash_commands'; commands: string[] }
   | { kind: 'turn_end'; ok: boolean; durationMs: number; costUsd: number };
 
@@ -273,12 +274,14 @@ function parseLine(line: string, ctx: ParseContext): ParseResult {
       const subtype = (obj.subtype as string) ?? 'unknown';
       if (subtype === 'init') {
         const sid = obj.session_id as string | undefined;
+        const model = obj.model as string | undefined;
         const slash =
           (obj.slash_commands as string[] | undefined)?.filter(
             (s) => typeof s === 'string',
           ) ?? null;
         const actions: ParseAction[] = [];
         if (sid) actions.push({ kind: 'set_session', sessionId: sid });
+        if (model) actions.push({ kind: 'set_model', model });
         if (slash && slash.length > 0)
           actions.push({ kind: 'set_slash_commands', commands: slash });
         return actions;
@@ -511,6 +514,8 @@ export function ChatPane({
 }: Props): React.JSX.Element {
   const [termId, setTermId] = useState<string | null>(bindTermId ?? null);
   const [sessionId, setSessionId] = useState<string | null>(resumeSessionId ?? null);
+  const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const [showModelPicker, setShowModelPicker] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -640,6 +645,10 @@ export function ChatPane({
           }
           case 'set_slash_commands': {
             setSlashCommands(a.commands);
+            break;
+          }
+          case 'set_model': {
+            setCurrentModel(a.model);
             break;
           }
           case 'append_text': {
@@ -875,14 +884,12 @@ export function ChatPane({
           dropMessage('Opening claude.ai/upgrade…');
           return true;
         case 'model': {
-          // /model <name> — soft-restart with a different model.
-          // Same session id (--resume), same term_id, swap the
-          // underlying claude child for a fresh --model invocation.
-          const arg = cmdLine.slice(cmdLine.indexOf(' ')).trim();
-          if (!arg || arg === '/model') {
-            dropMessage(
-              'Usage: /model <name>   (e.g. /model sonnet, /model opus, /model haiku)',
-            );
+          // /model           → open the picker popup (no arg needed)
+          // /model <name>    → switch directly without the popup
+          const spaceIdx = cmdLine.indexOf(' ');
+          const arg = spaceIdx === -1 ? '' : cmdLine.slice(spaceIdx).trim();
+          if (!arg) {
+            setShowModelPicker(true);
             return true;
           }
           if (!termId) {
@@ -951,6 +958,14 @@ export function ChatPane({
     [sessionId],
   );
 
+  /** Friendly model label for the header — strips the
+   *  "claude-" prefix and the [1m] context-window suffix that's
+   *  noisy in the chrome. Falls back to "?" when init hasn't fired. */
+  const modelLabel = useMemo(() => {
+    if (!currentModel) return null;
+    return currentModel.replace(/^claude-/, '').replace(/\[[^\]]*\]$/, '');
+  }, [currentModel]);
+
   // Set of toolUseIds whose result has not yet arrived. Drives the
   // pulsing "running" indicator on tool_use bubbles. A tool is "done"
   // when claude sends back a (result) bubble pointing at the same
@@ -997,6 +1012,9 @@ export function ChatPane({
         background: 'var(--color-bg)',
         fontFamily: 'var(--font-pixel)',
         color: 'var(--color-text)',
+        // position: relative anchors the ModelPicker overlay's absolute
+        // positioning to this pane (not the whole app).
+        position: 'relative',
       }}
     >
       {/* Header */}
@@ -1013,8 +1031,40 @@ export function ChatPane({
           gap: 8,
         }}
       >
-        <span title={cwd} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span
+          title={cwd}
+          style={{
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
           {headerLabel}
+          {/* Model badge — click to open the picker. Same effect as
+              typing /model. Always present so the user knows what
+              model the session is running on without needing to ask. */}
+          <button
+            type="button"
+            onClick={() => setShowModelPicker(true)}
+            disabled={!termId}
+            title="Click to switch model"
+            style={{
+              padding: '2px 8px',
+              background: currentModel ? 'var(--color-accent)' : 'transparent',
+              color: currentModel ? 'var(--color-bg-dark)' : 'inherit',
+              border: '2px solid var(--color-border)',
+              fontFamily: 'var(--font-pixel)',
+              fontSize: 10,
+              cursor: termId ? 'pointer' : 'default',
+              letterSpacing: '0.04em',
+              opacity: termId ? 1 : 0.4,
+            }}
+          >
+            {modelLabel ?? '?'}
+          </button>
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {busy ? (
@@ -1033,6 +1083,41 @@ export function ChatPane({
           )}
         </span>
       </div>
+
+      {showModelPicker && termId && (
+        <ModelPicker
+          current={currentModel}
+          onPick={(m) => {
+            setShowModelPicker(false);
+            void chatSwitchModel(termId, m)
+              .then(() => {
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    kind: 'system',
+                    uid: uid(),
+                    ts: Date.now(),
+                    subtype: 'model',
+                    summary: `Model switched to ${m}. Conversation context preserved.`,
+                  },
+                ]);
+              })
+              .catch((e) => {
+                const msg = e instanceof Error ? e.message : String(e);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    kind: 'error',
+                    uid: uid(),
+                    ts: Date.now(),
+                    text: `Model switch failed: ${msg}`,
+                  },
+                ]);
+              });
+          }}
+          onClose={() => setShowModelPicker(false)}
+        />
+      )}
 
       {/* Message list */}
       <div
@@ -1102,6 +1187,158 @@ export function ChatPane({
 }
 
 // ─── Input + slash command autocomplete ─────────────────────────────────
+
+// ─── Model picker ──────────────────────────────────────────────────────
+
+interface ModelChoice {
+  /** What we pass to claude --model. */
+  id: string;
+  /** Display name for the picker. */
+  label: string;
+  /** Short tagline shown under the name. */
+  tagline: string;
+}
+
+const MODEL_CHOICES: ModelChoice[] = [
+  {
+    id: 'opus',
+    label: 'Opus',
+    tagline: 'Best reasoning · slowest · most expensive — for hard agentic work',
+  },
+  {
+    id: 'sonnet',
+    label: 'Sonnet',
+    tagline: 'Balanced · ~3× faster than Opus · default for most tasks',
+  },
+  {
+    id: 'haiku',
+    label: 'Haiku',
+    tagline: 'Fast & cheap · short answers · simple tool calls',
+  },
+];
+
+/**
+ * Centered modal picker shown when the user types `/model` (no arg)
+ * or clicks the model badge in the header. Pick a model → triggers
+ * chat_switch_model on the session.
+ */
+function ModelPicker({
+  current,
+  onPick,
+  onClose,
+}: {
+  current: string | null;
+  onPick: (model: string) => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  // Esc to close. Trap focus inside the dialog while open.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'rgba(0,0,0,0.55)',
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--color-bg-dark)',
+          border: '2px solid var(--color-border)',
+          boxShadow: 'var(--shadow-pixel)',
+          padding: 16,
+          maxWidth: 380,
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          fontFamily: 'var(--font-pixel)',
+          color: 'var(--color-text)',
+        }}
+      >
+        <div style={{ fontSize: 13, fontWeight: 'bold', letterSpacing: '0.05em' }}>
+          Switch model
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.65 }}>
+          Conversation context is preserved (--resume). Pick a model:
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+          {MODEL_CHOICES.map((c) => {
+            const isCurrent =
+              current?.toLowerCase().includes(c.id.toLowerCase()) ?? false;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onPick(c.id)}
+                disabled={isCurrent}
+                title={isCurrent ? 'Already running this model' : `Switch to ${c.label}`}
+                style={{
+                  textAlign: 'left',
+                  padding: '8px 12px',
+                  background: isCurrent ? 'transparent' : 'var(--color-bg)',
+                  color: 'inherit',
+                  border: `2px solid ${isCurrent ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                  cursor: isCurrent ? 'default' : 'pointer',
+                  fontFamily: 'var(--font-pixel)',
+                  fontSize: 12,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  opacity: isCurrent ? 0.65 : 1,
+                }}
+              >
+                <span style={{ fontWeight: 'bold', fontSize: 13 }}>
+                  {c.label}
+                  {isCurrent && (
+                    <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--color-accent)' }}>
+                      ✓ current
+                    </span>
+                  )}
+                </span>
+                <span style={{ fontSize: 11, opacity: 0.75 }}>{c.tagline}</span>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            alignSelf: 'flex-end',
+            padding: '4px 14px',
+            background: 'transparent',
+            color: 'inherit',
+            border: '2px solid var(--color-border)',
+            fontFamily: 'var(--font-pixel)',
+            fontSize: 11,
+            cursor: 'pointer',
+            marginTop: 4,
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function ChatInput({
   input,

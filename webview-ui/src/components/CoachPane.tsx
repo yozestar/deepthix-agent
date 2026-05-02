@@ -394,18 +394,16 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     );
   }, [coachTermId]);
 
-  // Auto-scroll only when the user is already near the bottom.
-  // Otherwise — if they've scrolled up to re-read a past proposal —
-  // each new token would yank them back down. Same scroll-aware
-  // pattern ChatPane uses.
+  // Always auto-scroll to the latest. The user explicitly asked
+  // "je dois toujours voir ses dernières recommandations" — so we
+  // pull to bottom on every message, no scroll-aware compromise.
+  // The user can still scroll up momentarily to re-read; the next
+  // event will snap back to the latest.
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceFromBottom < 80) {
-      el.scrollTop = el.scrollHeight;
-    }
+    el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   const nextRunIn = useMemo(() => {
