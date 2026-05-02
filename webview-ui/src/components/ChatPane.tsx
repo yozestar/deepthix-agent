@@ -710,10 +710,96 @@ export function ChatPane({
     el.scrollTop = el.scrollHeight;
   }, [messages]);
 
+  /**
+   * Slash commands handled CLIENT-SIDE — never sent to claude.
+   *
+   * Why: in `--print --input-format stream-json` mode there's no TUI
+   * to intercept slash commands. They reach the model verbatim and
+   * claude code wraps them in <command-name> XML before forwarding,
+   * which is useless noise (visible bug from user feedback). The
+   * actual command (e.g. `/usage`) only does anything in the
+   * interactive TUI.
+   *
+   * So we maintain a small whitelist of commands we implement
+   * ourselves and intercept them in `send`. Anything else with a `/`
+   * prefix gets a friendly system message explaining it isn't
+   * available — better than silently shipping XML to claude.
+   */
+  const handleSlashCommand = useCallback(
+    (cmdLine: string): boolean => {
+      const cmd = cmdLine.split(/\s+/)[0].toLowerCase().replace(/^\//, '');
+      const dropMessage = (text: string): void => {
+        setMessages((prev) => [
+          ...prev,
+          { kind: 'system', uid: uid(), ts: Date.now(), subtype: 'slash', summary: text },
+        ]);
+      };
+      switch (cmd) {
+        case 'help':
+          dropMessage(
+            'Commands available in chat: /clear (reset session) · /cost (show last turn cost) · /help (this list). Shortcuts: ⏎ send · ⇧⏎ newline · ↑/↓ history · / autocomplete · ⌘M push-to-talk',
+          );
+          return true;
+        case 'cost':
+          if (lastTurn) {
+            dropMessage(
+              `Last turn: ${(lastTurn.durationMs / 1000).toFixed(1)}s · $${lastTurn.costUsd.toFixed(4)}`,
+            );
+          } else {
+            dropMessage('No turn yet — send a message to see its cost.');
+          }
+          return true;
+        case 'clear':
+          // Clear local message log only. Claude's actual context is
+          // still on disk (the JSONL); the next message will reference
+          // it via --resume. To start truly fresh the user should
+          // close + reopen the session.
+          setMessages([]);
+          ctxRef.current = makeContext();
+          dropMessage('Local view cleared. Conversation context preserved on disk.');
+          return true;
+        case 'context':
+        case 'usage':
+        case 'compact':
+          dropMessage(
+            `/${cmd} is a TUI-only command in claude code; not yet supported in chat mode. Open the OVERVIEW tab to track usage manually.`,
+          );
+          return true;
+        case 'agents':
+        case 'privacy':
+        case 'upgrade':
+        case 'model':
+        case 'init':
+        case 'review':
+        case 'security-review':
+        case 'extra-usage':
+        case 'insights':
+        case 'team-onboarding':
+        case 'heapdump':
+        case 'exit':
+        case 'reset':
+          dropMessage(
+            `/${cmd} only runs in claude's native TUI. Use the system terminal if you need it.`,
+          );
+          return true;
+        default:
+          // Unknown slash → let it go to claude (might be a plugin).
+          return false;
+      }
+    },
+    [lastTurn],
+  );
+
   const send = useCallback(async (): Promise<void> => {
     const text = input.trim();
     if (!text || !termId) return;
     setInput('');
+    // Intercept client-side slash commands BEFORE shipping to claude
+    // — otherwise claude wraps them in useless XML and the user sees
+    // junk in the chat.
+    if (text.startsWith('/') && handleSlashCommand(text)) {
+      return;
+    }
     setBusy(true);
     setMessages((prev) => [
       ...prev,
@@ -727,7 +813,7 @@ export function ChatPane({
       setError(msg);
       setBusy(false);
     }
-  }, [input, termId]);
+  }, [input, termId, handleSlashCommand]);
 
   const headerLabel = useMemo(
     () => (sessionId ? `claude · ${sessionId.slice(0, 8)}` : 'claude · starting…'),
@@ -931,36 +1017,23 @@ function ChatInput({
     send();
   }, [input, send]);
 
-  // Built-in claude code commands that aren't always present in the
-  // system/init `slash_commands` array (it lists user-installed plugin
-  // commands; the native ones are TUI-internal). We hardcode the
-  // common ones so `/` autocomplete shows everything the user expects.
-  // De-duped against the dynamic list before rendering.
+  // What we actually let the user pick from the `/` popup. Anything
+  // listed here either:
+  //   (a) we handle CLIENT-SIDE in handleSlashCommand (works), OR
+  //   (b) was advertised in claude's system/init `slash_commands`
+  //       (plugin slash command — works because the plugin layer
+  //       runs server-side regardless of TUI/print mode).
+  //
+  // The TUI-only built-ins (/agents, /privacy, /model, etc.) used to
+  // be hardcoded here too, but they don't actually run in stream-json
+  // mode and the user just got a wall of XML noise back from claude.
+  // Hidden now — handleSlashCommand still catches them if typed and
+  // shows a friendlier "not supported" notice.
   const allSlashCommands = useMemo(() => {
-    const builtins = [
-      'help',
-      'clear',
-      'compact',
-      'cost',
-      'context',
-      'usage',
-      'model',
-      'agents',
-      'privacy',
-      'upgrade',
-      'init',
-      'review',
-      'security-review',
-      'extra-usage',
-      'insights',
-      'team-onboarding',
-      'heapdump',
-      'exit',
-      'reset',
-    ];
+    const clientSide = ['help', 'clear', 'cost'];
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const c of [...slashCommands, ...builtins]) {
+    for (const c of [...slashCommands, ...clientSide]) {
       if (seen.has(c)) continue;
       seen.add(c);
       out.push(c);
