@@ -19,11 +19,45 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   type ClaudeActivity,
   type ClaudeSubscription,
+  type ClaudeUsageLimits,
   openExternalUrl,
   readClaudeDailyActivity,
   readClaudeSubscription,
+  readClaudeUsageLimits,
   readClaudeUsageSnapshot,
 } from '../tauri/commands';
+
+/**
+ * Convert the OAuth `read_claude_usage_limits` shape (utilization
+ * fraction + ISO resets_at) into the snapshot RateLimitBucket shape
+ * the UsageBar already speaks. Returns null when the OAuth payload
+ * carried an error (typically HTTP 429 / no auth) — caller falls
+ * through to "limits unavailable".
+ */
+function oauthLimitsToBuckets(
+  oauth: ClaudeUsageLimits | null,
+):
+  | {
+      five_hour?: RateLimitBucket;
+      seven_day?: RateLimitBucket;
+      seven_day_sonnet?: RateLimitBucket;
+      seven_day_opus?: RateLimitBucket;
+    }
+  | undefined {
+  if (!oauth || oauth.error) return undefined;
+  const toBucket = (b: { utilization: number; resets_at: string }): RateLimitBucket => {
+    const ms = Date.parse(b.resets_at);
+    return {
+      used_percentage: Math.round(b.utilization * 100),
+      resets_at: Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined,
+    };
+  };
+  return {
+    five_hour: toBucket(oauth.five_hour),
+    seven_day: toBucket(oauth.seven_day),
+    seven_day_sonnet: toBucket(oauth.seven_day_sonnet),
+  };
+}
 
 const POLL_MS = 5_000;
 const COUNTDOWN_TICK_MS = 30_000;
@@ -115,6 +149,7 @@ export function UsagePane(): React.JSX.Element {
   const [activity, setActivity] = useState<ClaudeActivity | null>(null);
   const [snapshot, setSnapshot] = useState<ParsedSnapshot | null>(null);
   const [snapshotMtime, setSnapshotMtime] = useState<number>(0);
+  const [oauthLimits, setOauthLimits] = useState<ClaudeUsageLimits | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [now, setNow] = useState<number>(() => Date.now());
@@ -137,11 +172,32 @@ export function UsagePane(): React.JSX.Element {
     }
   }, []);
 
+  // OAuth-based live limits — fallback when no statusLine snapshot
+  // (chat sessions don't emit statusLine because they're --print
+  // mode, not TUI). Polled less aggressively because the endpoint
+  // gets HTTP-429'd if hammered.
+  const refreshOauth = useCallback(async (): Promise<void> => {
+    try {
+      const lim = await readClaudeUsageLimits();
+      setOauthLimits(lim);
+    } catch (e) {
+      console.debug('[Deepthix][UsagePane] OAuth limits poll failed', e);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
     const id = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(id);
   }, [refresh]);
+
+  useEffect(() => {
+    void refreshOauth();
+    // 90s — slow enough to stay below the OAuth endpoint's rate limit,
+    // fast enough to feel live for the user.
+    const id = setInterval(() => void refreshOauth(), 90_000);
+    return () => clearInterval(id);
+  }, [refreshOauth]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), COUNTDOWN_TICK_MS);
@@ -155,7 +211,16 @@ export function UsagePane(): React.JSX.Element {
   };
 
   const snapshotFresh = snapshotMtime > 0 && now - snapshotMtime < SNAPSHOT_STALE_MS;
-  const limits = snapshot?.rate_limits;
+  // Prefer live snapshot rate_limits when available (most up to date —
+  // updated on every assistant turn). Fall back to the OAuth API
+  // limits when the snapshot is stale (chat-mode sessions don't
+  // emit statusLine because they run with --print, not the TUI).
+  const limits = snapshotFresh ? snapshot?.rate_limits : oauthLimitsToBuckets(oauthLimits);
+  const limitsSource: 'snapshot' | 'oauth' | 'none' = snapshotFresh
+    ? 'snapshot'
+    : limits
+      ? 'oauth'
+      : 'none';
   const totalCostUsd = snapshot?.cost?.total_cost_usd ?? 0;
   const ctxPct = snapshot?.context_window?.used_percentage ?? 0;
 
@@ -224,8 +289,9 @@ export function UsagePane(): React.JSX.Element {
             </div>
           )}
 
-          {/* Live limits from the snapshot. */}
-          {snapshotFresh && limits && (
+          {/* Live limit bars — snapshot first (richer, includes opus
+              breakdown), OAuth fallback otherwise. */}
+          {limits && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
               {limits.five_hour && (
                 <UsageBar label="Session 5h" bucket={limits.five_hour} now={now} />
@@ -241,11 +307,14 @@ export function UsagePane(): React.JSX.Element {
               )}
             </div>
           )}
-          {!snapshotFresh && (
-            <div style={{ fontSize: '10px', opacity: 0.55, lineHeight: 1.4 }}>
-              {snapshotMtime === 0
-                ? 'no snapshot yet — open a session to capture'
-                : 'snapshot stale (no active session)'}
+          {limitsSource === 'oauth' && (
+            <div style={{ fontSize: '9px', opacity: 0.45, lineHeight: 1.4 }}>
+              live from claude.ai/api/oauth/usage
+            </div>
+          )}
+          {limitsSource === 'none' && oauthLimits?.error && (
+            <div style={{ fontSize: '9px', opacity: 0.45, lineHeight: 1.4 }}>
+              limits unavailable — try in a few minutes
             </div>
           )}
 
