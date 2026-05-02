@@ -3,13 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ProcessPane, SessionsPane } from './components/BottomPanel';
 import { FilesPane } from './components/FilesPane';
 import { MemoryPane } from './components/MemoryPane';
-import { OrchestratorPanel } from './components/OrchestratorPanel';
 import { OverviewPane } from './components/OverviewPane';
 import { SettingsPane } from './components/SettingsPane';
 import { Sidebar } from './components/Sidebar';
 import { SchedulesPane } from './components/SchedulesPane';
 import { SkillsPane } from './components/SkillsPane';
-import { TamagotchiView } from './components/TamagotchiView';
+import { SessionsTopArea } from './components/SessionsTopArea';
 import { type Mode, TopTabs } from './components/TopTabs';
 import { NotificationToasts } from './components/NotificationToasts';
 import { TerminalDropTarget } from './components/TerminalDropTarget';
@@ -222,9 +221,9 @@ function App(): React.JSX.Element {
               }}
             >
               <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-                <TamagotchiView
-                  terminals={visibleAgents}
-                  onSelectSession={(termId) => terminals.setActive(termId)}
+                <SessionsTopArea
+                  visibleTerminals={visibleAgents}
+                  activeTermId={terminals.activeId}
                 />
                 <div
                   style={{
@@ -337,15 +336,6 @@ function App(): React.JSX.Element {
           )}
         </div>
       </div>
-      {/* Orchestrator side panel — collapsible right column, hosts the
-          chef session. Always mounted (so the chef stays alive across
-          mode switches) but the OrchestratorPanel itself decides
-          whether to render the terminal or just a thin "open" tab. */}
-      <OrchestratorPanel
-        terminals={terminals}
-        globalConfig={globalConfig.config}
-        updateGlobalConfig={globalConfig.update}
-      />
       {/* Push-to-talk voice → terminal. Hold ⌘M to record, release to
           transcribe via local whisper.cpp + inject into the active
           terminal. Always mounted; renders nothing in idle state. */}
