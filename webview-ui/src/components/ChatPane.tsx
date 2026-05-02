@@ -24,6 +24,7 @@ import {
   chatSendUserText,
   chatSetSessionId,
   chatSpawn,
+  chatSwitchModel,
   openExternalUrl,
   readClaudeDailyActivity,
   readClaudeSubscription,
@@ -746,6 +747,7 @@ export function ChatPane({
               '  /usage — current plan + today\'s msg/sess + window utilisation',
               '  /cost — duration + cost of the last turn',
               '  /clear — reset the local view (on-disk context preserved)',
+              '  /model <name> — switch model mid-session (sonnet, opus, haiku)',
               '  /agents — open claude.ai/agents in your browser',
               '  /privacy — open Anthropic privacy in your browser',
               '  /upgrade — open the upgrade page in your browser',
@@ -815,7 +817,16 @@ export function ChatPane({
                 `7d all: ${pct(limits.seven_day)} · 7d sonnet: ${pct(limits.seven_day_sonnet)} · resets ${at(limits.seven_day)}`,
               );
             } else if (limits?.error) {
-              lines.push(`(live limits unavailable: ${limits.error})`);
+              // Strip noisy JSON dumps; rate-limit messages are common
+              // and we just want a one-line "try again later" hint.
+              const raw = limits.error;
+              let friendly = raw;
+              if (/HTTP 429|rate.?limited/i.test(raw)) {
+                friendly = 'rate-limited (claude.ai/api/oauth/usage) — try in a few minutes';
+              } else if (raw.length > 120) {
+                friendly = `${raw.slice(0, 120)}…`;
+              }
+              lines.push(`Live limits: ${friendly}`);
             }
             if (lines.length === 0) {
               dropMessage('No usage data available — try `claude login` first.');
@@ -837,9 +848,32 @@ export function ChatPane({
           void openExternalUrl('https://claude.ai/upgrade').catch(() => {});
           dropMessage('Opening claude.ai/upgrade…');
           return true;
+        case 'model': {
+          // /model <name> — soft-restart with a different model.
+          // Same session id (--resume), same term_id, swap the
+          // underlying claude child for a fresh --model invocation.
+          const arg = cmdLine.slice(cmdLine.indexOf(' ')).trim();
+          if (!arg || arg === '/model') {
+            dropMessage(
+              'Usage: /model <name>   (e.g. /model sonnet, /model opus, /model haiku)',
+            );
+            return true;
+          }
+          if (!termId) {
+            dropMessage('No active session — open one first.');
+            return true;
+          }
+          dropMessage(`Switching model to ${arg}…`);
+          void chatSwitchModel(termId, arg)
+            .then(() => dropMessage(`Model switched to ${arg}. Conversation context preserved.`))
+            .catch((e) => {
+              const msg = e instanceof Error ? e.message : String(e);
+              dropMessage(`Model switch failed: ${msg}`);
+            });
+          return true;
+        }
         case 'context':
         case 'compact':
-        case 'model':
         case 'init':
         case 'review':
         case 'security-review':
@@ -1106,6 +1140,7 @@ function ChatInput({
       'clear',
       'cost',
       'usage',
+      'model',
       'agents',
       'privacy',
       'upgrade',
@@ -1499,9 +1534,15 @@ function MessageBubble({ m, running }: { m: Message; running?: boolean }): React
           style={{
             alignSelf: 'center',
             fontSize: '11px',
-            opacity: 0.6,
-            padding: '2px 8px',
+            opacity: 0.7,
+            padding: '6px 10px',
             border: '1px dashed var(--color-border)',
+            // Multi-line system messages (notably /usage) need pre-wrap
+            // so the \n separators we put between rows render as actual
+            // line breaks rather than collapsing into one giant line.
+            whiteSpace: 'pre-wrap',
+            maxWidth: '90%',
+            textAlign: 'left',
           }}
         >
           {m.summary}

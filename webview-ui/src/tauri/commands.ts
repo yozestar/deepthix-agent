@@ -448,6 +448,14 @@ export async function chatInterrupt(termId: string): Promise<void> {
   return await invoke<void>('chat_interrupt', { termId });
 }
 
+/** Soft-restart a chat session under a different model. Same term_id,
+ *  same session_id (--resume), new --model. The webview's existing
+ *  event subscription keeps working. */
+export async function chatSwitchModel(termId: string, model: string): Promise<void> {
+  log('chat_switch_model', { termId, model });
+  return await invoke<void>('chat_switch_model', { termId, model });
+}
+
 export async function chatSetSessionId(termId: string, sessionId: string): Promise<void> {
   return await invoke<void>('chat_set_session_id', { termId, sessionId });
 }

@@ -93,6 +93,13 @@ struct ChatChild {
     /// parses the init line. Used by the scheduler to resolve a stable
     /// session_id back to a live term_id.
     session_id: Option<String>,
+    /// Working directory the child was spawned in. Cached so
+    /// `chat_switch_model` can respawn with the same cwd without the
+    /// caller having to remember it.
+    cwd: PathBuf,
+    /// Whether the child was started with --dangerously-skip-permissions.
+    /// Same reason as `cwd`.
+    skip_permissions: bool,
 }
 
 /// Tauri-managed state. Same pattern as TerminalManager.
@@ -251,6 +258,8 @@ pub fn chat_spawn(
         child,
         stdin: Arc::new(Mutex::new(stdin_writer)),
         session_id: args.resume_session_id.clone(),
+        cwd: args.cwd.clone(),
+        skip_permissions: args.skip_permissions,
     };
     state.inner.lock().unwrap().insert(term_id.clone(), entry);
 
@@ -421,6 +430,113 @@ pub fn chat_interrupt(state: State<'_, ChatManager>, term_id: String) -> Result<
     if !status.success() {
         return Err(format!("kill -INT exited {status}"));
     }
+    Ok(())
+}
+
+/// Soft-restart a chat session with a different model.
+///
+/// The same `term_id` is reused so the webview's existing event
+/// subscription stays attached — only the underlying claude child is
+/// swapped out for a fresh `--resume <session_id> --model <new>`
+/// invocation. The conversation history is preserved (claude resumes
+/// from the same JSONL); the user just sees a brief "switching model…"
+/// system message followed by the new model picking up the next turn.
+#[tauri::command]
+pub fn chat_switch_model(
+    app: AppHandle,
+    state: State<'_, ChatManager>,
+    term_id: String,
+    model: String,
+) -> Result<(), String> {
+    tracing::info!(target: "deepthix::chat", %term_id, %model, "chat_switch_model");
+    // Snapshot what we need to respawn under the lock, then release
+    // before doing the heavy work.
+    let (cwd, session_id, skip_permissions) = {
+        let map = state.inner.lock().unwrap();
+        let entry = map
+            .get(&term_id)
+            .ok_or_else(|| format!("no chat session {term_id}"))?;
+        let sid = entry
+            .session_id
+            .clone()
+            .ok_or_else(|| "session has no UUID yet — wait for init before switching".to_string())?;
+        (entry.cwd.clone(), sid, entry.skip_permissions)
+    };
+
+    // Kill the current child + remove it. The exit_watcher will pick
+    // up the kill, emit chat_exit, and remove the map entry — but to
+    // avoid a race with our re-insert below, we remove + drop here.
+    if let Some(mut prev) = state.inner.lock().unwrap().remove(&term_id) {
+        let _ = prev.child.kill();
+    }
+
+    // Re-spawn with the new model, --resume on the same session_id.
+    let claude_bin = which_claude()?;
+    let mut cmd = Command::new(&claude_bin);
+    cmd.current_dir(&cwd)
+        .arg("--print")
+        .arg("--output-format")
+        .arg("stream-json")
+        .arg("--input-format")
+        .arg("stream-json")
+        .arg("--verbose")
+        .arg("--include-partial-messages")
+        .arg("--resume")
+        .arg(&session_id)
+        .arg("--model")
+        .arg(&model);
+    if skip_permissions {
+        cmd.arg("--dangerously-skip-permissions");
+    }
+    // Same env-var injection as chat_spawn — DEEPTHIX_DASHBOARD_PATH
+    // etc. so the new child sees the project context.
+    let project_id = crate::state::project_id_for_path(&cwd);
+    if let Ok(home) = std::env::var("HOME") {
+        let dashboard_path = PathBuf::from(home)
+            .join(".deepthix")
+            .join("projects")
+            .join(&project_id)
+            .join("dashboard.html");
+        if let Some(parent) = dashboard_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        cmd.env(
+            "DEEPTHIX_DASHBOARD_PATH",
+            dashboard_path.to_string_lossy().to_string(),
+        );
+        cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
+    }
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| format!("respawn claude: {e}"))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "claude stdin missing".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "claude stdout missing".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "claude stderr missing".to_string())?;
+
+    spawn_reader(app.clone(), term_id.clone(), stdout, "stdout");
+    spawn_reader(app.clone(), term_id.clone(), stderr, "stderr");
+    spawn_exit_watcher(app.clone(), term_id.clone());
+
+    let stdin_writer: Box<dyn Write + Send> = Box::new(stdin);
+    let entry = ChatChild {
+        child,
+        stdin: Arc::new(Mutex::new(stdin_writer)),
+        session_id: Some(session_id),
+        cwd,
+        skip_permissions,
+    };
+    state.inner.lock().unwrap().insert(term_id, entry);
     Ok(())
 }
 
