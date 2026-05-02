@@ -223,6 +223,15 @@ export function VoiceRecorder({
           // whole transcript as one user turn — the multi-character
           // chunking trick was a PTY/Ink workaround.
           await chatSendUserText(target, text);
+          // Tell ChatPane to add a user bubble + flip busy=true.
+          // Without this the user sees no feedback that their voice
+          // got injected — claude's response just appears out of
+          // nowhere later.
+          window.dispatchEvent(
+            new CustomEvent('deepthix:chat:user-text', {
+              detail: { termId: target, text },
+            }),
+          );
           console.info('[Deepthix][VoiceRecorder] chat send complete', {
             target,
             chars: text.length,

@@ -394,12 +394,18 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     );
   }, [coachTermId]);
 
-  // Auto-scroll on new content.
+  // Auto-scroll only when the user is already near the bottom.
+  // Otherwise — if they've scrolled up to re-read a past proposal —
+  // each new token would yank them back down. Same scroll-aware
+  // pattern ChatPane uses.
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 80) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages]);
 
   const nextRunIn = useMemo(() => {
@@ -428,39 +434,52 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
-          padding: '6px 12px',
+          gap: 12,
+          padding: '10px 14px',
           background: 'var(--color-bg-dark)',
-          borderBottom: '2px solid var(--color-border)',
+          borderBottom: `2px solid ${state.enabled ? 'var(--color-accent)' : 'var(--color-border)'}`,
           fontSize: 12,
+          transition: 'border-color 200ms ease',
         }}
       >
         <ToggleSwitch
           enabled={state.enabled}
           onChange={(next) => void setEnabled(next)}
         />
-        <span style={{ flex: 1 }}>
-          Coach (Sonnet) {state.enabled ? 'ON' : 'OFF'}
-          {state.enabled && (
-            <span style={{ opacity: 0.6, marginLeft: 8 }}>
-              · analysing every 10 min · next in {nextRunIn}
-            </span>
-          )}
-        </span>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div
+            style={{
+              fontWeight: 'bold',
+              fontSize: 13,
+              color: state.enabled ? 'var(--color-accent)' : 'var(--color-text)',
+              letterSpacing: '0.04em',
+              transition: 'color 200ms ease',
+            }}
+          >
+            COACH · SONNET {state.enabled ? '·  ON' : '·  OFF'}
+          </div>
+          <div style={{ fontSize: 10, opacity: 0.65 }}>
+            {state.enabled
+              ? `Watching ${sessions.length} session${sessions.length === 1 ? '' : 's'} · next analysis in ${nextRunIn}`
+              : 'Toggle ON to let it review your sessions every 10 min'}
+          </div>
+        </div>
+        {state.enabled && !busy && (
+          <button
+            type="button"
+            onClick={() => void runAnalysis()}
+            title="Force an analysis right now (don't wait the 10 min)"
+            style={headerBtn(false)}
+          >
+            ▶ Run now
+          </button>
+        )}
         {busy && (
           <button
             type="button"
             onClick={interrupt}
             title="Stop the running analysis"
-            style={{
-              padding: '2px 10px',
-              background: 'var(--color-danger)',
-              color: 'var(--color-bg-dark)',
-              border: '1px solid var(--color-border)',
-              fontFamily: 'var(--font-pixel)',
-              fontSize: 11,
-              cursor: 'pointer',
-            }}
+            style={headerBtn(true)}
           >
             ⏹ Stop
           </button>
@@ -494,6 +513,13 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
       >
         {!state.enabled && messages.length === 0 ? (
           <EmptyCoach hasSessions={sessions.length > 0} />
+        ) : state.enabled && messages.length === 0 ? (
+          <WatchingPlaceholder
+            sessions={sessions.length}
+            nextRunIn={nextRunIn}
+            onRunNow={() => void runAnalysis()}
+            busy={busy}
+          />
         ) : (
           messages.map((m) => <CoachBubble key={m.uid} m={m} cwd={cwd} />)
         )}
@@ -516,27 +542,126 @@ function ToggleSwitch({
       title={enabled ? 'Click to turn coach OFF' : 'Click to turn coach ON'}
       style={{
         position: 'relative',
-        width: 38,
-        height: 18,
-        background: enabled ? 'var(--color-accent)' : 'transparent',
+        width: 56,
+        height: 26,
+        background: enabled ? 'var(--color-accent)' : 'var(--color-bg)',
         border: '2px solid var(--color-border)',
+        boxShadow: 'var(--shadow-pixel)',
         cursor: 'pointer',
         padding: 0,
         flexShrink: 0,
+        transition: 'background 200ms ease',
       }}
     >
       <span
         style={{
           position: 'absolute',
-          top: 1,
-          left: enabled ? 19 : 1,
-          width: 12,
-          height: 12,
+          top: 2,
+          left: enabled ? 30 : 2,
+          width: 18,
+          height: 18,
           background: enabled ? 'var(--color-bg-dark)' : 'var(--color-text)',
-          transition: 'left 120ms ease',
+          transition: 'left 200ms cubic-bezier(0.5, 0, 0.2, 1.4), background 200ms ease',
         }}
       />
+      <span
+        style={{
+          position: 'absolute',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          left: enabled ? 6 : undefined,
+          right: enabled ? undefined : 6,
+          fontFamily: 'var(--font-pixel)',
+          fontSize: 8,
+          color: enabled ? 'var(--color-bg-dark)' : 'var(--color-text)',
+          opacity: 0.85,
+          letterSpacing: '0.05em',
+          pointerEvents: 'none',
+        }}
+      >
+        {enabled ? 'ON' : 'OFF'}
+      </span>
     </button>
+  );
+}
+
+function headerBtn(danger: boolean): React.CSSProperties {
+  return {
+    padding: '4px 12px',
+    background: danger ? 'var(--color-danger)' : 'var(--color-accent)',
+    color: 'var(--color-bg-dark)',
+    border: '2px solid var(--color-border)',
+    boxShadow: 'var(--shadow-pixel)',
+    fontFamily: 'var(--font-pixel)',
+    fontSize: 11,
+    cursor: 'pointer',
+    flexShrink: 0,
+  };
+}
+
+/** Shown when the Coach is ON but hasn't run yet (or just turned on
+ *  this launch). Lets the user kick off an immediate tick instead of
+ *  waiting the full 10 min just to see something happen. */
+function WatchingPlaceholder({
+  sessions,
+  nextRunIn,
+  onRunNow,
+  busy,
+}: {
+  sessions: number;
+  nextRunIn: string | null;
+  onRunNow: () => void;
+  busy: boolean;
+}): React.JSX.Element {
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+        padding: 32,
+      }}
+    >
+      <div
+        style={{
+          width: 12,
+          height: 12,
+          borderRadius: '50%',
+          background: 'var(--color-accent)',
+          animation: 'pulse 1.6s ease-in-out infinite',
+        }}
+      />
+      <div style={{ fontSize: 13, fontWeight: 'bold' }}>
+        Coach is watching {sessions} session{sessions === 1 ? '' : 's'}
+      </div>
+      <div style={{ fontSize: 11, opacity: 0.7, maxWidth: 380 }}>
+        It will analyse your activity automatically in <strong>{nextRunIn}</strong> and propose
+        improvements you can append to <code>CLAUDE.md</code> with one click. Or trigger an analysis
+        right now —
+      </div>
+      <button
+        type="button"
+        onClick={onRunNow}
+        disabled={busy || sessions === 0}
+        style={{
+          padding: '8px 18px',
+          background: busy || sessions === 0 ? 'transparent' : 'var(--color-accent)',
+          color: busy || sessions === 0 ? 'inherit' : 'var(--color-bg-dark)',
+          border: '2px solid var(--color-border)',
+          boxShadow: busy || sessions === 0 ? 'none' : 'var(--shadow-pixel)',
+          cursor: busy || sessions === 0 ? 'default' : 'pointer',
+          fontFamily: 'var(--font-pixel)',
+          fontSize: 12,
+          opacity: busy || sessions === 0 ? 0.5 : 1,
+        }}
+      >
+        ▶ Run analysis now
+      </button>
+    </div>
   );
 }
 

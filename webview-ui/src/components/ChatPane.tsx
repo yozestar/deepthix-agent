@@ -708,12 +708,38 @@ export function ChatPane({
     };
   }, [termId, onSessionReady]);
 
-  // Auto-scroll to the bottom when new messages arrive.
+  // Auto-scroll to the bottom on new messages — but ONLY if the user
+  // is already near the bottom. If they've scrolled up to read history
+  // we leave them alone instead of yanking them down on every token.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 80) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages]);
+
+  // Voice recorder bridge — when the user uses ⌘M / the mic button,
+  // VoiceRecorder ships the transcript through chat_send_user_text
+  // directly. We still need to add a user bubble locally so the user
+  // sees feedback (otherwise claude's response appears out of nowhere
+  // ~3s later). VoiceRecorder dispatches `deepthix:chat:user-text`
+  // with { termId, text }; we react to it iff the termId matches.
+  useEffect(() => {
+    if (!termId) return;
+    function onVoiceUserText(ev: Event): void {
+      const detail = (ev as CustomEvent<{ termId: string; text: string }>).detail;
+      if (!detail || detail.termId !== termId) return;
+      setMessages((prev) => [
+        ...prev,
+        { kind: 'user', uid: uid(), ts: Date.now(), text: detail.text },
+      ]);
+      setBusy(true);
+    }
+    window.addEventListener('deepthix:chat:user-text', onVoiceUserText);
+    return () => window.removeEventListener('deepthix:chat:user-text', onVoiceUserText);
+  }, [termId]);
 
   /**
    * Slash commands handled CLIENT-SIDE — never sent to claude.
