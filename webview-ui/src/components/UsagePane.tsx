@@ -265,14 +265,18 @@ export function UsagePane(): React.JSX.Element {
   };
 
   const snapshotFresh = snapshotMtime > 0 && now - snapshotMtime < SNAPSHOT_STALE_MS;
-  // Prefer live snapshot rate_limits when available (most up to date —
-  // updated on every assistant turn). Fall back to the OAuth API
-  // limits when the snapshot is stale (chat-mode sessions don't
-  // emit statusLine because they run with --print, not the TUI).
-  const liveLimits = snapshotFresh ? snapshot?.rate_limits : oauthLimitsToBuckets(oauthLimits);
-  const liveSource: 'snapshot' | 'oauth' | 'none' = snapshotFresh
+  // Resolve live limits: prefer fresh snapshot data, else OAuth. We
+  // can't bind the source to "snapshot is fresh" alone — chat-mode
+  // sessions write a snapshot WITHOUT rate_limits (the JSON is from
+  // statusLine which only the TUI emits), so a fresh snapshot can
+  // still be empty for our purposes. Pick whichever path actually
+  // produced bucket data.
+  const snapshotLimits = snapshotFresh ? snapshot?.rate_limits : undefined;
+  const oauthLimitsBuckets = oauthLimitsToBuckets(oauthLimits);
+  const liveLimits = snapshotLimits ?? oauthLimitsBuckets;
+  const liveSource: 'snapshot' | 'oauth' | 'none' = snapshotLimits
     ? 'snapshot'
-    : liveLimits
+    : oauthLimitsBuckets
       ? 'oauth'
       : 'none';
 
@@ -295,6 +299,30 @@ export function UsagePane(): React.JSX.Element {
   const limits = liveLimits ?? cachedLimits?.limits;
   const limitsSource: 'snapshot' | 'oauth' | 'cached' | 'none' =
     liveSource !== 'none' ? liveSource : cachedLimits ? 'cached' : 'none';
+
+  // Visibility into why "none" — useful when the user reports "ca marche
+  // pas" and we need to know which side failed.
+  useEffect(() => {
+    console.debug('[Deepthix][UsagePane] resolved', {
+      snapshotMtime,
+      snapshotFresh,
+      hasSnapshotLimits: !!snapshotLimits,
+      hasOauthLimits: !!oauthLimitsBuckets,
+      oauthError: oauthLimits?.error ?? null,
+      liveSource,
+      limitsSource,
+      cachedAt: cachedLimits?.ts ?? null,
+    });
+  }, [
+    snapshotMtime,
+    snapshotFresh,
+    snapshotLimits,
+    oauthLimitsBuckets,
+    oauthLimits?.error,
+    liveSource,
+    limitsSource,
+    cachedLimits?.ts,
+  ]);
   const totalCostUsd = snapshot?.cost?.total_cost_usd ?? 0;
   const ctxPct = snapshot?.context_window?.used_percentage ?? 0;
 
@@ -397,8 +425,29 @@ export function UsagePane(): React.JSX.Element {
             </div>
           )}
           {limitsSource === 'none' && (
-            <div style={{ fontSize: '9px', opacity: 0.45, lineHeight: 1.4 }}>
-              no readings yet — open a claude session to populate
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: '10px', opacity: 0.7, lineHeight: 1.4 }}>
+                {oauthLimits?.error
+                  ? `live limits unavailable: ${oauthLimits.error}`
+                  : 'fetching live limits…'}
+              </div>
+              <button
+                type="button"
+                onClick={() => void refreshOauth()}
+                title="Retry the claude.ai/api/oauth/usage call now"
+                style={{
+                  alignSelf: 'flex-start',
+                  padding: '2px 8px',
+                  background: 'transparent',
+                  color: 'inherit',
+                  border: '1px solid var(--color-border)',
+                  fontFamily: 'var(--font-pixel)',
+                  fontSize: '10px',
+                  cursor: 'pointer',
+                }}
+              >
+                ↻ Retry
+              </button>
             </div>
           )}
 
