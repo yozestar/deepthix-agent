@@ -720,19 +720,26 @@ export function ChatPane({
 
   // Auto-scroll to the bottom on new messages.
   //   - First time messages appear (history hydration on session
-  //     reopen): force-scroll regardless of distance. Default is
-  //     scrollTop=0 — without this the user lands at the TOP of an
-  //     hours-old conversation instead of seeing the latest exchange.
-  //   - After that: only scroll if the user is already near the bottom.
-  //     Reading history gets to stay anchored even while a new turn
-  //     streams in below.
+  //     reopen): force-scroll regardless of distance.
+  //   - When the user just sent a message (explicit action): force-
+  //     scroll regardless of distance — they should see their own
+  //     message land + claude's reply stream in.
+  //   - Otherwise: only scroll if the user is already near the
+  //     bottom. Reading history gets to stay anchored even while a
+  //     new turn streams in below.
   const initialScrollDoneRef = useRef(false);
+  const forceScrollNextRef = useRef(false);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     if (!initialScrollDoneRef.current && messages.length > 0) {
       el.scrollTop = el.scrollHeight;
       initialScrollDoneRef.current = true;
+      return;
+    }
+    if (forceScrollNextRef.current) {
+      el.scrollTop = el.scrollHeight;
+      forceScrollNextRef.current = false;
       return;
     }
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -752,6 +759,9 @@ export function ChatPane({
     function onVoiceUserText(ev: Event): void {
       const detail = (ev as CustomEvent<{ termId: string; text: string }>).detail;
       if (!detail || detail.termId !== termId) return;
+      // Same explicit-action treatment as a typed Send: snap the
+      // user back to the bottom so they see what their voice produced.
+      forceScrollNextRef.current = true;
       setMessages((prev) => [
         ...prev,
         { kind: 'user', uid: uid(), ts: Date.now(), text: detail.text },
@@ -951,6 +961,9 @@ export function ChatPane({
       return;
     }
     setBusy(true);
+    // Sending is an explicit action — always pull the user back to
+    // the latest, even if they were reading old history a moment ago.
+    forceScrollNextRef.current = true;
     setMessages((prev) => [
       ...prev,
       { kind: 'user', uid: uid(), ts: Date.now(), text },
