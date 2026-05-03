@@ -215,9 +215,13 @@ export function SessionsPane({
               style={{
                 padding: '5px 12px',
                 background: isActive ? 'var(--color-bg)' : 'transparent',
-                color: isActive ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                // Use --color-session-active (not --color-accent) so the
+                // active sub-tab reads as a wayfinding indicator, not as
+                // a CTA. Prevents visual confusion between "the pane I'm
+                // in" and "the button to click".
+                color: isActive ? 'var(--color-session-active)' : 'var(--color-text-muted)',
                 border: 'none',
-                borderTop: `2px solid ${isActive ? 'var(--color-accent)' : 'transparent'}`,
+                borderTop: `2px solid ${isActive ? 'var(--color-session-active)' : 'transparent'}`,
                 cursor: isEditing ? 'text' : 'pointer',
                 fontFamily: 'var(--font-pixel)',
                 fontSize: '12px',

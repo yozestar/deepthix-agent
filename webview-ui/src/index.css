@@ -16,6 +16,14 @@
   --color-border: #4a4a6a;
   --color-accent: #6030ff;
   --color-accent-bright: #746fff;
+  /* Distinct hue from --color-accent. Used ONLY as a wayfinding
+   * indicator for the active session/pane (sub-tab outline, header
+   * badge, project pill). Reserves --color-accent for actual CTAs
+   * (Send, + Session, + New, etc.) so the eye can quickly tell
+   * "where I'm working" from "what action I can take" — 60-30-10
+   * convention. Each preset theme overrides this with its own
+   * canonical secondary colour. */
+  --color-session-active: #00d4aa;
 
   /* Text */
   --color-text: rgba(255, 255, 255, 0.9);
