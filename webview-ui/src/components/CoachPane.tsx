@@ -394,16 +394,18 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     );
   }, [coachTermId]);
 
-  // Always auto-scroll to the latest. The user explicitly asked
-  // "je dois toujours voir ses dernières recommandations" — so we
-  // pull to bottom on every message, no scroll-aware compromise.
-  // The user can still scroll up momentarily to re-read; the next
-  // event will snap back to the latest.
+  // Newest recommendation always at the TOP. User explicitly asked:
+  // "toujours afficher la dernière recommandation tout en haut".
+  // So we reverse the message order in render (below) and snap the
+  // scroll to 0 on every new message — the latest always lands in
+  // view at the top of the pane. The user can scroll DOWN to read
+  // older proposals (the container has overflow:auto + min-height:0
+  // so internal scrolling works regardless of message volume).
   const scrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    el.scrollTop = 0;
   }, [messages]);
 
   const nextRunIn = useMemo(() => {
@@ -519,7 +521,10 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
             busy={busy}
           />
         ) : (
-          messages.map((m) => <CoachBubble key={m.uid} m={m} cwd={cwd} />)
+          messages
+            .slice()
+            .reverse()
+            .map((m) => <CoachBubble key={m.uid} m={m} cwd={cwd} />)
         )}
       </div>
     </div>

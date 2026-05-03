@@ -220,7 +220,16 @@ function App(): React.JSX.Element {
                 minHeight: 0,
               }}
             >
-              <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  position: 'relative',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
                 <SessionsTopArea
                   visibleTerminals={visibleAgents}
                   activeProjectId={projects.activeProjectId}
