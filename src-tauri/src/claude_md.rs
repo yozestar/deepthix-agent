@@ -193,7 +193,7 @@ context that should outlive a single conversation.
 
 Examples worth saving:
 - `current_sprint = "S-42"` so every session knows the active sprint
-- `prod_host = "post2reach.com"` to avoid re-asking the user
+- `prod_host = "staging.example.com"` to avoid re-asking the user
 - `last_deploy_sha = "abc123"` so a follow-up session can compare
 
 How to use:
