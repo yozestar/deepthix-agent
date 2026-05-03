@@ -34,6 +34,32 @@ import {
  * carried an error (typically HTTP 429 / no auth) — caller falls
  * through to "limits unavailable".
  */
+// Friendly display names for the bucket keys the API has been seen
+// emitting. Anything not in this map gets rendered with a humanized
+// version of the raw key — better than dropping it on the floor.
+const BUCKET_LABELS: Record<string, string> = {
+  five_hour: 'Session 5h',
+  current_session: 'Session 5h',
+  session: 'Session 5h',
+  session_5h: 'Session 5h',
+  seven_day: 'Weekly',
+  weekly: 'Weekly',
+  all_models_weekly: 'Weekly',
+  seven_day_all_models: 'Weekly',
+  seven_day_sonnet: 'Sonnet wk',
+  sonnet_weekly: 'Sonnet wk',
+  weekly_sonnet: 'Sonnet wk',
+  seven_day_opus: 'Opus wk',
+  opus_weekly: 'Opus wk',
+  claude_design: 'Claude Design',
+  claude_design_weekly: 'Claude Design',
+};
+
+function humanizeBucketKey(key: string): string {
+  if (BUCKET_LABELS[key]) return BUCKET_LABELS[key];
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function oauthLimitsToBuckets(
   oauth: ClaudeUsageLimits | null,
 ):
@@ -52,11 +78,108 @@ function oauthLimitsToBuckets(
       resets_at: Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined,
     };
   };
-  return {
-    five_hour: toBucket(oauth.five_hour),
-    seven_day: toBucket(oauth.seven_day),
-    seven_day_sonnet: toBucket(oauth.seven_day_sonnet),
+  // Build the canonical four. Prefer the structured Rust-side picks
+  // (five_hour / seven_day / seven_day_sonnet) since Rust already tried
+  // multiple candidate keys; fall back to all_buckets for opus + any
+  // alt-spelled key the picker missed.
+  const out: {
+    five_hour?: RateLimitBucket;
+    seven_day?: RateLimitBucket;
+    seven_day_sonnet?: RateLimitBucket;
+    seven_day_opus?: RateLimitBucket;
+  } = {};
+  if (oauth.five_hour && oauth.five_hour.utilization > 0) {
+    out.five_hour = toBucket(oauth.five_hour);
+  }
+  if (oauth.seven_day && oauth.seven_day.utilization > 0) {
+    out.seven_day = toBucket(oauth.seven_day);
+  }
+  if (oauth.seven_day_sonnet && oauth.seven_day_sonnet.utilization > 0) {
+    out.seven_day_sonnet = toBucket(oauth.seven_day_sonnet);
+  }
+  // Backfill from all_buckets if the structured pick was empty (zero).
+  // Lots of zeroes in the pickers usually means the API renamed the
+  // keys and Rust's candidate list missed one — surface what's actually
+  // there instead of pretending everything is at 0%.
+  const all = oauth.all_buckets ?? {};
+  if (!out.five_hour) {
+    for (const k of Object.keys(all)) {
+      if (/(five.?hour|current.?session|session)/i.test(k) && all[k].utilization > 0) {
+        out.five_hour = toBucket(all[k]);
+        break;
+      }
+    }
+  }
+  if (!out.seven_day) {
+    for (const k of Object.keys(all)) {
+      if (/(seven.?day|weekly|all.?models)/i.test(k) && !/sonnet|opus|design/i.test(k) && all[k].utilization > 0) {
+        out.seven_day = toBucket(all[k]);
+        break;
+      }
+    }
+  }
+  if (!out.seven_day_sonnet) {
+    for (const k of Object.keys(all)) {
+      if (/sonnet/i.test(k) && all[k].utilization > 0) {
+        out.seven_day_sonnet = toBucket(all[k]);
+        break;
+      }
+    }
+  }
+  for (const k of Object.keys(all)) {
+    if (/opus/i.test(k) && all[k].utilization > 0) {
+      out.seven_day_opus = toBucket(all[k]);
+      break;
+    }
+  }
+  // If everything is still empty, return undefined so the source
+  // resolver falls through to the cached/none branch.
+  if (
+    !out.five_hour &&
+    !out.seven_day &&
+    !out.seven_day_sonnet &&
+    !out.seven_day_opus &&
+    Object.keys(all).length === 0
+  ) {
+    return undefined;
+  }
+  return out;
+}
+
+/** Buckets returned by the API that don't match our four canonical
+ *  slots (e.g., new "claude_design_weekly" surfaced after the API
+ *  added the bucket). Caller renders these as extra rows so we don't
+ *  drop server data on the floor. */
+function extraBuckets(oauth: ClaudeUsageLimits | null): { key: string; label: string; bucket: RateLimitBucket }[] {
+  if (!oauth || oauth.error || !oauth.all_buckets) return [];
+  const known = new Set([
+    'five_hour',
+    'current_session',
+    'session',
+    'session_5h',
+    'seven_day',
+    'weekly',
+    'all_models_weekly',
+    'seven_day_all_models',
+    'seven_day_sonnet',
+    'sonnet_weekly',
+    'weekly_sonnet',
+    'seven_day_opus',
+    'opus_weekly',
+  ]);
+  const toBucket = (b: { utilization: number; resets_at: string }): RateLimitBucket => {
+    const ms = Date.parse(b.resets_at);
+    return {
+      used_percentage: Math.round(b.utilization * 100),
+      resets_at: Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined,
+    };
   };
+  const out: { key: string; label: string; bucket: RateLimitBucket }[] = [];
+  for (const [key, value] of Object.entries(oauth.all_buckets)) {
+    if (known.has(key)) continue;
+    out.push({ key, label: humanizeBucketKey(key), bucket: toBucket(value) });
+  }
+  return out;
 }
 
 const POLL_MS = 5_000;
@@ -389,7 +512,9 @@ export function UsagePane(): React.JSX.Element {
           )}
 
           {/* Live limit bars — snapshot first (richer, includes opus
-              breakdown), OAuth fallback otherwise. */}
+              breakdown), OAuth fallback otherwise. Plus any extra
+              buckets the API surfaced after our schema (e.g.
+              "Claude Design") so we never silently drop server data. */}
           {limits && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
               {limits.five_hour && (
@@ -404,6 +529,14 @@ export function UsagePane(): React.JSX.Element {
               {limits.seven_day_opus && (
                 <UsageBar label="Opus wk" bucket={limits.seven_day_opus} now={now} />
               )}
+              {extraBuckets(oauthLimits).map((extra) => (
+                <UsageBar
+                  key={extra.key}
+                  label={extra.label}
+                  bucket={extra.bucket}
+                  now={now}
+                />
+              ))}
             </div>
           )}
           {limitsSource === 'oauth' && (

@@ -292,6 +292,10 @@ export interface ClaudeUsageLimits {
   seven_day: UsageBucket;
   /** Weekly Sonnet-only bucket. */
   seven_day_sonnet: UsageBucket;
+  /** Every bucket the server returned, keyed by raw field name.
+   *  Lets the UI render new buckets (e.g., "claude_design_weekly")
+   *  without a Rust-side schema bump. */
+  all_buckets?: Record<string, UsageBucket>;
   /** Set when the API call failed (4xx/5xx, network, no token). */
   error?: string | null;
 }

@@ -335,35 +335,15 @@ pub struct ClaudeUsageLimits {
     pub seven_day: UsageBucket,
     /// Weekly Sonnet-only bucket.
     pub seven_day_sonnet: UsageBucket,
+    /// Every bucket the server actually sent, keyed by raw field name.
+    /// Lets the UI surface buckets we didn't know about ahead of time
+    /// (the API has evolved — "Claude Design" appeared as a new weekly
+    /// bucket and we don't want a schema change to silently zero things
+    /// out the way `five_hour`/`seven_day`-only parsing did).
+    #[serde(default)]
+    pub all_buckets: std::collections::BTreeMap<String, UsageBucket>,
     /// Set when the API returned a non-2xx so the UI can render an error.
     pub error: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct UsageBucketRaw {
-    #[serde(default)]
-    used_percentage: Option<f64>,
-    /// Epoch seconds (number) per the binary; we normalize to ISO-8601
-    /// string for the JS side. Some responses may use ISO already, so
-    /// we accept both via Value.
-    #[serde(default)]
-    resets_at: Option<serde_json::Value>,
-}
-
-#[derive(Deserialize)]
-struct RateLimitsRaw {
-    #[serde(default)]
-    five_hour: Option<UsageBucketRaw>,
-    #[serde(default)]
-    seven_day: Option<UsageBucketRaw>,
-    #[serde(default)]
-    seven_day_sonnet: Option<UsageBucketRaw>,
-}
-
-#[derive(Deserialize)]
-struct UsageResponseRaw {
-    #[serde(default)]
-    rate_limits: Option<RateLimitsRaw>,
 }
 
 fn resets_at_to_iso(v: Option<serde_json::Value>) -> String {
@@ -380,16 +360,31 @@ fn resets_at_to_iso(v: Option<serde_json::Value>) -> String {
     }
 }
 
-fn bucket_from(raw: Option<UsageBucketRaw>) -> UsageBucket {
-    let raw = raw.unwrap_or(UsageBucketRaw {
-        used_percentage: None,
-        resets_at: None,
-    });
-    UsageBucket {
-        // server: 0..100 → frontend: 0..1
-        utilization: raw.used_percentage.unwrap_or(0.0) / 100.0,
-        resets_at: resets_at_to_iso(raw.resets_at),
-    }
+/// Pull a UsageBucket out of a generic JSON object. The API has used
+/// at least three different keys for utilization across versions
+/// (`used_percentage` 0..100, `utilization` 0..1, `usage_pct` 0..100),
+/// so we accept any of them and normalize. Same idea for resets_at —
+/// could be epoch seconds (number) or ISO string.
+fn bucket_from_value(v: &serde_json::Value) -> Option<UsageBucket> {
+    let obj = v.as_object()?;
+    // Try every utilization-shaped field. Heuristic: if the value is
+    // <= 1.0 treat as a 0..1 fraction; otherwise as 0..100 percentage.
+    let raw_util = obj
+        .get("utilization")
+        .and_then(|x| x.as_f64())
+        .or_else(|| obj.get("used_percentage").and_then(|x| x.as_f64()))
+        .or_else(|| obj.get("usage_pct").and_then(|x| x.as_f64()))
+        .or_else(|| obj.get("used").and_then(|x| x.as_f64()));
+    let utilization = match raw_util {
+        Some(v) if v.is_finite() && v <= 1.0 && v >= 0.0 => v,
+        Some(v) if v.is_finite() => (v / 100.0).clamp(0.0, 1.0),
+        _ => 0.0,
+    };
+    let resets_at = obj.get("resets_at").cloned();
+    Some(UsageBucket {
+        utilization,
+        resets_at: resets_at_to_iso(resets_at),
+    })
 }
 
 /// Read access + refresh + expiry from the keychain payload. None if
@@ -643,25 +638,93 @@ pub fn read_claude_usage_limits() -> Result<ClaudeUsageLimits, String> {
         });
     }
 
-    let raw: UsageResponseRaw = serde_json::from_str(&body)
+    // Trace the raw body so the next time the schema shifts we can see
+    // it without speculation. Truncate to keep logs bounded.
+    let preview: String = body.chars().take(1500).collect();
+    tracing::info!(
+        target: "deepthix::commands",
+        body_bytes = body.len(),
+        body_preview = %preview,
+        "read_claude_usage_limits raw body",
+    );
+
+    let value: serde_json::Value = serde_json::from_str(&body)
         .map_err(|e| format!("parse usage response: {e} (body={body})"))?;
-    let buckets = raw.rate_limits.unwrap_or(RateLimitsRaw {
-        five_hour: None,
-        seven_day: None,
-        seven_day_sonnet: None,
-    });
+
+    // The API has shipped buckets under several layouts:
+    //   v1: { "rate_limits": { "five_hour": {...}, "seven_day": {...} } }
+    //   v2: { "rate_limits": [ { "name": "five_hour", ... }, ... ] }  // hypothetical
+    //   v3: top-level { "five_hour": {...}, "weekly": {...} }
+    // Walk every nested object and harvest anything that looks like a
+    // bucket (has a utilization-shaped field). Map of raw key →
+    // UsageBucket so the FE can render every one.
+    let mut all_buckets: std::collections::BTreeMap<String, UsageBucket> =
+        std::collections::BTreeMap::new();
+    fn harvest(
+        node: &serde_json::Value,
+        out: &mut std::collections::BTreeMap<String, UsageBucket>,
+    ) {
+        if let Some(obj) = node.as_object() {
+            for (k, v) in obj {
+                if let Some(bucket) = bucket_from_value(v) {
+                    out.insert(k.clone(), bucket);
+                }
+                harvest(v, out);
+            }
+        } else if let Some(arr) = node.as_array() {
+            for v in arr {
+                if let Some(name) = v.get("name").and_then(|n| n.as_str()) {
+                    if let Some(bucket) = bucket_from_value(v) {
+                        out.insert(name.to_string(), bucket);
+                    }
+                }
+                harvest(v, out);
+            }
+        }
+    }
+    harvest(&value, &mut all_buckets);
+
+    // Resolve the canonical three slots from any of the historical names
+    // so legacy UI bindings still work without a FE change.
+    fn pick(
+        all: &std::collections::BTreeMap<String, UsageBucket>,
+        candidates: &[&str],
+    ) -> UsageBucket {
+        for c in candidates {
+            if let Some(b) = all.get(*c) {
+                return b.clone();
+            }
+        }
+        UsageBucket::default()
+    }
+    let five_hour = pick(
+        &all_buckets,
+        &["five_hour", "current_session", "session", "session_5h"],
+    );
+    let seven_day = pick(
+        &all_buckets,
+        &["seven_day", "weekly", "all_models_weekly", "seven_day_all_models"],
+    );
+    let seven_day_sonnet = pick(
+        &all_buckets,
+        &["seven_day_sonnet", "sonnet_weekly", "weekly_sonnet"],
+    );
+
     let limits = ClaudeUsageLimits {
-        five_hour: bucket_from(buckets.five_hour),
-        seven_day: bucket_from(buckets.seven_day),
-        seven_day_sonnet: bucket_from(buckets.seven_day_sonnet),
+        five_hour,
+        seven_day,
+        seven_day_sonnet,
+        all_buckets: all_buckets.clone(),
         error: None,
     };
     tracing::info!(
         target: "deepthix::commands",
+        bucket_count = all_buckets.len(),
+        bucket_keys = ?all_buckets.keys().collect::<Vec<_>>(),
         five_hour = limits.five_hour.utilization,
         seven_day = limits.seven_day.utilization,
         sonnet = limits.seven_day_sonnet.utilization,
-        "read_claude_usage_limits ok",
+        "read_claude_usage_limits parsed",
     );
     Ok(limits)
 }
