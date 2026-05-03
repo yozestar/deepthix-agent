@@ -165,7 +165,7 @@ export function VoiceRecorder({
       const result = await transcribeAudio(b64, rec.mimeType || null, 'fr');
       const text = result.text.trim();
       console.info('[Deepthix][VoiceRecorder] transcribed', {
-        bytes: buf.byteLength,
+        bytes: blob.size,
         chars: text.length,
         elapsedMs: result.elapsed_ms,
       });
