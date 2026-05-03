@@ -279,6 +279,11 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
 
   /** Read excerpts from every claude session and feed the coach. */
   const runAnalysis = useCallback(async (): Promise<void> => {
+    console.info('[Deepthix][CoachPane] runAnalysis: invoked', {
+      busy: busyRef.current,
+      sessions: sessionsRef.current.length,
+      hasTerm: !!coachTermIdRef.current,
+    });
     if (busyRef.current) {
       console.debug('[Deepthix][CoachPane] tick skipped — coach still busy');
       return;
@@ -286,11 +291,25 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     let term = coachTermIdRef.current;
     if (!term) {
       term = await spawnCoach();
-      if (!term) return;
+      if (!term) {
+        console.warn('[Deepthix][CoachPane] tick aborted — spawnCoach returned null');
+        return;
+      }
     }
     const sessions = sessionsRef.current;
     if (sessions.length === 0) {
       console.debug('[Deepthix][CoachPane] tick skipped — no sessions in project');
+      // Surface this to the user — the placeholder otherwise sits at
+      // "starting…" with no explanation.
+      setMessages((prev) => [
+        ...prev,
+        {
+          uid: uid(),
+          ts: Date.now(),
+          role: 'system',
+          text: 'Waiting for at least one claude session in this project to analyse.',
+        },
+      ]);
       return;
     }
     setError(null);
@@ -379,13 +398,36 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     return () => clearInterval(id);
   }, [state.enabled, runAnalysis]);
 
-  // Auto-spawn coach on mount if it should be enabled but isn't yet
-  // (e.g. fresh app launch, user had it on before quitting).
+  // Auto-spawn coach + kick off the first analysis on mount when the
+  // user had the coach enabled before quitting (or just toggled it on
+  // and we're racing the toggle handler). Without this, a freshly
+  // reopened pane sat at "next analysis in 0m00s" forever — last_run_ms
+  // was 0 so the countdown computed 0, but the 10-min interval doesn't
+  // fire its first tick until 10 min from setup time.
   useEffect(() => {
     if (!state.enabled) return;
     if (coachTermIdRef.current) return;
-    void spawnCoach();
-  }, [state.enabled, spawnCoach]);
+    let cancelled = false;
+    void (async () => {
+      const term = await spawnCoach();
+      if (cancelled || !term) return;
+      const sinceLast = Date.now() - (state.last_run_ms || 0);
+      if (sinceLast >= COACH_INTERVAL_MS) {
+        console.info(
+          '[Deepthix][CoachPane] mount: triggering first analysis (stale or never run)',
+          { sinceLast, lastRunMs: state.last_run_ms },
+        );
+        void runAnalysis();
+      } else {
+        console.debug('[Deepthix][CoachPane] mount: skipping immediate run (recent)', {
+          sinceLast,
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state.enabled, state.last_run_ms, spawnCoach, runAnalysis]);
 
   const interrupt = useCallback(() => {
     if (!coachTermId) return;
@@ -410,8 +452,13 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
 
   const nextRunIn = useMemo(() => {
     if (!state.enabled) return null;
-    const since = Date.now() - (state.last_run_ms || 0);
+    // last_run_ms === 0 means we've never completed an analysis. The
+    // raw formula returns 0 here (now - 0 is huge), which read as a
+    // bogus "in 0m00s" — say what's actually happening instead.
+    if (!state.last_run_ms) return 'starting…';
+    const since = Date.now() - state.last_run_ms;
     const remaining = Math.max(0, COACH_INTERVAL_MS - since);
+    if (remaining <= 1000) return 'any moment';
     const m = Math.floor(remaining / 60000);
     const s = Math.floor((remaining % 60000) / 1000);
     return `${m}m${s.toString().padStart(2, '0')}s`;
@@ -642,9 +689,18 @@ function WatchingPlaceholder({
         Coach is watching {sessions} session{sessions === 1 ? '' : 's'}
       </div>
       <div style={{ fontSize: 11, opacity: 0.7, maxWidth: 380 }}>
-        It will analyse your activity automatically in <strong>{nextRunIn}</strong> and propose
-        improvements you can append to <code>CLAUDE.md</code> with one click. Or trigger an analysis
-        right now —
+        {nextRunIn === 'starting…' || nextRunIn === 'any moment' ? (
+          <>
+            First analysis is starting now — proposals will appear here in a few seconds. Or
+            trigger one manually —
+          </>
+        ) : (
+          <>
+            It will analyse your activity automatically in <strong>{nextRunIn}</strong> and propose
+            improvements you can append to <code>CLAUDE.md</code> with one click. Or trigger an
+            analysis right now —
+          </>
+        )}
       </div>
       <button
         type="button"
