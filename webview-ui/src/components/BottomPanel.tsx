@@ -66,9 +66,20 @@ export function SessionsPane({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
 
+  // Clamp the persisted height to the current viewport — without this,
+  // a value saved on a big monitor (e.g. 720px) overflows past the
+  // bottom of the screen on a smaller laptop and the composer
+  // (Send / mic / textarea) gets cropped off-screen.
+  // User report: "la fenêtre ne s'adapte pas à un petit écran je vois
+  // pas le textarea".
+  const maxHeightForViewport = (): number =>
+    Math.max(MIN_HEIGHT, window.innerHeight - 140);
+
   const [height, setHeight] = useState<number>(() => {
     const stored = Number(localStorage.getItem(STORAGE_KEY));
-    return Number.isFinite(stored) && stored >= MIN_HEIGHT ? stored : DEFAULT_HEIGHT;
+    const initial =
+      Number.isFinite(stored) && stored >= MIN_HEIGHT ? stored : DEFAULT_HEIGHT;
+    return Math.min(initial, maxHeightForViewport());
   });
   const draggingRef = useRef(false);
   const startYRef = useRef(0);
@@ -77,6 +88,17 @@ export function SessionsPane({
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, String(height));
   }, [height]);
+
+  // Re-clamp on viewport change (window resize, fullscreen toggle,
+  // splitting Stage Manager). Prevents the composer from disappearing
+  // when the user shrinks the window.
+  useEffect(() => {
+    function onResize(): void {
+      setHeight((cur) => Math.min(cur, maxHeightForViewport()));
+    }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent): void => {
@@ -95,7 +117,7 @@ export function SessionsPane({
     function onMove(e: MouseEvent): void {
       if (!draggingRef.current) return;
       const dy = startYRef.current - e.clientY;
-      const next = Math.max(MIN_HEIGHT, Math.min(window.innerHeight - 100, startHRef.current + dy));
+      const next = Math.max(MIN_HEIGHT, Math.min(maxHeightForViewport(), startHRef.current + dy));
       setHeight(next);
     }
     function onUp(): void {
