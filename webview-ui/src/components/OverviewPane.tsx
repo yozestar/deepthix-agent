@@ -260,7 +260,6 @@ function ProjectGroupView({
           key={group.projectId}
           termId={proxySession?.id ?? ''}
           projectId={group.projectId}
-          sessionId={null}
           sessionLabel={group.projectName}
           isWorking={anyWorking}
         />
@@ -359,7 +358,6 @@ interface DashboardProps {
   /** Terminal id (term-xxxxx) — what we ptyWrite button actions into. */
   termId: string;
   projectId: string;
-  sessionId: string | null;
   /** Label shown when the dashboard.html is empty. */
   sessionLabel: string;
   /** Whether at least one session in the project is currently working. */
@@ -372,11 +370,13 @@ interface DashboardProps {
  * Polls the file's mtime every 2s and re-reads the body only when it
  * changes — so any session in the project can `Write` to the file and
  * have its dashboard appear here within ~2s.
+ *
+ * The Rust commands still take a `session_id` arg for backwards-compat
+ * but ignore it (see commands/dashboard.rs); we pass empty string.
  */
 function SessionDashboard({
   termId,
   projectId,
-  sessionId,
   sessionLabel,
   isWorking,
 }: DashboardProps): React.JSX.Element | null {
@@ -420,26 +420,30 @@ function SessionDashboard({
   // Poll mtime and re-read the body only on change. Avoids re-rendering the
   // iframe on every tick (which would reset scroll/JS state inside it).
   useEffect(() => {
-    if (!sessionId) {
-      setHtml(null);
-      lastMtimeRef.current = -1;
-      return;
-    }
+    if (!projectId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const tick = async (): Promise<void> => {
       try {
-        const mtime = await dashboardMtimeMs(projectId, sessionId);
+        const mtime = await dashboardMtimeMs(projectId, '');
         if (cancelled) return;
         if (mtime !== lastMtimeRef.current) {
+          console.debug('[Deepthix][SessionDashboard] mtime changed', {
+            projectId,
+            mtime,
+            prev: lastMtimeRef.current,
+          });
           lastMtimeRef.current = mtime;
           if (mtime === 0) {
-            // File was deleted (or never existed). Clear the iframe.
             setHtml(null);
           } else {
-            const body = await readSessionDashboard(projectId, sessionId);
+            const body = await readSessionDashboard(projectId, '');
             if (cancelled) return;
+            console.debug('[Deepthix][SessionDashboard] dashboard reloaded', {
+              projectId,
+              bytes: body?.length ?? 0,
+            });
             setHtml(body);
           }
         }
@@ -458,10 +462,7 @@ function SessionDashboard({
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [projectId, sessionId]);
-
-  // Shell terminals get no dashboard slot at all (no session id → no file).
-  if (!sessionId) return null;
+  }, [projectId]);
 
   return (
     <div
@@ -493,7 +494,7 @@ function SessionDashboard({
           // allow-same-origin so the iframe can't read parent state. No
           // allow-forms / allow-popups for the same reason.
           sandbox="allow-scripts"
-          title={`session ${sessionId} dashboard`}
+          title={`${sessionLabel} dashboard`}
           style={{
             border: 'none',
             width: '100%',
