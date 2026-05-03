@@ -1,4 +1,4 @@
-/* eslint-disable deepthix/no-inline-colors */
+/* eslint-disable deepthix/no-inline-colors, deepthix/pixel-font */
 // Project-level Coach.
 //
 // Single ON/OFF toggle per project. When ON, every COACH_INTERVAL_MS
@@ -620,34 +620,113 @@ export function CoachPane({ sessions }: Props): React.JSX.Element {
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 12,
-          padding: '10px 14px',
+          gap: 14,
+          padding: '12px 16px',
           background: 'var(--color-bg-dark)',
           borderBottom: `2px solid ${state.enabled ? 'var(--color-accent)' : 'var(--color-border)'}`,
           fontSize: 12,
-          transition: 'border-color 200ms ease',
+          transition: 'border-color 200ms ease, box-shadow 200ms ease',
+          // Subtle accent halo when ON to make the header read as a
+          // distinct section even with theme variations.
+          boxShadow: state.enabled ? 'inset 0 0 0 1px var(--color-accent)' : 'none',
         }}
       >
         <ToggleSwitch
           enabled={state.enabled}
           onChange={(next) => void setEnabled(next)}
         />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+            <span
+              style={{
+                fontWeight: 'bold',
+                fontSize: 15,
+                letterSpacing: '0.06em',
+                color: state.enabled ? 'var(--color-accent)' : 'var(--color-text)',
+                transition: 'color 200ms ease',
+              }}
+            >
+              COACH
+            </span>
+            <span
+              style={{
+                fontSize: 10,
+                padding: '1px 6px',
+                background: 'var(--color-bg)',
+                border: '1px solid var(--color-border)',
+                opacity: 0.85,
+                letterSpacing: '0.05em',
+              }}
+            >
+              SONNET
+            </span>
+            <span
+              style={{
+                fontSize: 10,
+                padding: '1px 6px',
+                background: state.enabled ? 'var(--color-accent)' : 'transparent',
+                color: state.enabled ? 'var(--color-bg-dark)' : 'var(--color-text-muted)',
+                border: `1px solid ${state.enabled ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                fontWeight: 'bold',
+                letterSpacing: '0.05em',
+                transition: 'background 200ms ease, color 200ms ease',
+              }}
+            >
+              {state.enabled ? 'ON' : 'OFF'}
+            </span>
+            {busy && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 10,
+                  color: 'var(--color-accent)',
+                  letterSpacing: '0.05em',
+                  fontWeight: 'bold',
+                }}
+              >
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    background: 'var(--color-accent)',
+                    animation: 'pulse 1.2s ease-in-out infinite',
+                  }}
+                />
+                ANALYSING
+              </span>
+            )}
+          </div>
           <div
             style={{
-              fontWeight: 'bold',
-              fontSize: 13,
-              color: state.enabled ? 'var(--color-accent)' : 'var(--color-text)',
-              letterSpacing: '0.04em',
-              transition: 'color 200ms ease',
+              fontSize: 11,
+              opacity: 0.75,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
             }}
           >
-            COACH · SONNET {state.enabled ? '·  ON' : '·  OFF'}
-          </div>
-          <div style={{ fontSize: 10, opacity: 0.65 }}>
-            {state.enabled
-              ? `Watching ${sessions.length} session${sessions.length === 1 ? '' : 's'} · next analysis in ${nextRunIn}`
-              : 'Toggle ON to let it review your sessions every 10 min'}
+            {state.enabled ? (
+              <>
+                <span>
+                  📡 watching{' '}
+                  <strong>
+                    {sessions.length} session{sessions.length === 1 ? '' : 's'}
+                  </strong>{' '}
+                  across all projects
+                </span>
+                <span style={{ opacity: 0.5 }}>·</span>
+                <span>
+                  next run <strong>{nextRunIn}</strong>
+                </span>
+              </>
+            ) : (
+              <span>Toggle ON — Sonnet reviews every claude session in every project, every 10 min.</span>
+            )}
           </div>
         </div>
         {state.enabled && !busy && (
@@ -878,31 +957,118 @@ function WatchingPlaceholder({
 }
 
 function EmptyCoach({ hasSessions }: { hasSessions: boolean }): React.JSX.Element {
+  const itemStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 10,
+    fontSize: 12,
+    lineHeight: 1.5,
+  };
+  const iconStyle: React.CSSProperties = {
+    fontSize: 16,
+    minWidth: 22,
+    textAlign: 'center',
+    paddingTop: 1,
+  };
   return (
     <div
       style={{
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
+        gap: 18,
         alignItems: 'center',
         justifyContent: 'center',
-        textAlign: 'center',
-        padding: 32,
-        opacity: 0.85,
+        textAlign: 'left',
+        padding: '40px 24px',
       }}
     >
-      <div style={{ fontSize: 14 }}>
-        Coach (Sonnet) reviews EVERY claude session in this project every 10 min.
+      <div
+        style={{
+          fontSize: 32,
+          opacity: 0.55,
+          letterSpacing: '0.05em',
+        }}
+      >
+        🧠
       </div>
-      <div style={{ fontSize: 11, opacity: 0.7, maxWidth: 420 }}>
-        Toggle ON in the header. Suggestions can be appended to{' '}
-        <code style={{ background: 'var(--color-bg-dark)', padding: '0 4px' }}>CLAUDE.md</code> with
-        one click so the main sessions inherit them.
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 'bold',
+          letterSpacing: '0.04em',
+          color: 'var(--color-text)',
+          textAlign: 'center',
+        }}
+      >
+        Meta-coach for your claude sessions
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          opacity: 0.7,
+          maxWidth: 460,
+          textAlign: 'center',
+          lineHeight: 1.5,
+        }}
+      >
+        A Sonnet sub-session that watches every claude window across every project and proposes
+        improvements you can accept with one click.
+      </div>
+      <div
+        style={{
+          maxWidth: 460,
+          width: '100%',
+          background: 'var(--color-bg-dark)',
+          border: '2px solid var(--color-border)',
+          padding: '14px 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+        }}
+      >
+        <div style={itemStyle}>
+          <span style={iconStyle}>📡</span>
+          <span>
+            Reads <strong>every active claude session</strong> in every project every 10 min.
+          </span>
+        </div>
+        <div style={itemStyle}>
+          <span style={iconStyle}>📝</span>
+          <span>
+            Proposes <strong>memory rules</strong> you can append to{' '}
+            <code style={{ background: 'var(--color-bg)', padding: '0 4px' }}>CLAUDE.md</code> with
+            one click.
+          </span>
+        </div>
+        <div style={itemStyle}>
+          <span style={iconStyle}>⏱</span>
+          <span>
+            Proposes <strong>schedules</strong> for recurring jobs worth automating.
+          </span>
+        </div>
+        <div style={itemStyle}>
+          <span style={iconStyle}>📊</span>
+          <span>
+            Pins <strong>project insights</strong> to your dashboard via its Write tool.
+          </span>
+        </div>
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          opacity: 0.55,
+          textAlign: 'center',
+          maxWidth: 460,
+        }}
+      >
+        Flip the toggle in the header to start.
         {!hasSessions && (
           <>
-            {' '}
-            <strong>Open at least one claude session for this project first.</strong>
+            <br />
+            <strong style={{ color: 'var(--color-warning, #f59e0b)' }}>
+              Open at least one claude session in any project first.
+            </strong>
           </>
         )}
       </div>
@@ -1115,8 +1281,8 @@ function _CoachBubble({
   );
 }
 
-const ProposalCard = memo(_ProposalCard);
-function _ProposalCard({
+const ProposalCard = memo(ProposalCardImpl);
+function ProposalCardImpl({
   proposal,
   cwd,
 }: {
@@ -1230,8 +1396,8 @@ function _ProposalCard({
   );
 }
 
-const ScheduleCard = memo(_ScheduleCard);
-function _ScheduleCard({
+const ScheduleCard = memo(ScheduleCardImpl);
+function ScheduleCardImpl({
   schedule,
   projectId,
   proxySessionId,

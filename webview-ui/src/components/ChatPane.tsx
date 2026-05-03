@@ -1,4 +1,4 @@
-/* eslint-disable deepthix/no-inline-colors */
+/* eslint-disable deepthix/no-inline-colors, deepthix/pixel-font */
 // ChatPane — replaces TerminalTab for claude sessions.
 //
 // Backed by `chat_spawn` which runs `claude --print --output-format
@@ -18,7 +18,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import {
-  chatInterrupt,
   chatInterruptAndResume,
   chatKill,
   chatLoadHistory,
@@ -45,6 +44,10 @@ interface Props {
   /** Optional pre-existing term_id to bind to (skips spawn — used for
    *  reconnecting to a session that was spawned by a parent component). */
   bindTermId?: string | null;
+  /** Per-terminal agent id used by useAgentStatus so we can ping it
+   *  whenever a chat_event arrives — JSONL-only detection lagged by
+   *  ~2s (size poll cadence) which made the working dot flicker. */
+  agentId?: number;
   /** Fires once spawn resolves (so the parent can persist the new
    *  session_id once we learn it from the system/init line). */
   onSessionReady?: (info: { termId: string; sessionId: string | null }) => void;
@@ -532,6 +535,7 @@ export function ChatPane({
   resumeSessionId,
   skipPermissions,
   bindTermId,
+  agentId,
   onSessionReady,
 }: Props): React.JSX.Element {
   const [termId, setTermId] = useState<string | null>(bindTermId ?? null);
@@ -641,6 +645,14 @@ export function ChatPane({
     let cancelled = false;
     void onChatEvent((evt) => {
       if (evt.term_id !== termIdRef.current) return;
+      // Bypass the JSONL polling pipeline — every chat_event for THIS
+      // agent is direct evidence the session is alive RIGHT NOW. The
+      // window-level dispatch pings useAgentStatus which lights the
+      // green dot in the sidebar / overview / tabs without waiting on
+      // the 2s JSONL size poll.
+      if (typeof agentId === 'number') {
+        window.postMessage({ type: 'agentJsonlActivity', id: agentId }, '*');
+      }
       if (evt.stream === 'stderr') {
         // Surface stderr as a grey system note — they're usually
         // informational (rate-limit retries, hook warnings).
@@ -776,6 +788,7 @@ export function ChatPane({
     // intentionally NOT depending on onSessionReady — see the
     // onSessionReadyRef declaration above for why (Tauri listen()
     // duplication = streamed deltas multiplied N times in chat).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [termId]);
 
   // Auto-scroll to the bottom on new messages.
@@ -1152,6 +1165,10 @@ export function ChatPane({
           return false;
       }
     },
+    // termId is captured by handleSwitchModel but isn't a true dep —
+    // we want this callback stable across re-renders that just bump
+    // termId from null → real id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [lastTurn],
   );
 
@@ -1171,6 +1188,12 @@ export function ChatPane({
     }
     setBusy(true);
     forceScrollNextRef.current = true;
+    // Light the working dot immediately — without this it stays idle
+    // until claude's first event arrives (~1-2s of "is anything even
+    // happening?" delay for the user).
+    if (typeof agentId === 'number') {
+      window.postMessage({ type: 'agentJsonlActivity', id: agentId }, '*');
+    }
     // Build the user-bubble text. If there are attachments, list them
     // under the user's text so the bubble shows what was sent.
     const bubbleText =
@@ -1202,7 +1225,7 @@ export function ChatPane({
       // On failure, restore attachments so the user can retry.
       setPendingAttachments(attachments);
     }
-  }, [input, termId, handleSlashCommand, pendingAttachments]);
+  }, [input, termId, handleSlashCommand, pendingAttachments, agentId]);
 
   const headerLabel = useMemo(
     () => (sessionId ? `claude · ${sessionId.slice(0, 8)}` : 'claude · starting…'),
@@ -2263,8 +2286,8 @@ function ThinkingIndicator(): React.JSX.Element {
 // object reference for unchanged messages, running is a boolean) keeps
 // existing bubbles untouched while typing — fixes the "ultra slow"
 // composer perf user reported.
-const MessageBubble = memo(_MessageBubble);
-function _MessageBubble({ m, running }: { m: Message; running?: boolean }): React.JSX.Element {
+const MessageBubble = memo(MessageBubbleImpl);
+function MessageBubbleImpl({ m, running }: { m: Message; running?: boolean }): React.JSX.Element {
   switch (m.kind) {
     case 'user':
       return (
@@ -2350,8 +2373,8 @@ function _MessageBubble({ m, running }: { m: Message; running?: boolean }): Reac
   }
 }
 
-const Bubble = memo(_Bubble);
-function _Bubble({
+const Bubble = memo(BubbleImpl);
+function BubbleImpl({
   align,
   bg,
   fg,
@@ -2414,8 +2437,8 @@ function _Bubble({
  * are reset by inline styles since we're inside a pixel-themed bubble
  * with no global Tailwind typography plugin.
  */
-const MarkdownBody = memo(_MarkdownBody);
-function _MarkdownBody({ source }: { source: string }): React.JSX.Element {
+const MarkdownBody = memo(MarkdownBodyImpl);
+function MarkdownBodyImpl({ source }: { source: string }): React.JSX.Element {
   return (
     <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
       <ReactMarkdown
@@ -2680,8 +2703,8 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-const ToolBubble = memo(_ToolBubble);
-function _ToolBubble({
+const ToolBubble = memo(ToolBubbleImpl);
+function ToolBubbleImpl({
   m,
   running,
 }: {

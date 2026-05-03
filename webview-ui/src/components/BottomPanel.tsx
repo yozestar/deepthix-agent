@@ -23,8 +23,8 @@ import {
   listProcesses as cmdListProcesses,
   type ProcessInfo,
 } from '../tauri/commands';
-import { StatusDot } from './StatusDot';
 import { ChatPane } from './ChatPane';
+import { StatusDot } from './StatusDot';
 import { TerminalTab } from './TerminalTab';
 
 const MIN_HEIGHT = 160;
@@ -288,6 +288,7 @@ export function SessionsPane({
                 resumeSessionId={t.sessionId}
                 skipPermissions={t.skipPermissions}
                 bindTermId={t.id}
+                agentId={t.agentId}
                 onSessionReady={({ termId, sessionId }) => {
                   if (sessionId) terminals.setSessionId(termId, sessionId);
                 }}

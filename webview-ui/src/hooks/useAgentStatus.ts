@@ -34,8 +34,12 @@ interface AgentState {
   lastActivityMs: number;
 }
 
-/** How long after the last JSONL line we still consider claude "working". */
-const IDLE_TIMEOUT_MS = 5000;
+/** How long after the last activity we still consider claude "working".
+ *  Bumped from 5s → 15s because claude regularly pauses 6–12s between
+ *  JSONL writes during reasoning-heavy turns; the old window flipped
+ *  the dot to idle mid-turn. The dot still flips back to idle within
+ *  a few seconds of the result event because TICK_MS re-evaluates. */
+const IDLE_TIMEOUT_MS = 15_000;
 /** How often to re-evaluate the idle timeout for the UI. */
 const TICK_MS = 1000;
 
