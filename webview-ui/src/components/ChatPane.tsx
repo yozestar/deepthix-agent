@@ -21,16 +21,20 @@ import {
   chatInterruptAndResume,
   chatKill,
   chatLoadHistory,
+  chatResumeOtherSession,
   chatSendUserText,
   chatSendUserWithAttachments,
   chatSetSessionId,
   chatSpawn,
   chatSwitchModel,
+  listResumableSessions,
   openExternalUrl,
   readClaudeDailyActivity,
   readClaudeSubscription,
   readClaudeUsageLimits,
   readFileBytesBase64,
+  type ResumableSession,
+  rewindSession,
 } from '../tauri/commands';
 import { onChatEvent, onChatExit } from '../tauri/events';
 
@@ -543,6 +547,8 @@ export function ChatPane({
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [currentEffort, setCurrentEffort] = useState<string | null>(null);
   const [showModelPicker, setShowModelPicker] = useState(false);
+  // /resume → opens a picker listing resumable sessions for cwd.
+  const [showResumePicker, setShowResumePicker] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1145,6 +1151,61 @@ export function ChatPane({
             });
           return true;
         }
+        case 'resume': {
+          // /resume                → open the picker
+          // /resume <session_id>   → resume directly without the popup
+          const spaceIdx = cmdLine.indexOf(' ');
+          const arg = spaceIdx === -1 ? '' : cmdLine.slice(spaceIdx).trim();
+          if (!termId) {
+            dropMessage('No active session — open one first.');
+            return true;
+          }
+          if (!arg) {
+            setShowResumePicker(true);
+            return true;
+          }
+          dropMessage(`Resuming session ${arg}…`);
+          void chatResumeOtherSession(termId, arg, currentModel)
+            .then(() => {
+              dropMessage(
+                `✓ Resumed ${arg}. The conversation history will reload — give it a moment.`,
+              );
+            })
+            .catch((e) => {
+              const msg = e instanceof Error ? e.message : String(e);
+              dropMessage(`Resume failed: ${msg}`);
+            });
+          return true;
+        }
+        case 'rewind': {
+          // /rewind        → rewind 1 turn
+          // /rewind <N>    → rewind N turns
+          if (!termId || !sessionId) {
+            dropMessage('No active session — nothing to rewind.');
+            return true;
+          }
+          const spaceIdx = cmdLine.indexOf(' ');
+          const arg = spaceIdx === -1 ? '' : cmdLine.slice(spaceIdx).trim();
+          const n = arg ? Number.parseInt(arg, 10) : 1;
+          if (!Number.isFinite(n) || n < 1) {
+            dropMessage(`Invalid rewind count: "${arg}". Usage: /rewind [N]`);
+            return true;
+          }
+          dropMessage(`⏪ Rewinding last ${n} user turn${n === 1 ? '' : 's'}…`);
+          void rewindSession(cwd, sessionId, n)
+            .then((newCount) => {
+              dropMessage(
+                `✓ Rewound ${n} turn${n === 1 ? '' : 's'}. Restarting claude on the truncated transcript (${newCount} JSONL lines kept).`,
+              );
+              // Respawn so the live ChatChild reflects the new state.
+              return chatResumeOtherSession(termId, sessionId, currentModel);
+            })
+            .catch((e) => {
+              const msg = e instanceof Error ? e.message : String(e);
+              dropMessage(`Rewind failed: ${msg}`);
+            });
+          return true;
+        }
         case 'context':
         case 'compact':
         case 'init':
@@ -1425,6 +1486,42 @@ export function ChatPane({
               });
           }}
           onClose={() => setShowModelPicker(false)}
+        />
+      )}
+
+      {showResumePicker && termId && (
+        <ResumePickerPopup
+          cwd={cwd}
+          currentSessionId={sessionId}
+          onPick={(picked) => {
+            setShowResumePicker(false);
+            setMessages((prev) => [
+              ...prev,
+              {
+                kind: 'system',
+                uid: uid(),
+                ts: Date.now(),
+                subtype: 'resume',
+                summary: `Resuming session ${picked.session_id.slice(0, 8)} (${picked.user_turn_count} turns)…`,
+              },
+            ]);
+            void chatResumeOtherSession(termId, picked.session_id, currentModel)
+              .then(() => {
+                setSessionId(picked.session_id);
+                // The bound termId stays; tell ChatPane's effects to
+                // re-hydrate the message log from the picked transcript.
+                window.dispatchEvent(
+                  new CustomEvent('deepthix:chat:resumed', {
+                    detail: { termId, sessionId: picked.session_id },
+                  }),
+                );
+              })
+              .catch((e) => {
+                const msg = e instanceof Error ? e.message : String(e);
+                setError(`resume failed: ${msg}`);
+              });
+          }}
+          onClose={() => setShowResumePicker(false)}
         />
       )}
 
@@ -1816,6 +1913,8 @@ function ChatInput({
       'cost',
       'usage',
       'model',
+      'resume',
+      'rewind',
       'agents',
       'privacy',
       'upgrade',
@@ -2287,6 +2386,202 @@ function ThinkingIndicator(): React.JSX.Element {
 // existing bubbles untouched while typing — fixes the "ultra slow"
 // composer perf user reported.
 const MessageBubble = memo(MessageBubbleImpl);
+function ResumePickerPopup({
+  cwd,
+  currentSessionId,
+  onPick,
+  onClose,
+}: {
+  cwd: string;
+  currentSessionId: string | null;
+  onPick: (s: ResumableSession) => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [sessions, setSessions] = useState<ResumableSession[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listResumableSessions(cwd)
+      .then((list) => {
+        if (cancelled) return;
+        setSessions(list);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd]);
+
+  useEffect(() => {
+    function onKey(ev: KeyboardEvent): void {
+      if (ev.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.55)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 720,
+          maxWidth: '92%',
+          maxHeight: '80%',
+          background: 'var(--color-bg-dark)',
+          border: '2px solid var(--color-border)',
+          boxShadow: 'var(--shadow-pixel)',
+          fontFamily: 'var(--font-pixel)',
+          color: 'var(--color-text)',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+        }}
+      >
+        <div
+          style={{
+            padding: '12px 16px',
+            borderBottom: '2px solid var(--color-border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span style={{ fontSize: 14, fontWeight: 'bold', letterSpacing: '0.06em' }}>
+            /resume — pick a session
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: '2px 10px',
+              background: 'transparent',
+              color: 'inherit',
+              border: '1px solid var(--color-border)',
+              fontFamily: 'var(--font-pixel)',
+              fontSize: 11,
+              cursor: 'pointer',
+            }}
+          >
+            ✗
+          </button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 8 }}>
+          {error && (
+            <div style={{ padding: 12, color: 'var(--color-danger)', fontSize: 12 }}>{error}</div>
+          )}
+          {!error && !sessions && (
+            <div style={{ padding: 12, opacity: 0.6, fontSize: 12 }}>Loading…</div>
+          )}
+          {!error && sessions && sessions.length === 0 && (
+            <div style={{ padding: 12, opacity: 0.6, fontSize: 12 }}>
+              No resumable sessions found in <code>{cwd}</code>.
+            </div>
+          )}
+          {!error &&
+            sessions?.map((s) => {
+              const isCurrent = s.session_id === currentSessionId;
+              return (
+                <button
+                  key={s.session_id}
+                  type="button"
+                  onClick={() => onPick(s)}
+                  disabled={isCurrent}
+                  title={isCurrent ? 'Already in this session' : 'Resume this session'}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    margin: '2px 0',
+                    background: isCurrent ? 'var(--color-bg)' : 'transparent',
+                    color: 'inherit',
+                    border: '1px solid var(--color-border)',
+                    cursor: isCurrent ? 'default' : 'pointer',
+                    fontFamily: 'var(--font-pixel)',
+                    fontSize: 12,
+                    opacity: isCurrent ? 0.6 : 1,
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      marginBottom: 4,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: 'Menlo, Consolas, monospace',
+                        fontSize: 11,
+                        color: 'var(--color-accent)',
+                      }}
+                    >
+                      {s.session_id.slice(0, 8)}
+                    </span>
+                    <span style={{ fontSize: 10, opacity: 0.55 }}>
+                      {new Date(s.modified_ms).toLocaleString()}
+                    </span>
+                    <span style={{ fontSize: 10, opacity: 0.55 }}>
+                      · {s.user_turn_count} turn{s.user_turn_count === 1 ? '' : 's'}
+                    </span>
+                    <span style={{ fontSize: 10, opacity: 0.55 }}>
+                      · {(s.size_bytes / 1024).toFixed(1)} KB
+                    </span>
+                    {isCurrent && (
+                      <span
+                        style={{
+                          marginLeft: 'auto',
+                          fontSize: 10,
+                          padding: '1px 6px',
+                          background: 'var(--color-accent)',
+                          color: 'var(--color-bg-dark)',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        CURRENT
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      opacity: 0.85,
+                      lineHeight: 1.4,
+                      maxHeight: 36,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {s.first_user_text || <em style={{ opacity: 0.6 }}>(no first user message)</em>}
+                  </div>
+                </button>
+              );
+            })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MessageBubbleImpl({ m, running }: { m: Message; running?: boolean }): React.JSX.Element {
   switch (m.kind) {
     case 'user':

@@ -1165,6 +1165,320 @@ pub fn append_to_claude_md(project_cwd: PathBuf, text: String) -> Result<(), Str
     Ok(())
 }
 
+/// Soft-restart a chat session against a DIFFERENT session_id —
+/// used by /resume to switch the bound term_id from the current
+/// conversation to one the user picked. Same kill+respawn pattern
+/// as chat_switch_model but the model + effort are preserved and the
+/// session_id is replaced. The webview's event subscription stays
+/// attached because the term_id doesn't change.
+#[tauri::command]
+pub fn chat_resume_other_session(
+    app: AppHandle,
+    state: State<'_, ChatManager>,
+    term_id: String,
+    session_id: String,
+    model: Option<String>,
+) -> Result<(), String> {
+    tracing::info!(
+        target: "deepthix::chat",
+        %term_id, new_session = %session_id, ?model,
+        "chat_resume_other_session"
+    );
+
+    let (cwd, skip_permissions, prev_effort) = {
+        let map = state.inner.lock().unwrap();
+        let entry = map
+            .get(&term_id)
+            .ok_or_else(|| format!("no chat session {term_id}"))?;
+        (
+            entry.cwd.clone(),
+            entry.skip_permissions,
+            entry.effort.clone(),
+        )
+    };
+
+    // Kill the current child + remove the entry. The exit_watcher will
+    // see it gone and bail.
+    if let Some(mut prev) = state.inner.lock().unwrap().remove(&term_id) {
+        let _ = prev.child.kill();
+    }
+
+    let claude_bin = which_claude()?;
+    let mut cmd = Command::new(&claude_bin);
+    cmd.current_dir(&cwd)
+        .arg("--print")
+        .arg("--output-format")
+        .arg("stream-json")
+        .arg("--input-format")
+        .arg("stream-json")
+        .arg("--verbose")
+        .arg("--include-partial-messages")
+        .arg("--resume")
+        .arg(&session_id);
+    if let Some(m) = model.as_ref() {
+        cmd.arg("--model").arg(m);
+    }
+    if let Some(e) = prev_effort.as_ref() {
+        cmd.arg("--effort").arg(e);
+    }
+    if skip_permissions {
+        cmd.arg("--dangerously-skip-permissions");
+    }
+    let project_id = crate::state::project_id_for_path(&cwd);
+    if let Ok(home) = std::env::var("HOME") {
+        let dashboard_path = PathBuf::from(home.clone())
+            .join(".deepthix")
+            .join("projects")
+            .join(&project_id)
+            .join("dashboard.html");
+        if let Some(parent) = dashboard_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        cmd.env(
+            "DEEPTHIX_DASHBOARD_PATH",
+            dashboard_path.to_string_lossy().to_string(),
+        );
+        cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
+        let workflows_path = PathBuf::from(home.clone()).join(".deepthix").join("workflows.json");
+        cmd.env(
+            "DEEPTHIX_WORKFLOWS_PATH",
+            workflows_path.to_string_lossy().to_string(),
+        );
+        let variables_path = PathBuf::from(home).join(".deepthix").join("variables.json");
+        cmd.env(
+            "DEEPTHIX_VARIABLES_PATH",
+            variables_path.to_string_lossy().to_string(),
+        );
+    }
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("respawn for resume: {e}"))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "claude stdin missing".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "claude stdout missing".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "claude stderr missing".to_string())?;
+
+    spawn_reader(app.clone(), term_id.clone(), stdout, "stdout");
+    spawn_reader(app.clone(), term_id.clone(), stderr, "stderr");
+    spawn_exit_watcher(app.clone(), term_id.clone());
+
+    let stdin_writer: Box<dyn Write + Send> = Box::new(stdin);
+    let entry = ChatChild {
+        child,
+        stdin: Arc::new(Mutex::new(stdin_writer)),
+        session_id: Some(session_id),
+        cwd,
+        skip_permissions,
+        effort: prev_effort,
+    };
+    state.inner.lock().unwrap().insert(term_id, entry);
+    Ok(())
+}
+
+// ─── Resume / rewind ────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct ResumableSession {
+    pub session_id: String,
+    pub jsonl_path: String,
+    pub modified_ms: u64,
+    pub size_bytes: u64,
+    /// First user message (truncated to ~200 chars) — preview shown in
+    /// the picker so the user can identify the session.
+    pub first_user_text: String,
+    /// Total user-record count in the JSONL — useful as a "how long
+    /// is this conversation" signal in the picker.
+    pub user_turn_count: u32,
+}
+
+/// List every resumable claude session for the given project cwd.
+/// Reads `~/.claude/projects/<hash>/*.jsonl` and gathers metadata.
+/// Sorted by mtime desc (most recent first).
+#[tauri::command]
+pub fn list_resumable_sessions(project_cwd: PathBuf) -> Result<Vec<ResumableSession>, String> {
+    let raw = project_cwd.to_string_lossy();
+    let hash: String = raw
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '.' => '-',
+            other => other,
+        })
+        .collect();
+    let dir = match dirs::home_dir() {
+        Some(h) => h.join(".claude").join("projects").join(&hash),
+        None => return Err("no home dir".to_string()),
+    };
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(it) => it,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("read dir: {e}")),
+    };
+    let mut out: Vec<ResumableSession> = Vec::new();
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let session_id = match path.file_stem().and_then(|s| s.to_str()) {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+        let meta = match std::fs::metadata(&path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let modified_ms = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let size_bytes = meta.len();
+        // Read the file to extract the first user text + count user
+        // records. For very large transcripts (>2MB) we cap to avoid
+        // blocking the UI; the count then becomes a lower bound but
+        // the preview is still accurate.
+        const PREVIEW_CAP_BYTES: u64 = 2 * 1024 * 1024;
+        let body = if size_bytes <= PREVIEW_CAP_BYTES {
+            std::fs::read_to_string(&path).unwrap_or_default()
+        } else {
+            // Read just the head — enough for the first user message.
+            let mut buf = vec![0u8; 16 * 1024];
+            use std::io::Read;
+            let mut f = match std::fs::File::open(&path) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            let n = f.read(&mut buf).unwrap_or(0);
+            buf.truncate(n);
+            String::from_utf8_lossy(&buf).into_owned()
+        };
+        let mut first_user = String::new();
+        let mut user_count: u32 = 0;
+        for line in body.lines() {
+            let v: serde_json::Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(|t| t.as_str()) != Some("user") {
+                continue;
+            }
+            let content = v.get("message").and_then(|m| m.get("content"));
+            let text = match content {
+                Some(serde_json::Value::String(s)) => s.clone(),
+                Some(serde_json::Value::Array(a)) => {
+                    let mut buf = String::new();
+                    for b in a {
+                        if b.get("type").and_then(|x| x.as_str()) == Some("text") {
+                            if let Some(t) = b.get("text").and_then(|x| x.as_str()) {
+                                buf.push_str(t);
+                            }
+                        }
+                    }
+                    buf
+                }
+                _ => continue,
+            };
+            if text.trim().is_empty() {
+                continue;
+            }
+            user_count += 1;
+            if first_user.is_empty() {
+                first_user = short(text.trim(), 200);
+            }
+        }
+        out.push(ResumableSession {
+            session_id,
+            jsonl_path: path.to_string_lossy().into_owned(),
+            modified_ms,
+            size_bytes,
+            first_user_text: first_user,
+            user_turn_count: user_count,
+        });
+    }
+    out.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    Ok(out)
+}
+
+/// Truncate the active session's JSONL by removing the LAST `n` user
+/// turns plus everything after each. Result: claude `--resume` on the
+/// returned session_id resumes from before those turns happened.
+///
+/// Returns the new line count of the JSONL.
+#[tauri::command]
+pub fn rewind_session(
+    project_cwd: PathBuf,
+    session_id: String,
+    n: u32,
+) -> Result<u32, String> {
+    let n_drop = n.max(1);
+    let path = crate::jsonl_watcher::predict_jsonl_path(&project_cwd, &session_id);
+    let body = std::fs::read_to_string(&path).map_err(|e| format!("read jsonl: {e}"))?;
+    let lines: Vec<&str> = body.lines().collect();
+
+    // Walk forward, mark indexes of every user record. Cut at the index
+    // that puts us BEFORE the Nth-from-last user turn.
+    let mut user_idxs: Vec<usize> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let v: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if v.get("type").and_then(|t| t.as_str()) == Some("user") {
+            // Only count "real" user messages (not tool_result-only).
+            let content = v.get("message").and_then(|m| m.get("content"));
+            let has_text = match content {
+                Some(serde_json::Value::String(s)) => !s.trim().is_empty(),
+                Some(serde_json::Value::Array(arr)) => arr
+                    .iter()
+                    .any(|b| b.get("type").and_then(|t| t.as_str()) == Some("text")),
+                _ => false,
+            };
+            if has_text {
+                user_idxs.push(i);
+            }
+        }
+    }
+    if user_idxs.is_empty() {
+        return Err("no user turns to rewind".to_string());
+    }
+    if (n_drop as usize) > user_idxs.len() {
+        return Err(format!(
+            "asked to rewind {n_drop}, but only {} user turns exist",
+            user_idxs.len()
+        ));
+    }
+    let cut_at = user_idxs[user_idxs.len() - n_drop as usize];
+    let kept: Vec<&str> = lines.into_iter().take(cut_at).collect();
+    let mut new_body = kept.join("\n");
+    if !new_body.is_empty() {
+        new_body.push('\n');
+    }
+
+    let tmp = path.with_extension("jsonl.tmp");
+    std::fs::write(&tmp, new_body.as_bytes()).map_err(|e| format!("write tmp: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("rename: {e}"))?;
+    let new_count = kept.len() as u32;
+    tracing::info!(
+        target: "deepthix::chat",
+        %session_id, %n_drop, %new_count,
+        "rewind_session"
+    );
+    Ok(new_count)
+}
+
 #[tauri::command]
 pub fn chat_kill(state: State<'_, ChatManager>, term_id: String) -> Result<(), String> {
     tracing::info!(target: "deepthix::chat", %term_id, "chat_kill");

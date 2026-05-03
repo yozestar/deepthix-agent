@@ -648,6 +648,48 @@ export async function appendWorkflowRun(run: WorkflowRun): Promise<void> {
   return await invoke<void>('append_workflow_run', { run });
 }
 
+// ─── Resume / rewind ────────────────────────────────────────────────────
+
+export interface ResumableSession {
+  session_id: string;
+  jsonl_path: string;
+  modified_ms: number;
+  size_bytes: number;
+  first_user_text: string;
+  user_turn_count: number;
+}
+
+/** List every resumable claude session for this project cwd, newest
+ *  first. Backs the /resume picker. */
+export async function listResumableSessions(projectCwd: string): Promise<ResumableSession[]> {
+  return await invoke<ResumableSession[]>('list_resumable_sessions', { projectCwd });
+}
+
+/** Truncate the active session's JSONL by removing the last N user
+ *  turns. After this call, claude --resume on the same session_id
+ *  picks up from before those turns. Returns the new line count. */
+export async function rewindSession(
+  projectCwd: string,
+  sessionId: string,
+  n: number,
+): Promise<number> {
+  log('rewindSession', { sessionId, n });
+  return await invoke<number>('rewind_session', { projectCwd, sessionId, n });
+}
+
+/** Switch the bound term_id to a DIFFERENT session (used by /resume).
+ *  Kills the current claude child + respawns with --resume on the
+ *  picked session_id. Model and effort are preserved from the prior
+ *  spawn unless `model` is provided. */
+export async function chatResumeOtherSession(
+  termId: string,
+  sessionId: string,
+  model: string | null,
+): Promise<void> {
+  log('chatResumeOtherSession', { termId, sessionId });
+  return await invoke<void>('chat_resume_other_session', { termId, sessionId, model });
+}
+
 // ─── Variables ──────────────────────────────────────────────────────────
 // Shared key/value scratchpad. Both the user (VARIABLES tab) and
 // claude (Read/Write on the JSON catalog) can read + write.
