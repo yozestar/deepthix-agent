@@ -361,36 +361,50 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
       sessions: sessionsRef.current.length,
       hasTerm: !!coachTermIdRef.current,
     });
+    // CRITICAL: claim the busy slot SYNCHRONOUSLY before any await.
+    // Otherwise concurrent callers (mount effect re-firing on every
+    // state change + interval + manual click + setEnabled) all pass
+    // the busy check together and queue 10+ runs in parallel — user
+    // saw a stack of "📥 Analysing last 10 turns of 2 sessions…"
+    // bubbles, the same prompt was shipped to the coach 10 times.
     if (busyRef.current) {
       console.debug('[Deepthix][CoachPane] tick skipped — coach still busy');
       return;
     }
-    let term = coachTermIdRef.current;
-    if (!term) {
-      term = await spawnCoach();
+    busyRef.current = true;
+    setBusy(true);
+
+    // We hold the busy slot for the WHOLE call. If we ship a prompt
+    // to the coach, we leave it held — the `result` chat_event clears
+    // it. If we bail early (no sessions / no excerpts / spawn failed
+    // / threw), we MUST release in finally; otherwise the next 10-min
+    // tick is silently skipped forever and the user thinks the coach
+    // is stuck.
+    let shippedToClaude = false;
+    try {
+      let term = coachTermIdRef.current;
       if (!term) {
-        console.warn('[Deepthix][CoachPane] tick aborted — spawnCoach returned null');
+        term = await spawnCoach();
+        if (!term) {
+          console.warn('[Deepthix][CoachPane] tick aborted — spawnCoach returned null');
+          return;
+        }
+      }
+      const sessions = sessionsRef.current;
+      if (sessions.length === 0) {
+        console.debug('[Deepthix][CoachPane] tick skipped — no sessions in project');
+        setMessages((prev) => [
+          ...prev,
+          {
+            uid: uid(),
+            ts: Date.now(),
+            role: 'system',
+            text: 'Waiting for at least one claude session in this project to analyse.',
+          },
+        ]);
         return;
       }
-    }
-    const sessions = sessionsRef.current;
-    if (sessions.length === 0) {
-      console.debug('[Deepthix][CoachPane] tick skipped — no sessions in project');
-      // Surface this to the user — the placeholder otherwise sits at
-      // "starting…" with no explanation.
-      setMessages((prev) => [
-        ...prev,
-        {
-          uid: uid(),
-          ts: Date.now(),
-          role: 'system',
-          text: 'Waiting for at least one claude session in this project to analyse.',
-        },
-      ]);
-      return;
-    }
-    setError(null);
-    try {
+      setError(null);
       const blocks: string[] = [];
       for (const s of sessions) {
         const ex = await readSessionExcerpt(cwdRef.current, s.sessionId, EXCERPT_TURNS_PER_SESSION);
@@ -419,16 +433,18 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
           text: `📥 Analysing last ${EXCERPT_TURNS_PER_SESSION} turns of ${sessions.length} session${sessions.length > 1 ? 's' : ''}…`,
         },
       ]);
-      setBusy(true);
-      busyRef.current = true;
       await chatSendUserText(term, prompt);
       void updateState({ last_run_ms: Date.now() });
+      shippedToClaude = true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[Deepthix][CoachPane] runAnalysis failed', e);
       setError(msg);
-      setBusy(false);
-      busyRef.current = false;
+    } finally {
+      if (!shippedToClaude) {
+        busyRef.current = false;
+        setBusy(false);
+      }
     }
   }, [spawnCoach, updateState]);
 
@@ -465,36 +481,50 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     [state.enabled, updateState, spawnCoach, runAnalysis],
   );
 
+  // Stable refs so the interval/mount effects only run on toggle
+  // ON/OFF, not on every state.last_run_ms update (which used to
+  // re-create the interval and re-arm the mount auto-trigger every
+  // tick — wasteful + amplified the runAnalysis-storm bug).
+  const runAnalysisRef = useRef(runAnalysis);
+  useEffect(() => {
+    runAnalysisRef.current = runAnalysis;
+  }, [runAnalysis]);
+  const spawnCoachRef = useRef(spawnCoach);
+  useEffect(() => {
+    spawnCoachRef.current = spawnCoach;
+  }, [spawnCoach]);
+  const lastRunMsRef = useRef(state.last_run_ms);
+  useEffect(() => {
+    lastRunMsRef.current = state.last_run_ms;
+  }, [state.last_run_ms]);
+
   // 10-minute interval timer when enabled. Fires runAnalysis each
   // tick. Cleared cleanly on toggle-off / unmount / project switch.
   useEffect(() => {
     if (!state.enabled) return;
     const id = setInterval(() => {
-      void runAnalysis();
+      void runAnalysisRef.current();
     }, COACH_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [state.enabled, runAnalysis]);
+  }, [state.enabled]);
 
   // Auto-spawn coach + kick off the first analysis on mount when the
   // user had the coach enabled before quitting (or just toggled it on
-  // and we're racing the toggle handler). Without this, a freshly
-  // reopened pane sat at "next analysis in 0m00s" forever — last_run_ms
-  // was 0 so the countdown computed 0, but the 10-min interval doesn't
-  // fire its first tick until 10 min from setup time.
+  // and we're racing the toggle handler).
   useEffect(() => {
     if (!state.enabled) return;
     if (coachTermIdRef.current) return;
     let cancelled = false;
     void (async () => {
-      const term = await spawnCoach();
+      const term = await spawnCoachRef.current();
       if (cancelled || !term) return;
-      const sinceLast = Date.now() - (state.last_run_ms || 0);
+      const sinceLast = Date.now() - (lastRunMsRef.current || 0);
       if (sinceLast >= COACH_INTERVAL_MS) {
         console.info(
           '[Deepthix][CoachPane] mount: triggering first analysis (stale or never run)',
-          { sinceLast, lastRunMs: state.last_run_ms },
+          { sinceLast, lastRunMs: lastRunMsRef.current },
         );
-        void runAnalysis();
+        void runAnalysisRef.current();
       } else {
         console.debug('[Deepthix][CoachPane] mount: skipping immediate run (recent)', {
           sinceLast,
@@ -504,7 +534,7 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     return () => {
       cancelled = true;
     };
-  }, [state.enabled, state.last_run_ms, spawnCoach, runAnalysis]);
+  }, [state.enabled]);
 
   const interrupt = useCallback(() => {
     if (!coachTermId) return;
