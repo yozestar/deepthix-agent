@@ -720,30 +720,51 @@ export function ChatPane({
 
   // Auto-scroll to the bottom on new messages.
   //   - First time messages appear (history hydration on session
-  //     reopen): force-scroll regardless of distance.
+  //     reopen): force-scroll regardless of position.
   //   - When the user just sent a message (explicit action): force-
-  //     scroll regardless of distance — they should see their own
-  //     message land + claude's reply stream in.
-  //   - Otherwise: only scroll if the user is already near the
-  //     bottom. Reading history gets to stay anchored even while a
-  //     new turn streams in below.
+  //     scroll regardless of position.
+  //   - Otherwise: scroll iff the user is currently following the
+  //     bottom. We track this via a scroll-event listener (not by
+  //     measuring inside the message effect) — a single streaming
+  //     delta can add more than 80px of content, which would push the
+  //     measured distance above the threshold and freeze auto-follow
+  //     for the rest of the reply. The listener captures intent
+  //     BEFORE the next render: if the user scrolls up to read
+  //     history, follow stops; when they scroll back to within 80px
+  //     of the bottom, follow resumes.
   const initialScrollDoneRef = useRef(false);
   const forceScrollNextRef = useRef(false);
+  const isAtBottomRef = useRef(true);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    function onScroll(): void {
+      if (!el) return;
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      isAtBottomRef.current = distance < 80;
+    }
+    el.addEventListener('scroll', onScroll, { passive: true });
+    console.debug('[Deepthix][ChatPane] scroll listener attached');
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+    };
+  }, []);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     if (!initialScrollDoneRef.current && messages.length > 0) {
       el.scrollTop = el.scrollHeight;
       initialScrollDoneRef.current = true;
+      isAtBottomRef.current = true;
       return;
     }
     if (forceScrollNextRef.current) {
       el.scrollTop = el.scrollHeight;
       forceScrollNextRef.current = false;
+      isAtBottomRef.current = true;
       return;
     }
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceFromBottom < 80) {
+    if (isAtBottomRef.current) {
       el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
