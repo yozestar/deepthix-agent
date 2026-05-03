@@ -129,6 +129,132 @@ pub fn inject_into_project(project_root: &Path) -> std::io::Result<bool> {
     Ok(true)
 }
 
+// ─── Global Deepthix brief ──────────────────────────────────────────────
+// Injected once into ~/.claude/CLAUDE.md (the user-level claude code
+// memory) so EVERY claude session — regardless of project — knows about
+// the env vars Deepthix exposes and how to use them.
+
+const GLOBAL_BEGIN: &str = "<!-- DEEPTHIX_AGENT_BRIEF_BEGIN -->";
+const GLOBAL_END: &str = "<!-- DEEPTHIX_AGENT_BRIEF_END -->";
+
+fn global_brief() -> String {
+    let body = r#"## Deepthix Agent — environment hooks
+
+You are running inside the Deepthix Agent desktop app. The app injects
+several environment variables into every session and a few JSON files
+on disk that you can use to coordinate with the user across sessions.
+
+### `$DEEPTHIX_PROJECT_ID`
+Stable id of the Deepthix project this session belongs to. Mostly
+informational — log it if you need to disambiguate runs.
+
+### `$DEEPTHIX_DASHBOARD_PATH`
+Absolute path to the project's at-a-glance dashboard.html (one per
+project). The app's OVERVIEW tab renders it in a sandboxed iframe.
+- Use the `Write` tool with that EXACT path to publish a status board.
+- Self-contained HTML (inline CSS, no external network — `fetch` is
+  blocked). Inline `<script>` works for charts/counters.
+- Buttons with `data-deepthix-action="..."` get auto-wired to fire
+  that text into THIS session's prompt on click. Use it to give the
+  user one-click shortcuts.
+- Aim for ~100 lines max. Last writer wins; merge thoughtfully.
+
+### `$DEEPTHIX_WORKFLOWS_PATH`
+Absolute path to the global workflows catalog (`workflows.json`). Each
+entry is `{id, name, description, prompt, tags, created_ms,
+updated_ms}`. The app's WORKFLOW tab lists every entry and lets the
+user re-fire any of them with one click.
+
+You can manage workflows directly:
+- **List**: `Read $DEEPTHIX_WORKFLOWS_PATH` to see what's saved.
+- **Add**: read the file, append a new entry to the JSON array, write
+  it back. Required fields: `id` (any unique string), `name`,
+  `prompt`. Set `created_ms` and `updated_ms` to the current epoch
+  millis if you can.
+- **Modify**: edit the entry in place; bump `updated_ms`.
+- **Delete**: drop the entry from the array.
+
+When saving a workflow, write a self-contained `prompt` — the future
+session won't have any extra context beyond what you put there.
+
+### When to suggest a workflow
+If you notice the user re-typing the same kind of request (deploy
+steps, sweep scripts, weekly report, daily standup, repetitive
+maintenance), proactively offer to save it: "I can save this as a
+workflow you can re-run with one click — want me to add it?". On
+yes, write it to `$DEEPTHIX_WORKFLOWS_PATH`.
+"#;
+    format!("{GLOBAL_BEGIN}\n{body}{GLOBAL_END}\n")
+}
+
+/// Append the Deepthix brief to `~/.claude/CLAUDE.md` (creating the
+/// file if absent). Idempotent — guarded by marker comments. Safe to
+/// call on every app boot. Returns `true` if the file was created or
+/// modified.
+pub fn ensure_global_brief() -> std::io::Result<bool> {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no home dir",
+            ))
+        }
+    };
+    let dir = home.join(".claude");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("CLAUDE.md");
+    let new_block = global_brief();
+
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(s) => Some(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e),
+    };
+
+    let next = match existing {
+        None => new_block,
+        Some(content) => {
+            if let (Some(begin_idx), Some(end_idx)) =
+                (content.find(GLOBAL_BEGIN), content.find(GLOBAL_END))
+            {
+                if end_idx <= begin_idx {
+                    tracing::warn!(
+                        target: "deepthix::claude_md",
+                        ?path,
+                        "global brief markers corrupted; leaving CLAUDE.md alone"
+                    );
+                    return Ok(false);
+                }
+                let end_line_end = end_idx + GLOBAL_END.len();
+                let already = &content[begin_idx..end_line_end];
+                if already.trim_end() == new_block.trim_end() {
+                    return Ok(false);
+                }
+                let mut out = String::with_capacity(content.len());
+                out.push_str(&content[..begin_idx]);
+                out.push_str(new_block.trim_end());
+                out.push_str(&content[end_line_end..]);
+                out
+            } else {
+                let mut out = content;
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push('\n');
+                out.push_str(&new_block);
+                out
+            }
+        }
+    };
+
+    let tmp = path.with_extension("md.tmp");
+    std::fs::write(&tmp, next.as_bytes())?;
+    std::fs::rename(&tmp, &path)?;
+    tracing::info!(target: "deepthix::claude_md", ?path, "ensured global Deepthix brief");
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

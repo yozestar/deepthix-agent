@@ -149,6 +149,16 @@ pub fn run() {
             // Background scheduler thread: ticks every 5s and fires due
             // jobs via TerminalManager.
             crate::commands::schedules::start_scheduler(app.handle().clone());
+            // Make sure every claude session knows about Deepthix's env
+            // hooks (workflows, dashboard, project_id) by appending the
+            // brief to ~/.claude/CLAUDE.md. Idempotent — markered block.
+            if let Err(e) = crate::claude_md::ensure_global_brief() {
+                tracing::warn!(
+                    target: "deepthix::boot",
+                    error = %e,
+                    "ensure_global_brief failed (claude won't auto-discover env hooks)"
+                );
+            }
             tracing::info!(target: "deepthix::boot", "tauri setup complete");
             Ok(())
         })
