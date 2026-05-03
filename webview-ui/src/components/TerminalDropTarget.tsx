@@ -21,18 +21,7 @@
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import {
-  chatSendUserWithAttachments,
-  ptyWrite,
-  stashDroppedFile,
-} from '../tauri/commands';
-
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
-function isImagePath(p: string): boolean {
-  const dot = p.lastIndexOf('.');
-  if (dot < 0) return false;
-  return IMAGE_EXTENSIONS.has(p.slice(dot + 1).toLowerCase());
-}
+import { ptyWrite, stashDroppedFile } from '../tauri/commands';
 
 interface TermSummary {
   id: string;
@@ -161,28 +150,17 @@ export function TerminalDropTarget({
                 count: paths.length,
                 firstSrc: paths[0],
                 firstStable: stable[0],
-                images: stable.filter(isImagePath).length,
               });
               if (target.kind === 'claude') {
-                // Chat sessions run claude in --print stream-json mode,
-                // which does NOT auto-attach paste-paths the way the TUI
-                // did. Send via the attachments command — image paths
-                // get read + base64 + image content block, others get
-                // appended as plain references for claude to Read.
-                const summary =
-                  stable.length === 1
-                    ? isImagePath(stable[0])
-                      ? `📎 attached image: ${stable[0]}`
-                      : `📎 attached: ${stable[0]}`
-                    : `📎 attached ${stable.length} files`;
-                // Show the user a bubble immediately so the drop isn't
-                // silent while we wait for claude's response.
+                // Chat sessions: STAGE the file as a pending attachment
+                // in ChatPane. The user can preview, remove individuals,
+                // type a message alongside, and send everything together
+                // when they hit Send. ChatPane listens for this event.
                 window.dispatchEvent(
-                  new CustomEvent('deepthix:chat:user-text', {
-                    detail: { termId: target.id, text: summary },
+                  new CustomEvent('deepthix:chat:add-attachments', {
+                    detail: { termId: target.id, paths: stable },
                   }),
                 );
-                await chatSendUserWithAttachments(target.id, '', stable);
               } else {
                 // Old PTY path — claude TUI / shell terminals know what
                 // to do with a quoted path string.

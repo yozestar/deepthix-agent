@@ -22,6 +22,7 @@ import {
   chatKill,
   chatLoadHistory,
   chatSendUserText,
+  chatSendUserWithAttachments,
   chatSetSessionId,
   chatSpawn,
   chatSwitchModel,
@@ -29,6 +30,7 @@ import {
   readClaudeDailyActivity,
   readClaudeSubscription,
   readClaudeUsageLimits,
+  readFileBytesBase64,
 } from '../tauri/commands';
 import { onChatEvent, onChatExit } from '../tauri/events';
 
@@ -108,6 +110,25 @@ function makeContext(): ParseContext {
     openBlocks: new Set(),
     streamedMessageIds: new Set(),
   };
+}
+
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+function isImagePathLocal(p: string): boolean {
+  const dot = p.lastIndexOf('.');
+  return dot >= 0 && IMAGE_EXTS.has(p.slice(dot + 1).toLowerCase());
+}
+function basenameLocal(p: string): string {
+  const slash = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+  return slash >= 0 ? p.slice(slash + 1) : p;
+}
+
+interface PendingAttachment {
+  uid: string;
+  path: string;
+  name: string;
+  isImage: boolean;
+  /** Inline data URL for the preview thumbnail (images only). */
+  previewSrc?: string;
 }
 
 function blockKey(messageId: string, index: number): string {
@@ -525,6 +546,9 @@ export function ChatPane({
    *  the autocomplete popup when the user types `/` at the start of
    *  the input. */
   const [slashCommands, setSlashCommands] = useState<string[]>([]);
+  // Files dropped into the window stage here as previews. Send button
+  // ships them with the next message; user can remove individuals.
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   /** Last turn summary for the header. Replaces the per-turn bubble. */
   const [lastTurn, setLastTurn] = useState<
     { ok: boolean; durationMs: number; costUsd: number } | null
@@ -827,6 +851,64 @@ export function ChatPane({
     return () => window.removeEventListener('deepthix:chat:user-text', onVoiceUserText);
   }, [termId]);
 
+  // Drop-target bridge — TerminalDropTarget catches the OS drag-drop
+  // and dispatches `deepthix:chat:add-attachments` with { termId,
+  // paths }. We stage them as previews instead of sending immediately
+  // (per user request: "faut ajouter le screen en piece jointe voir
+  // une preview et des que je fais envoyer ca senvoie"). Send() picks
+  // them up and ships everything together via
+  // chat_send_user_with_attachments.
+  useEffect(() => {
+    if (!termId) return;
+    function onAddAttachments(ev: Event): void {
+      const detail = (ev as CustomEvent<{ termId: string; paths: string[] }>).detail;
+      if (!detail || detail.termId !== termId) return;
+      const paths = detail.paths.filter((p) => typeof p === 'string' && p.length > 0);
+      if (paths.length === 0) return;
+      console.info('[Deepthix][ChatPane] staging attachments', {
+        termId,
+        count: paths.length,
+        first: paths[0],
+      });
+      // Add each as a placeholder immediately so the user sees them
+      // appear, then load previews asynchronously per file.
+      const placeholders: PendingAttachment[] = paths.map((p) => ({
+        uid: uid(),
+        path: p,
+        name: basenameLocal(p),
+        isImage: isImagePathLocal(p),
+      }));
+      setPendingAttachments((prev) => [...prev, ...placeholders]);
+      placeholders.forEach((att) => {
+        if (!att.isImage) return;
+        void readFileBytesBase64(att.path)
+          .then((bytes) => {
+            setPendingAttachments((prev) =>
+              prev.map((a) =>
+                a.uid === att.uid
+                  ? { ...a, previewSrc: `data:${bytes.mime};base64,${bytes.b64}` }
+                  : a,
+              ),
+            );
+          })
+          .catch((e) => {
+            console.warn('[Deepthix][ChatPane] preview load failed', {
+              path: att.path,
+              error: e,
+            });
+          });
+      });
+    }
+    window.addEventListener('deepthix:chat:add-attachments', onAddAttachments);
+    return () => {
+      window.removeEventListener('deepthix:chat:add-attachments', onAddAttachments);
+    };
+  }, [termId]);
+
+  const removeAttachment = useCallback((attUid: string): void => {
+    setPendingAttachments((prev) => prev.filter((a) => a.uid !== attUid));
+  }, []);
+
   /**
    * Slash commands handled CLIENT-SIDE — never sent to claude.
    *
@@ -1007,31 +1089,52 @@ export function ChatPane({
 
   const send = useCallback(async (): Promise<void> => {
     const text = input.trim();
-    if (!text || !termId) return;
+    const attachments = pendingAttachments;
+    // Allow sending attachments-only (no text) — useful for "look at
+    // this screenshot" flows. Block only when both are empty.
+    if (!termId) return;
+    if (!text && attachments.length === 0) return;
     setInput('');
     // Intercept client-side slash commands BEFORE shipping to claude
     // — otherwise claude wraps them in useless XML and the user sees
-    // junk in the chat.
+    // junk in the chat. Slash commands ignore any pending attachments.
     if (text.startsWith('/') && handleSlashCommand(text)) {
       return;
     }
     setBusy(true);
-    // Sending is an explicit action — always pull the user back to
-    // the latest, even if they were reading old history a moment ago.
     forceScrollNextRef.current = true;
+    // Build the user-bubble text. If there are attachments, list them
+    // under the user's text so the bubble shows what was sent.
+    const bubbleText =
+      attachments.length === 0
+        ? text
+        : text
+          ? `${text}\n${attachments.map((a) => `📎 ${a.name}`).join('\n')}`
+          : attachments.map((a) => `📎 ${a.name}`).join('\n');
     setMessages((prev) => [
       ...prev,
-      { kind: 'user', uid: uid(), ts: Date.now(), text },
+      { kind: 'user', uid: uid(), ts: Date.now(), text: bubbleText },
     ]);
+    setPendingAttachments([]);
     try {
-      await chatSendUserText(termId, text);
+      if (attachments.length === 0) {
+        await chatSendUserText(termId, text);
+      } else {
+        await chatSendUserWithAttachments(
+          termId,
+          text,
+          attachments.map((a) => a.path),
+        );
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[Deepthix][ChatPane] send failed', e);
       setError(msg);
       setBusy(false);
+      // On failure, restore attachments so the user can retry.
+      setPendingAttachments(attachments);
     }
-  }, [input, termId, handleSlashCommand]);
+  }, [input, termId, handleSlashCommand, pendingAttachments]);
 
   const headerLabel = useMemo(
     () => (sessionId ? `claude · ${sessionId.slice(0, 8)}` : 'claude · starting…'),
@@ -1270,6 +1373,8 @@ export function ChatPane({
         setInput={setInput}
         send={send}
         slashCommands={slashCommands}
+        attachments={pendingAttachments}
+        onRemoveAttachment={removeAttachment}
         // Always enabled once spawned. claude code in
         // --input-format=stream-json mode queues incoming user
         // turns — you can type a follow-up while the previous one is
@@ -1521,6 +1626,8 @@ function ChatInput({
   setInput,
   send,
   slashCommands,
+  attachments,
+  onRemoveAttachment,
   canSend,
   spawning,
   busy,
@@ -1530,6 +1637,8 @@ function ChatInput({
   setInput: (v: string) => void;
   send: () => void;
   slashCommands: string[];
+  attachments: PendingAttachment[];
+  onRemoveAttachment: (uid: string) => void;
   canSend: boolean;
   spawning: boolean;
   busy: boolean;
@@ -1676,11 +1785,27 @@ function ChatInput({
           ))}
         </div>
       )}
+      {attachments.length > 0 && (
+        <div
+          style={{
+            padding: '8px 12px 0',
+            background: 'var(--color-bg-dark)',
+            borderTop: '1px solid var(--color-border)',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+          }}
+        >
+          {attachments.map((att) => (
+            <AttachmentChip key={att.uid} att={att} onRemove={() => onRemoveAttachment(att.uid)} />
+          ))}
+        </div>
+      )}
       <div
         style={{
           padding: '10px 12px',
           background: 'var(--color-bg-dark)',
-          borderTop: '1px solid var(--color-border)',
+          borderTop: attachments.length > 0 ? 'none' : '1px solid var(--color-border)',
           display: 'flex',
           gap: 8,
           flexShrink: 0,
@@ -1823,6 +1948,93 @@ function ChatInput({
  * `deepthix:voice:stop` window events). Equivalent to holding ⌘M
  * — both work, the button is just discoverable.
  */
+function AttachmentChip({
+  att,
+  onRemove,
+}: {
+  att: PendingAttachment;
+  onRemove: () => void;
+}): React.JSX.Element {
+  return (
+    <div
+      style={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: att.isImage ? 0 : '4px 8px',
+        background: 'var(--color-bg)',
+        border: '2px solid var(--color-border)',
+        boxShadow: 'var(--shadow-pixel)',
+        maxWidth: 180,
+        overflow: 'hidden',
+        fontFamily: 'var(--font-pixel)',
+        fontSize: 11,
+      }}
+      title={att.path}
+    >
+      {att.isImage && att.previewSrc ? (
+        <img
+          src={att.previewSrc}
+          alt={att.name}
+          style={{
+            width: 64,
+            height: 64,
+            objectFit: 'cover',
+            display: 'block',
+          }}
+        />
+      ) : att.isImage ? (
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: 0.5,
+          }}
+        >
+          ⌛
+        </div>
+      ) : (
+        <span
+          style={{
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            maxWidth: 140,
+          }}
+        >
+          📎 {att.name}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        title="Remove attachment"
+        style={{
+          position: 'absolute',
+          top: 2,
+          right: 2,
+          width: 18,
+          height: 18,
+          background: 'var(--color-bg-dark)',
+          color: 'var(--color-text)',
+          border: '1px solid var(--color-border)',
+          fontFamily: 'var(--font-pixel)',
+          fontSize: 11,
+          lineHeight: 1,
+          cursor: 'pointer',
+          padding: 0,
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 function MicButton({ disabled }: { disabled: boolean }): React.JSX.Element {
   const [holding, setHolding] = useState(false);
 
