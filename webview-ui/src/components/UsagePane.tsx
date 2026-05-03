@@ -399,6 +399,11 @@ export function UsagePane(): React.JSX.Element {
     });
   };
 
+  // Toggle to expose every bucket the API returned, for debugging
+  // mismatches with claude.ai's official panel ("Sonnet wk shows 100%
+  // here but 1% on claude.ai" → which API key is actually at 100%?).
+  const [debugAllBuckets, setDebugAllBuckets] = useState(false);
+
   const snapshotFresh = snapshotMtime > 0 && now - snapshotMtime < SNAPSHOT_STALE_MS;
   // Resolve live limits: prefer fresh snapshot data, else OAuth. We
   // can't bind the source to "snapshot is fresh" alone — chat-mode
@@ -552,8 +557,50 @@ export function UsagePane(): React.JSX.Element {
             </div>
           )}
           {limitsSource === 'oauth' && (
-            <div style={{ fontSize: '9px', opacity: 0.45, lineHeight: 1.4 }}>
-              live from claude.ai/api/oauth/usage
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+              <span style={{ fontSize: '9px', opacity: 0.45, lineHeight: 1.4 }}>
+                live from claude.ai/api/oauth/usage
+              </span>
+              <button
+                type="button"
+                onClick={() => setDebugAllBuckets((v) => !v)}
+                title="Show every bucket the API returned (for debugging mismatches)"
+                style={{
+                  background: 'transparent',
+                  color: 'inherit',
+                  border: '1px solid var(--color-border)',
+                  fontFamily: 'var(--font-pixel)',
+                  fontSize: '9px',
+                  padding: '1px 6px',
+                  cursor: 'pointer',
+                  opacity: 0.6,
+                }}
+              >
+                {debugAllBuckets ? '✗ debug' : 'debug'}
+              </button>
+            </div>
+          )}
+          {debugAllBuckets && oauthLimits?.all_buckets && (
+            <div
+              style={{
+                marginTop: 4,
+                padding: 6,
+                background: 'var(--color-bg-dark)',
+                border: '1px solid var(--color-border)',
+                fontFamily: 'Menlo, Consolas, monospace',
+                fontSize: 10,
+                lineHeight: 1.4,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                maxHeight: 200,
+                overflow: 'auto',
+              }}
+              title="Every bucket the OAuth /usage endpoint returned, with raw key + utilization. Copy/paste this back if a value looks wrong."
+            >
+              {Object.entries(oauthLimits.all_buckets)
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .map(([k, v]) => `${k}: ${(v.utilization * 100).toFixed(1)}%`)
+                .join('\n')}
             </div>
           )}
           {limitsSource === 'cached' && cachedLimits && (
