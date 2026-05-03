@@ -318,46 +318,87 @@
   --surface-blur: 0px;
 }
 
+/* Universal "surface" selector. Any element that uses our shadow var
+ * — directly or via class — counts as a surface and inherits the
+ * style override. Inline `boxShadow: 'var(--shadow-pixel)'` becomes
+ * `style="box-shadow:var(--shadow-pixel)"` in the DOM, which the
+ * substring matcher catches. Combined with the canonical surface
+ * classes this covers ~every visible chrome element in the app
+ * without per-component edits. */
+
 /* Glassmorphism — translucent backdrops + blur + soft borders. */
 :root[data-box-style='glass'] {
   --surface-radius: 14px;
-  --surface-blur: 18px;
-  --shadow-pixel: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --surface-blur: 16px;
+  --shadow-pixel: 0 6px 22px rgba(0, 0, 0, 0.32);
+  --color-border: rgba(255, 255, 255, 0.1);
 }
 :root[data-box-style='glass'] .dt-chat-msg,
 :root[data-box-style='glass'] .dt-card,
-:root[data-box-style='glass'] .pixel-panel {
+:root[data-box-style='glass'] .pixel-panel,
+:root[data-box-style='glass'] [style*='var(--shadow-pixel)'],
+:root[data-box-style='glass'] [style*='2px 2px 0px'],
+:root[data-box-style='glass'] .dt-btn,
+:root[data-box-style='glass'] .dt-btn--primary,
+:root[data-box-style='glass'] .dt-btn--danger {
   background: rgba(24, 24, 40, 0.55) !important;
   -webkit-backdrop-filter: blur(var(--surface-blur));
   backdrop-filter: blur(var(--surface-blur));
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: var(--surface-radius);
-  box-shadow: var(--shadow-pixel);
+  border-width: 1px !important;
+  border-radius: var(--surface-radius) !important;
+  box-shadow: var(--shadow-pixel) !important;
+}
+/* Sidebar / toolbar / other inline-styled containers reach the
+ * surface look via the substring matcher — also normalize button
+ * and input chrome so the whole interface lines up. */
+:root[data-box-style='glass'] button:not([data-no-skin]),
+:root[data-box-style='glass'] input,
+:root[data-box-style='glass'] select,
+:root[data-box-style='glass'] textarea {
+  border-radius: 8px !important;
+  border-width: 1px !important;
 }
 
-/* Flat — no shadows, hairline border, square corners. */
+/* Flat — no shadows, hairline border, square corners. Aggressive
+ * sweep: kill every shadow inline-styled or class-based. */
 :root[data-box-style='flat'] {
   --surface-radius: 0px;
   --shadow-pixel: none;
 }
 :root[data-box-style='flat'] .dt-chat-msg,
 :root[data-box-style='flat'] .dt-card,
-:root[data-box-style='flat'] .pixel-panel {
+:root[data-box-style='flat'] .pixel-panel,
+:root[data-box-style='flat'] [style*='var(--shadow-pixel)'],
+:root[data-box-style='flat'] [style*='2px 2px 0px'],
+:root[data-box-style='flat'] .dt-btn,
+:root[data-box-style='flat'] .dt-btn--primary,
+:root[data-box-style='flat'] .dt-btn--danger {
   border-width: 1px !important;
   box-shadow: none !important;
 }
 
-/* Soft — rounded corners + soft drop shadow. */
+/* Soft — rounded corners + soft drop shadow everywhere. */
 :root[data-box-style='soft'] {
   --surface-radius: 12px;
   --shadow-pixel: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 :root[data-box-style='soft'] .dt-chat-msg,
 :root[data-box-style='soft'] .dt-card,
-:root[data-box-style='soft'] .pixel-panel {
-  border-radius: var(--surface-radius);
+:root[data-box-style='soft'] .pixel-panel,
+:root[data-box-style='soft'] [style*='var(--shadow-pixel)'],
+:root[data-box-style='soft'] [style*='2px 2px 0px'],
+:root[data-box-style='soft'] .dt-btn,
+:root[data-box-style='soft'] .dt-btn--primary,
+:root[data-box-style='soft'] .dt-btn--danger {
+  border-radius: var(--surface-radius) !important;
   border-width: 1px !important;
-  box-shadow: var(--shadow-pixel);
+  box-shadow: var(--shadow-pixel) !important;
+}
+:root[data-box-style='soft'] button:not([data-no-skin]),
+:root[data-box-style='soft'] input,
+:root[data-box-style='soft'] select,
+:root[data-box-style='soft'] textarea {
+  border-radius: 8px !important;
 }
 
 /* Neon — accent-coloured glow border, dark filled body. */
@@ -367,9 +408,14 @@
 }
 :root[data-box-style='neon'] .dt-chat-msg,
 :root[data-box-style='neon'] .dt-card,
-:root[data-box-style='neon'] .pixel-panel {
+:root[data-box-style='neon'] .pixel-panel,
+:root[data-box-style='neon'] [style*='var(--shadow-pixel)'],
+:root[data-box-style='neon'] [style*='2px 2px 0px'],
+:root[data-box-style='neon'] .dt-btn,
+:root[data-box-style='neon'] .dt-btn--primary,
+:root[data-box-style='neon'] .dt-btn--danger {
   border-color: var(--color-accent) !important;
   border-width: 1px !important;
-  border-radius: var(--surface-radius);
-  box-shadow: var(--shadow-pixel);
+  border-radius: var(--surface-radius) !important;
+  box-shadow: var(--shadow-pixel) !important;
 }
