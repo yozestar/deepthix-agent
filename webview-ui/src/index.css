@@ -320,19 +320,21 @@
 
 /* Universal "surface" selector. Any element that uses our shadow var
  * — directly or via class — counts as a surface and inherits the
- * style override. Inline `boxShadow: 'var(--shadow-pixel)'` becomes
- * `style="box-shadow:var(--shadow-pixel)"` in the DOM, which the
- * substring matcher catches. Combined with the canonical surface
- * classes this covers ~every visible chrome element in the app
- * without per-component edits. */
+ * SHAPE override (radius, border-width, shadow). Background is only
+ * touched when the element uses var(--color-bg-dark) — accent-colored
+ * buttons (Send / + Session / Run now / user-msg bubble) keep their
+ * fill so the text inside stays readable. */
+
+/* Helper: match every "surface" (carries the canonical pixel shadow). */
+/* Helper: match every NEUTRAL surface (uses --color-bg-dark as background). */
 
 /* Glassmorphism — translucent backdrops + blur + soft borders. */
 :root[data-box-style='glass'] {
   --surface-radius: 14px;
   --surface-blur: 16px;
   --shadow-pixel: 0 6px 22px rgba(0, 0, 0, 0.32);
-  --color-border: rgba(255, 255, 255, 0.1);
 }
+/* Shape — applies to every surface, accent or neutral. */
 :root[data-box-style='glass'] .dt-chat-msg,
 :root[data-box-style='glass'] .dt-card,
 :root[data-box-style='glass'] .pixel-panel,
@@ -341,17 +343,20 @@
 :root[data-box-style='glass'] .dt-btn,
 :root[data-box-style='glass'] .dt-btn--primary,
 :root[data-box-style='glass'] .dt-btn--danger {
-  background: rgba(24, 24, 40, 0.55) !important;
-  -webkit-backdrop-filter: blur(var(--surface-blur));
-  backdrop-filter: blur(var(--surface-blur));
   border-width: 1px !important;
   border-radius: var(--surface-radius) !important;
   box-shadow: var(--shadow-pixel) !important;
 }
-/* Sidebar / toolbar / other inline-styled containers reach the
- * surface look via the substring matcher — also normalize button
- * and input chrome so the whole interface lines up. */
-:root[data-box-style='glass'] button:not([data-no-skin]),
+/* Background + blur — only on neutral surfaces. Match the inline
+ * `background:` (with or without space) so we don't catch accent
+ * buttons that merely set `color: var(--color-bg-dark)`. */
+:root[data-box-style='glass'] [style*='background:var(--color-bg-dark)'],
+:root[data-box-style='glass'] [style*='background: var(--color-bg-dark)'] {
+  background: rgba(24, 24, 40, 0.55) !important;
+  -webkit-backdrop-filter: blur(var(--surface-blur));
+  backdrop-filter: blur(var(--surface-blur));
+}
+/* Plain inputs / textareas / selects look weird without the rounding. */
 :root[data-box-style='glass'] input,
 :root[data-box-style='glass'] select,
 :root[data-box-style='glass'] textarea {
@@ -359,8 +364,7 @@
   border-width: 1px !important;
 }
 
-/* Flat — no shadows, hairline border, square corners. Aggressive
- * sweep: kill every shadow inline-styled or class-based. */
+/* Flat — no shadows, hairline border, square corners. */
 :root[data-box-style='flat'] {
   --surface-radius: 0px;
   --shadow-pixel: none;
@@ -394,28 +398,28 @@
   border-width: 1px !important;
   box-shadow: var(--shadow-pixel) !important;
 }
-:root[data-box-style='soft'] button:not([data-no-skin]),
 :root[data-box-style='soft'] input,
 :root[data-box-style='soft'] select,
 :root[data-box-style='soft'] textarea {
   border-radius: 8px !important;
 }
 
-/* Neon — accent-coloured glow border, dark filled body. */
+/* Neon — accent-coloured glow border on dark surfaces. Only neutral
+ * surfaces get the glow; accent-colored buttons stay solid so they
+ * don't look like aliens against the rest of the chrome. */
 :root[data-box-style='neon'] {
   --surface-radius: 6px;
-  --shadow-pixel: 0 0 0 1px var(--color-accent), 0 0 12px rgba(255, 60, 140, 0.45);
 }
 :root[data-box-style='neon'] .dt-chat-msg,
 :root[data-box-style='neon'] .dt-card,
 :root[data-box-style='neon'] .pixel-panel,
 :root[data-box-style='neon'] [style*='var(--shadow-pixel)'],
-:root[data-box-style='neon'] [style*='2px 2px 0px'],
-:root[data-box-style='neon'] .dt-btn,
-:root[data-box-style='neon'] .dt-btn--primary,
-:root[data-box-style='neon'] .dt-btn--danger {
-  border-color: var(--color-accent) !important;
+:root[data-box-style='neon'] [style*='2px 2px 0px'] {
   border-width: 1px !important;
   border-radius: var(--surface-radius) !important;
-  box-shadow: var(--shadow-pixel) !important;
+}
+:root[data-box-style='neon'] [style*='background:var(--color-bg-dark)'],
+:root[data-box-style='neon'] [style*='background: var(--color-bg-dark)'] {
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 1px var(--color-accent), 0 0 12px rgba(255, 60, 140, 0.4) !important;
 }
