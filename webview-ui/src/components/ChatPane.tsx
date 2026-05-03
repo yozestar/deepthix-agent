@@ -1382,7 +1382,10 @@ export function ChatPane({
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        background: 'var(--color-bg)',
+        // Distinct background for the focus zone — slight uplift over
+        // --color-bg so the conversation reads as a stage separate
+        // from the surrounding chrome (sidebar, top tabs, header).
+        background: 'var(--color-bg-session)',
         fontFamily: 'var(--font-pixel)',
         color: 'var(--color-text)',
         // position: relative anchors the ModelPicker overlay's absolute

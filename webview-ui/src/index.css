@@ -13,6 +13,12 @@
   --color-bg: #1e1e2e;
   --color-bg-dark: #181828;
   --color-bg-thumb: #2a2a3a;
+  /* Distinct background for the active chat session pane — pulled
+   * slightly out of --color-bg so the focus zone reads as a "stage"
+   * separate from the surrounding chrome (sidebar / top tabs use
+   * --color-bg-dark; main content uses --color-bg; this one for the
+   * active conversation surface). Each preset theme overrides. */
+  --color-bg-session: #252539;
   --color-border: #4a4a6a;
   --color-accent: #6030ff;
   --color-accent-bright: #746fff;

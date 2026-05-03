@@ -16,6 +16,11 @@ export const THEMES: Theme[] = [
     colors: {
       'color-bg': '#1e1e2e',
       'color-bg-dark': '#181828',
+      // Slight uplift over --color-bg used as the chat-session "stage"
+      // background so the focus zone visually pops out of the chrome
+      // (sidebar / top tabs / header all sit on --color-bg-dark; main
+      // content uses --color-bg; the active chat pane uses this).
+      'color-bg-session': '#252539',
       'color-bg-thumb': '#2a2a3a',
       'color-border': '#4a4a6a',
       'color-accent': '#6030ff',
@@ -41,6 +46,7 @@ export const THEMES: Theme[] = [
     colors: {
       'color-bg': '#282a36',
       'color-bg-dark': '#1e1f29',
+      'color-bg-session': '#32344a',
       'color-bg-thumb': '#3a3c4a',
       'color-border': '#6272a4',
       'color-accent': '#bd93f9',
@@ -63,6 +69,7 @@ export const THEMES: Theme[] = [
     colors: {
       'color-bg': '#2e3440',
       'color-bg-dark': '#242933',
+      'color-bg-session': '#383f4f',
       'color-bg-thumb': '#3b4252',
       'color-border': '#4c566a',
       'color-accent': '#88c0d0',
@@ -85,6 +92,7 @@ export const THEMES: Theme[] = [
     colors: {
       'color-bg': '#1a1b26',
       'color-bg-dark': '#16161e',
+      'color-bg-session': '#20212e',
       'color-bg-thumb': '#24283b',
       'color-border': '#414868',
       'color-accent': '#7aa2f7',
@@ -107,6 +115,7 @@ export const THEMES: Theme[] = [
     colors: {
       'color-bg': '#1e1e2e',
       'color-bg-dark': '#181825',
+      'color-bg-session': '#25253a',
       'color-bg-thumb': '#313244',
       'color-border': '#45475a',
       'color-accent': '#cba6f7',
@@ -129,6 +138,7 @@ export const THEMES: Theme[] = [
     colors: {
       'color-bg': '#282828',
       'color-bg-dark': '#1d2021',
+      'color-bg-session': '#32302f',
       'color-bg-thumb': '#3c3836',
       'color-border': '#665c54',
       'color-accent': '#fabd2f',
@@ -151,6 +161,7 @@ export const THEMES: Theme[] = [
     colors: {
       'color-bg': '#272822',
       'color-bg-dark': '#1d1e19',
+      'color-bg-session': '#2f2f28',
       'color-bg-thumb': '#3e3d32',
       'color-border': '#75715e',
       'color-accent': '#f92672',
@@ -173,6 +184,7 @@ export const THEMES: Theme[] = [
     colors: {
       'color-bg': '#002b36',
       'color-bg-dark': '#001f27',
+      'color-bg-session': '#073642',
       'color-bg-thumb': '#073642',
       'color-border': '#586e75',
       'color-accent': '#268bd2',
