@@ -21,7 +21,18 @@
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { chatSendUserText, ptyWrite, stashDroppedFile } from '../tauri/commands';
+import {
+  chatSendUserWithAttachments,
+  ptyWrite,
+  stashDroppedFile,
+} from '../tauri/commands';
+
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+function isImagePath(p: string): boolean {
+  const dot = p.lastIndexOf('.');
+  if (dot < 0) return false;
+  return IMAGE_EXTENSIONS.has(p.slice(dot + 1).toLowerCase());
+}
 
 interface TermSummary {
   id: string;
@@ -143,24 +154,39 @@ export function TerminalDropTarget({
                   }),
                 ),
               );
-              const quoted = stable.map(quoteForShell).join(' ');
               console.info('[Deepthix][TerminalDropTarget] dropping into pty', {
                 target: target.id,
                 targetLabel: target.label,
+                kind: target.kind,
                 count: paths.length,
                 firstSrc: paths[0],
                 firstStable: stable[0],
+                images: stable.filter(isImagePath).length,
               });
-              // Reuse the voice recorder's char-by-char trick — Ink
-              // coalesces bursty multi-byte writes and drops them.
-              // 8ms gap, 1 unicode code point at a time. Trailing space
-              // (not \r) so the user can edit / add context before
-              // submitting.
               if (target.kind === 'claude') {
-                // Chat sessions: send the quoted paths as one user
-                // message. claude reads them as a normal prompt.
-                await chatSendUserText(target.id, quoted);
+                // Chat sessions run claude in --print stream-json mode,
+                // which does NOT auto-attach paste-paths the way the TUI
+                // did. Send via the attachments command — image paths
+                // get read + base64 + image content block, others get
+                // appended as plain references for claude to Read.
+                const summary =
+                  stable.length === 1
+                    ? isImagePath(stable[0])
+                      ? `📎 attached image: ${stable[0]}`
+                      : `📎 attached: ${stable[0]}`
+                    : `📎 attached ${stable.length} files`;
+                // Show the user a bubble immediately so the drop isn't
+                // silent while we wait for claude's response.
+                window.dispatchEvent(
+                  new CustomEvent('deepthix:chat:user-text', {
+                    detail: { termId: target.id, text: summary },
+                  }),
+                );
+                await chatSendUserWithAttachments(target.id, '', stable);
               } else {
+                // Old PTY path — claude TUI / shell terminals know what
+                // to do with a quoted path string.
+                const quoted = stable.map(quoteForShell).join(' ');
                 await injectSlowly(target.id, `${quoted} `);
               }
             } catch (e) {

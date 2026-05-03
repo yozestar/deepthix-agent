@@ -418,6 +418,114 @@ pub fn chat_send_user_text(
     Ok(())
 }
 
+/// Like `chat_send_user_text` but also attaches files. Image files are
+/// read, base64-encoded, and shipped as proper image content blocks so
+/// claude actually sees them (sending the bare path as text — what
+/// drag-drop used to do — only worked back when the SESSIONS view ran
+/// the `claude` TUI in a pty and the TUI did paste-path expansion).
+/// Non-image paths are appended to the text portion as plain references
+/// so claude can `Read` them.
+#[tauri::command]
+pub fn chat_send_user_with_attachments(
+    state: State<'_, ChatManager>,
+    term_id: String,
+    text: String,
+    paths: Vec<String>,
+) -> Result<(), String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+
+    fn media_type_for(path: &str) -> Option<&'static str> {
+        let ext = std::path::Path::new(path)
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        match ext.as_str() {
+            "png" => Some("image/png"),
+            "jpg" | "jpeg" => Some("image/jpeg"),
+            "gif" => Some("image/gif"),
+            "webp" => Some("image/webp"),
+            _ => None,
+        }
+    }
+
+    let mut blocks: Vec<serde_json::Value> = Vec::new();
+    let mut text_parts: Vec<String> = Vec::new();
+    if !text.is_empty() {
+        text_parts.push(text.clone());
+    }
+
+    let mut image_count = 0usize;
+    let mut other_count = 0usize;
+    for path in &paths {
+        if let Some(media_type) = media_type_for(path) {
+            let bytes = std::fs::read(path).map_err(|e| format!("read {path}: {e}"))?;
+            let b64 = STANDARD.encode(&bytes);
+            blocks.push(serde_json::json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": b64,
+                }
+            }));
+            image_count += 1;
+        } else {
+            // Non-image: keep the path in the text portion so claude
+            // can decide to Read it.
+            text_parts.push(path.clone());
+            other_count += 1;
+        }
+    }
+
+    let combined_text = text_parts.join("\n");
+    if !combined_text.is_empty() {
+        // Put text FIRST so claude sees the prompt, then the images.
+        blocks.insert(
+            0,
+            serde_json::json!({
+                "type": "text",
+                "text": combined_text,
+            }),
+        );
+    }
+
+    if blocks.is_empty() {
+        return Err("nothing to send (empty text + no attachments)".to_string());
+    }
+
+    let json = serde_json::json!({
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": blocks,
+        }
+    });
+    let mut line = serde_json::to_string(&json).map_err(|e| format!("serialize: {e}"))?;
+    line.push('\n');
+
+    tracing::info!(
+        target: "deepthix::chat",
+        %term_id,
+        text_chars = combined_text.chars().count(),
+        image_count,
+        other_count,
+        line_bytes = line.len(),
+        "chat_send_user_with_attachments",
+    );
+
+    let map = state.inner.lock().unwrap();
+    let entry = map
+        .get(&term_id)
+        .ok_or_else(|| format!("no chat session {term_id}"))?;
+    let mut writer = entry.stdin.lock().unwrap();
+    writer
+        .write_all(line.as_bytes())
+        .map_err(|e| format!("write stdin: {e}"))?;
+    writer.flush().map_err(|e| format!("flush stdin: {e}"))?;
+    Ok(())
+}
+
 /// Send SIGINT to the underlying claude process so it stops the
 /// current turn without losing the conversation. Mirrors the Ctrl+C
 /// the user would press in a TTY. The child usually exits — our

@@ -437,6 +437,21 @@ export async function chatSendUserText(termId: string, text: string): Promise<vo
   return await invoke<void>('chat_send_user_text', { termId, text });
 }
 
+/**
+ * Like chatSendUserText but ALSO attaches files. Image extensions get
+ * read + base64-encoded server-side and sent as proper image content
+ * blocks. Non-image paths are appended to the text portion as plain
+ * references so claude can choose to Read them.
+ */
+export async function chatSendUserWithAttachments(
+  termId: string,
+  text: string,
+  paths: string[],
+): Promise<void> {
+  log('chat_send_user_with_attachments', { termId, chars: text.length, paths: paths.length });
+  return await invoke<void>('chat_send_user_with_attachments', { termId, text, paths });
+}
+
 export async function chatKill(termId: string): Promise<void> {
   log('chat_kill', { termId });
   return await invoke<void>('chat_kill', { termId });
