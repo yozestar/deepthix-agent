@@ -6,8 +6,8 @@
 
 import { useMemo } from 'react';
 
-import type { ProjectInfo } from '../tauri/commands';
 import type { TerminalEntry } from '../hooks/useTerminals';
+import type { Project } from '../tauri/types';
 import { CoachPane } from './CoachPane';
 
 interface Props {
@@ -16,7 +16,7 @@ interface Props {
   allTerminals: TerminalEntry[];
   /** Project list — used to resolve project name + cwd from each
    *  session's projectId. */
-  projects: ProjectInfo[];
+  projects: Project[];
 }
 
 export function SessionsTopArea({
