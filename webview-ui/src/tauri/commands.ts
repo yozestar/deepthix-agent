@@ -527,6 +527,19 @@ export async function writeProjectCoachState(
   return await invoke<void>('write_project_coach_state', { projectId, state });
 }
 
+/** Read the persisted coach message log (raw JSON string, "" if file
+ *  doesn't exist yet). The shape is whatever the FE serializes. */
+export async function readProjectCoachMessages(projectId: string): Promise<string> {
+  return await invoke<string>('read_project_coach_messages', { projectId });
+}
+
+export async function writeProjectCoachMessages(
+  projectId: string,
+  body: string,
+): Promise<void> {
+  return await invoke<void>('write_project_coach_messages', { projectId, body });
+}
+
 // ─── Schedules ──────────────────────────────────────────────────────────
 
 export type Cadence =

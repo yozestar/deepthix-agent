@@ -17,31 +17,51 @@ import remarkGfm from 'remark-gfm';
 
 import {
   appendToClaudeMd,
+  type Cadence,
   chatInterrupt,
   chatKill,
   chatSendUserText,
   chatSetSessionId,
   chatSpawn,
   type CoachState,
+  createSchedule,
+  readProjectCoachMessages,
   readProjectCoachState,
   readSessionExcerpt,
+  writeProjectCoachMessages,
   writeProjectCoachState,
 } from '../tauri/commands';
 import { onChatEvent, onChatExit } from '../tauri/events';
 
 const COACH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 const EXCERPT_TURNS_PER_SESSION = 10;
-const COACH_PROMPT_PREFIX = `You are a coaching agent watching multiple claude sessions in a project. Your output is rendered as discrete proposal cards with Accept/Reject buttons — NOT as free prose.
+const COACH_PROMPT_PREFIX = `You are a coaching agent watching multiple claude sessions in a project. Your job is two-fold:
 
-For each issue you spot, output ONE block in this EXACT format (XML-like, parser-friendly):
+(A) PROPOSALS — emit cards the user can Accept/Reject in the UI. Two kinds:
+
+1. <proposal> — a rule worth remembering for future sessions. Write the memory text as a directive ("When editing X, always Y because Z.").
 
 <proposal>
 <title>One short sentence — what to change</title>
-<why>One sentence — why it would help (productivity, cost, correctness, clarity)</why>
-<memory>If accepted, this exact text will be appended to the project's CLAUDE.md so the main sessions inherit the rule. Write it as a directive (e.g. "When editing X, always Y because Z.") Skip this block if the suggestion isn't a memory-worthy rule.</memory>
+<why>One sentence — productivity / cost / correctness / clarity / performance</why>
+<memory>Exact text appended to CLAUDE.md when accepted. Skip the block if it isn't memory-worthy.</memory>
 </proposal>
 
-Aim for 1–4 proposals. Skip the small stuff. No preamble or postamble — only the <proposal> blocks.
+2. <schedule> — a recurring or one-shot job. Accepting creates a Deepthix schedule against the first claude session in the project; the prompt you write is what the schedule will fire each tick.
+
+<schedule>
+<title>Short name — what the schedule does</title>
+<why>One sentence — why this should run on a cadence</why>
+<prompt>Exact prompt the scheduled run will send to claude. Self-contained — the session must be able to act on it with no extra context.</prompt>
+<every_minutes>Integer minutes between runs. 60=hourly, 1440=daily, 10080=weekly. Omit for one-shot (then include <at_iso> with an ISO-8601 datetime).</every_minutes>
+</schedule>
+
+(B) DIRECT ACTIONS — you also have access to your tools (Write, Read, Bash, Grep, etc.). Use them WITHOUT asking when:
+- You see a project-wide insight worth pinning to the dashboard. The path is in the env var $DEEPTHIX_DASHBOARD_PATH (a single dashboard.html for the project, rendered in the OVERVIEW tab). Use Write with semantic, scannable HTML — keep it under ~15KB, no external assets. Last writer wins; rewrite the whole file so partial updates can't corrupt earlier sections.
+
+Watch for performance signals (high token usage, slow turns, repeated dead-ends, inefficient tool sequences) alongside the usual productivity / correctness / cost signals.
+
+Output rules: only <proposal>/<schedule> blocks for the cards (no preamble or postamble); tool calls happen as normal. Aim for 1–5 cards total — skip the small stuff.
 
 Recent activity follows.
 
@@ -111,7 +131,10 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
   }, [cwd]);
   const streamingMsgIdRef = useRef<string | null>(null);
 
-  // Load persisted state on project change.
+  // Load persisted state + message log on project change. Without
+  // message persistence the user lost every proposal on reload —
+  // the pane sat at the empty "Coach is watching" placeholder even
+  // after dozens of analyses.
   useEffect(() => {
     let cancelled = false;
     void readProjectCoachState(projectId)
@@ -120,10 +143,45 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
         setState(s);
       })
       .catch((e) => console.warn('[Deepthix][CoachPane] read state failed', e));
+    void readProjectCoachMessages(projectId)
+      .then((body) => {
+        if (cancelled || !body) return;
+        try {
+          const parsed = JSON.parse(body) as CoachMessage[];
+          if (Array.isArray(parsed)) {
+            console.debug('[Deepthix][CoachPane] loaded persisted messages', {
+              count: parsed.length,
+            });
+            setMessages(parsed);
+          }
+        } catch (e) {
+          console.warn('[Deepthix][CoachPane] message log parse failed', e);
+        }
+      })
+      .catch((e) => console.warn('[Deepthix][CoachPane] read messages failed', e));
     return () => {
       cancelled = true;
     };
   }, [projectId]);
+
+  // Persist messages whenever they change (debounced — bursty deltas
+  // during streaming would otherwise hammer the disk). Skip the empty
+  // initial render so we don't overwrite the persisted log with [] on
+  // mount before the read above has populated state.
+  const messagesPersistInitDoneRef = useRef(false);
+  useEffect(() => {
+    // First render with messages === [] (initial useState default) is
+    // common — wait until either we've loaded existing messages OR
+    // genuinely added a message.
+    if (!messagesPersistInitDoneRef.current && messages.length === 0) return;
+    messagesPersistInitDoneRef.current = true;
+    const id = setTimeout(() => {
+      void writeProjectCoachMessages(projectId, JSON.stringify(messages)).catch((e) =>
+        console.warn('[Deepthix][CoachPane] write messages failed', e),
+      );
+    }, 500);
+    return () => clearTimeout(id);
+  }, [projectId, messages]);
 
   /** Persist state delta + update local. */
   const updateState = useCallback(
@@ -571,7 +629,15 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
           messages
             .slice()
             .reverse()
-            .map((m) => <CoachBubble key={m.uid} m={m} cwd={cwd} />)
+            .map((m) => (
+              <CoachBubble
+                key={m.uid}
+                m={m}
+                cwd={cwd}
+                projectId={projectId}
+                proxySessionId={sessions[0]?.sessionId ?? null}
+              />
+            ))
         )}
       </div>
     </div>
@@ -784,14 +850,48 @@ function parseProposals(text: string): Proposal[] {
   return out;
 }
 
+interface ScheduleProposal {
+  title: string;
+  why: string;
+  prompt: string;
+  everyMinutes: number | null;
+  atIso: string | null;
+}
+function parseSchedules(text: string): ScheduleProposal[] {
+  const out: ScheduleProposal[] = [];
+  const blockRe = /<schedule>([\s\S]*?)<\/schedule>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = blockRe.exec(text)) !== null) {
+    const inner = m[1];
+    const title = (inner.match(/<title>([\s\S]*?)<\/title>/i)?.[1] ?? '').trim();
+    const why = (inner.match(/<why>([\s\S]*?)<\/why>/i)?.[1] ?? '').trim();
+    const prompt = (inner.match(/<prompt>([\s\S]*?)<\/prompt>/i)?.[1] ?? '').trim();
+    const minutesRaw = (inner.match(/<every_minutes>([\s\S]*?)<\/every_minutes>/i)?.[1] ?? '').trim();
+    const atIso = (inner.match(/<at_iso>([\s\S]*?)<\/at_iso>/i)?.[1] ?? '').trim();
+    const everyMinutes = minutesRaw ? Number.parseInt(minutesRaw, 10) : NaN;
+    out.push({
+      title,
+      why,
+      prompt,
+      everyMinutes: Number.isFinite(everyMinutes) && everyMinutes > 0 ? everyMinutes : null,
+      atIso: atIso || null,
+    });
+  }
+  return out;
+}
+
 type ProposalDecision = 'pending' | 'accepted' | 'dismissed';
 
 function CoachBubble({
   m,
   cwd,
+  projectId,
+  proxySessionId,
 }: {
   m: CoachMessage;
   cwd: string;
+  projectId: string;
+  proxySessionId: string | null;
 }): React.JSX.Element {
   if (m.role === 'system') {
     return (
@@ -829,10 +929,11 @@ function CoachBubble({
   }
 
   const proposals = parseProposals(m.text);
+  const schedules = parseSchedules(m.text);
 
-  // No structured proposals → coach went off-format. Render as
-  // markdown so we never lose information.
-  if (proposals.length === 0) {
+  // No structured cards → coach went off-format. Render as markdown
+  // so we never lose information.
+  if (proposals.length === 0 && schedules.length === 0) {
     return (
       <div
         className="dt-chat-msg"
@@ -861,6 +962,7 @@ function CoachBubble({
     );
   }
 
+  const cardCount = proposals.length + schedules.length;
   return (
     <div className="dt-chat-msg" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div
@@ -871,11 +973,19 @@ function CoachBubble({
           padding: '0 4px',
         }}
       >
-        coach · {new Date(m.ts).toLocaleTimeString()} · {proposals.length} proposal
-        {proposals.length === 1 ? '' : 's'}
+        coach · {new Date(m.ts).toLocaleTimeString()} · {cardCount} card
+        {cardCount === 1 ? '' : 's'}
       </div>
       {proposals.map((p, idx) => (
-        <ProposalCard key={`${m.uid}-${idx}`} proposal={p} cwd={cwd} />
+        <ProposalCard key={`${m.uid}-p-${idx}`} proposal={p} cwd={cwd} />
+      ))}
+      {schedules.map((s, idx) => (
+        <ScheduleCard
+          key={`${m.uid}-s-${idx}`}
+          schedule={s}
+          projectId={projectId}
+          proxySessionId={proxySessionId}
+        />
       ))}
     </div>
   );
@@ -988,6 +1098,180 @@ function ProposalCard({
             ? proposal.memory
               ? '✓ added to CLAUDE.md'
               : '✓ accepted'
+            : '✗ dismissed'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScheduleCard({
+  schedule,
+  projectId,
+  proxySessionId,
+}: {
+  schedule: ScheduleProposal;
+  projectId: string;
+  proxySessionId: string | null;
+}): React.JSX.Element {
+  const [decision, setDecision] = useState<ProposalDecision>('pending');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const cadenceLabel = useMemo(() => {
+    if (schedule.everyMinutes != null) {
+      const m = schedule.everyMinutes;
+      if (m % 1440 === 0) return `every ${m / 1440}d`;
+      if (m % 60 === 0) return `every ${m / 60}h`;
+      return `every ${m}m`;
+    }
+    if (schedule.atIso) {
+      const d = new Date(schedule.atIso);
+      return Number.isFinite(d.getTime())
+        ? `once at ${d.toLocaleString()}`
+        : `once at ${schedule.atIso}`;
+    }
+    return 'cadence missing';
+  }, [schedule]);
+
+  const onAccept = useCallback(async (): Promise<void> => {
+    if (busy) return;
+    if (!proxySessionId) {
+      setErr('no claude session in this project to attach the schedule to');
+      return;
+    }
+    if (!schedule.prompt) {
+      setErr('schedule prompt is empty — coach must include <prompt>');
+      return;
+    }
+    let cadence: Cadence | null = null;
+    if (schedule.everyMinutes != null) {
+      cadence = { kind: 'interval', every_seconds: schedule.everyMinutes * 60 };
+    } else if (schedule.atIso) {
+      const ms = Date.parse(schedule.atIso);
+      if (!Number.isFinite(ms)) {
+        setErr(`invalid at_iso: ${schedule.atIso}`);
+        return;
+      }
+      cadence = { kind: 'once', at_ms: ms };
+    } else {
+      setErr('schedule needs <every_minutes> or <at_iso>');
+      return;
+    }
+    setBusy(true);
+    try {
+      await createSchedule({
+        name: schedule.title || 'coach-suggested schedule',
+        target_session_id: proxySessionId,
+        target_project_id: projectId,
+        prompt: schedule.prompt,
+        cadence,
+      });
+      console.info('[Deepthix][CoachPane] schedule created', {
+        title: schedule.title,
+        cadence,
+      });
+      setDecision('accepted');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Deepthix][CoachPane] createSchedule failed', e);
+      setErr(msg);
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, proxySessionId, projectId, schedule]);
+
+  const onDismiss = useCallback((): void => setDecision('dismissed'), []);
+
+  const accent =
+    decision === 'accepted'
+      ? 'var(--color-success, #34d399)'
+      : decision === 'dismissed'
+        ? 'var(--color-border)'
+        : 'var(--color-accent-bright, var(--color-accent))';
+
+  return (
+    <div
+      style={{
+        alignSelf: 'flex-start',
+        maxWidth: '92%',
+        background: 'var(--color-bg-dark)',
+        color: 'var(--color-text)',
+        border: '2px solid var(--color-border)',
+        borderLeft: `4px solid ${accent}`,
+        boxShadow: 'var(--shadow-pixel)',
+        padding: '10px 12px',
+        fontSize: 13,
+        opacity: decision === 'dismissed' ? 0.45 : 1,
+        textDecoration: decision === 'dismissed' ? 'line-through' : 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 'bold', lineHeight: 1.3 }}>
+          {schedule.title || '(no title)'}
+        </span>
+        <span
+          style={{
+            fontSize: 10,
+            padding: '1px 6px',
+            background: 'var(--color-bg)',
+            border: '1px solid var(--color-border)',
+            opacity: 0.85,
+          }}
+        >
+          ⏱ {cadenceLabel}
+        </span>
+      </div>
+      {schedule.why && (
+        <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>{schedule.why}</div>
+      )}
+      {schedule.prompt && (
+        <pre
+          style={{
+            margin: 0,
+            padding: '6px 8px',
+            background: 'var(--color-bg)',
+            border: '1px solid var(--color-border)',
+            fontFamily: 'Menlo, Consolas, monospace',
+            fontSize: 11,
+            lineHeight: 1.4,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            maxHeight: 140,
+            overflow: 'auto',
+          }}
+          title="Prompt the schedule will fire on each tick"
+        >
+          {schedule.prompt}
+        </pre>
+      )}
+      {err && <div style={{ fontSize: 11, color: 'var(--color-danger)' }}>error: {err}</div>}
+      {decision === 'pending' ? (
+        <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+          <button
+            type="button"
+            onClick={() => void onAccept()}
+            disabled={busy || !proxySessionId}
+            title={
+              proxySessionId
+                ? 'Create the schedule against this project'
+                : 'Open a claude session first'
+            }
+            style={cardBtn(true, busy || !proxySessionId)}
+          >
+            {busy ? '…' : '✓ Yes — create schedule'}
+          </button>
+          <button type="button" onClick={onDismiss} style={cardBtn(false, false)}>
+            ✗ No
+          </button>
+        </div>
+      ) : (
+        <div style={{ fontSize: 10, opacity: 0.7 }}>
+          {decision === 'accepted'
+            ? '⏱ schedule created — manage it in the SCHEDULE tab'
             : '✗ dismissed'}
         </div>
       )}

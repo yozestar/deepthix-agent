@@ -876,6 +876,35 @@ pub fn write_project_coach_state(
     Ok(())
 }
 
+fn coach_messages_path(project_id: &str) -> std::io::Result<PathBuf> {
+    Ok(crate::storage::project_dir(project_id)?.join("coach-messages.json"))
+}
+
+#[tauri::command]
+pub fn read_project_coach_messages(project_id: String) -> Result<String, String> {
+    let path = coach_messages_path(&project_id).map_err(|e| e.to_string())?;
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn write_project_coach_messages(
+    project_id: String,
+    body: String,
+) -> Result<(), String> {
+    let path = coach_messages_path(&project_id).map_err(|e| e.to_string())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, body.as_bytes()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Append a coach-suggested note to the project's `CLAUDE.md`. Used
 /// by the Coach pane's "Add to memory" button so insights persist
 /// into the main session's context on next launch.
