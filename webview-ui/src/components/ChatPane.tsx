@@ -752,6 +752,16 @@ export function ChatPane({
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    // Hidden via display:none on parent (e.g., user switched to OVERVIEW
+    // and the SESSIONS layout is mounted but hidden). scrollHeight /
+    // clientHeight read 0 in that state, so any `scrollTop = scrollHeight`
+    // here silently resets to 0 — and when the user comes back, they
+    // land at the top of the conversation. The ResizeObserver below
+    // re-pins the scroll when the container becomes visible again.
+    if (el.clientHeight === 0) {
+      console.debug('[Deepthix][ChatPane] skip auto-scroll — pane hidden');
+      return;
+    }
     if (!initialScrollDoneRef.current && messages.length > 0) {
       el.scrollTop = el.scrollHeight;
       initialScrollDoneRef.current = true;
@@ -768,6 +778,30 @@ export function ChatPane({
       el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
+
+  // Re-pin to bottom when the pane becomes visible again. Triggered
+  // by ResizeObserver — clientHeight goes from 0 (display:none on a
+  // parent) back to a real height when the user navigates back to
+  // SESSIONS. We only re-pin if the user was following (isAtBottomRef);
+  // if they were reading history before switching tabs, we leave them
+  // where they were.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let lastHeight = el.clientHeight;
+    const obs = new ResizeObserver(() => {
+      const h = el.clientHeight;
+      if (lastHeight === 0 && h > 0 && isAtBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
+        console.debug('[Deepthix][ChatPane] re-pinned to bottom on visibility', {
+          scrollHeight: el.scrollHeight,
+        });
+      }
+      lastHeight = h;
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   // Voice recorder bridge — when the user uses ⌘M / the mic button,
   // VoiceRecorder ships the transcript through chat_send_user_text
