@@ -19,6 +19,7 @@ import remarkGfm from 'remark-gfm';
 
 import {
   chatInterrupt,
+  chatInterruptAndResume,
   chatKill,
   chatLoadHistory,
   chatSendUserText,
@@ -727,6 +728,26 @@ export function ChatPane({
       .catch((e) => console.error('[Deepthix][ChatPane] subscribe chat_event', e));
     void onChatExit((evt) => {
       if (evt.term_id !== termIdRef.current) return;
+      // Was this exit triggered by Stop → interrupt-and-resume?
+      // If yes, the Rust side already spawned a fresh claude under
+      // the same term_id; we only need to surface "turn stopped" and
+      // clear busy. If no, fall through to the regular exit notice.
+      if (interruptedRef.current) {
+        interruptedRef.current = false;
+        console.info('[Deepthix][ChatPane] exit was intentional (interrupt+resume)');
+        setMessages((prev) => [
+          ...prev,
+          {
+            kind: 'system',
+            uid: uid(),
+            ts: Date.now(),
+            subtype: 'exit',
+            summary: '⏹ turn stopped — session resumed',
+          },
+        ]);
+        setBusy(false);
+        return;
+      }
       setMessages((prev) => [
         ...prev,
         {
@@ -771,6 +792,11 @@ export function ChatPane({
   const initialScrollDoneRef = useRef(false);
   const forceScrollNextRef = useRef(false);
   const isAtBottomRef = useRef(true);
+  // Set true by the Stop button just before it kills + respawns the
+  // session; the next chat_exit handler reads it to know it should
+  // suppress the "claude exited" system bubble (the exit was on
+  // purpose and a fresh claude is already on the way).
+  const interruptedRef = useRef(false);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -1424,9 +1450,17 @@ export function ChatPane({
         busy={busy}
         onInterrupt={() => {
           if (!termId) return;
-          void chatInterrupt(termId).catch((e) =>
-            console.warn('[Deepthix][ChatPane] interrupt failed', e),
-          );
+          // Mark the exit as intentional BEFORE shipping the kill so
+          // the chat_exit handler that fires shortly after suppresses
+          // the misleading "claude exited" bubble. Rust respawns a
+          // fresh claude under the same term_id with --resume.
+          interruptedRef.current = true;
+          void chatInterruptAndResume(termId, currentModel).catch((e) => {
+            // Resume failed → undo the suppression flag so the user
+            // sees the real exit notice instead of silent death.
+            interruptedRef.current = false;
+            console.warn('[Deepthix][ChatPane] interrupt+resume failed', e);
+          });
         }}
       />
     </div>

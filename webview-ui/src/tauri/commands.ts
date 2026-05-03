@@ -470,6 +470,18 @@ export async function chatInterrupt(termId: string): Promise<void> {
   return await invoke<void>('chat_interrupt', { termId });
 }
 
+/** Stop the current turn AND immediately respawn under the same term_id
+ *  with --resume so the user can keep talking to the same conversation
+ *  without recreating the session. Pass the current model so the
+ *  respawn doesn't downgrade. */
+export async function chatInterruptAndResume(
+  termId: string,
+  model: string | null,
+): Promise<void> {
+  log('chat_interrupt_and_resume', { termId, model });
+  return await invoke<void>('chat_interrupt_and_resume', { termId, model });
+}
+
 /** Soft-restart a chat session under a different model. Same term_id,
  *  same session_id (--resume), new --model + optional --effort. The
  *  webview's existing event subscription keeps working.

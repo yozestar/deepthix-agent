@@ -554,6 +554,135 @@ pub fn chat_interrupt(state: State<'_, ChatManager>, term_id: String) -> Result<
     Ok(())
 }
 
+/// Stop the current turn AND immediately respawn under the same term_id
+/// with `--resume <session_id>` so the conversation continues without
+/// the user having to recreate the session.
+///
+/// In `--print --input-format stream-json` mode claude has no concept of
+/// "abort the current turn but keep the readline alive" — SIGINT just
+/// makes the process exit. So when the user clicks Stop they don't want
+/// the session killed, just the active work; this command restores the
+/// "stop turn" semantic by re-spawning right after the kill.
+#[tauri::command]
+pub fn chat_interrupt_and_resume(
+    app: AppHandle,
+    state: State<'_, ChatManager>,
+    term_id: String,
+    model: Option<String>,
+) -> Result<(), String> {
+    tracing::info!(
+        target: "deepthix::chat",
+        %term_id, ?model,
+        "chat_interrupt_and_resume",
+    );
+
+    // Snapshot what we need to respawn under the lock, then release.
+    let (cwd, session_id, skip_permissions, prev_effort) = {
+        let map = state.inner.lock().unwrap();
+        let entry = map
+            .get(&term_id)
+            .ok_or_else(|| format!("no chat session {term_id}"))?;
+        let sid = entry.session_id.clone().ok_or_else(|| {
+            "session has no UUID yet — can't safely interrupt+resume before init".to_string()
+        })?;
+        (
+            entry.cwd.clone(),
+            sid,
+            entry.skip_permissions,
+            entry.effort.clone(),
+        )
+    };
+
+    // SIGINT first to give claude a chance to flush partial state,
+    // then settle briefly + remove + hard-kill to be sure.
+    if let Some(entry) = state.inner.lock().unwrap().get(&term_id) {
+        let pid = entry.child.id();
+        let _ = Command::new("/bin/kill")
+            .arg("-INT")
+            .arg(pid.to_string())
+            .status();
+    }
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    if let Some(mut prev) = state.inner.lock().unwrap().remove(&term_id) {
+        let _ = prev.child.kill();
+    }
+
+    // Respawn — same skeleton as chat_switch_model but model is
+    // optional (preserve current; FE passes its currentModel).
+    let claude_bin = which_claude()?;
+    let mut cmd = Command::new(&claude_bin);
+    cmd.current_dir(&cwd)
+        .arg("--print")
+        .arg("--output-format")
+        .arg("stream-json")
+        .arg("--input-format")
+        .arg("stream-json")
+        .arg("--verbose")
+        .arg("--include-partial-messages")
+        .arg("--resume")
+        .arg(&session_id);
+    if let Some(m) = model.as_ref() {
+        cmd.arg("--model").arg(m);
+    }
+    if let Some(e) = prev_effort.as_ref() {
+        cmd.arg("--effort").arg(e);
+    }
+    if skip_permissions {
+        cmd.arg("--dangerously-skip-permissions");
+    }
+    let project_id = crate::state::project_id_for_path(&cwd);
+    if let Ok(home) = std::env::var("HOME") {
+        let dashboard_path = PathBuf::from(home)
+            .join(".deepthix")
+            .join("projects")
+            .join(&project_id)
+            .join("dashboard.html");
+        if let Some(parent) = dashboard_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        cmd.env(
+            "DEEPTHIX_DASHBOARD_PATH",
+            dashboard_path.to_string_lossy().to_string(),
+        );
+        cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
+    }
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("respawn after interrupt: {e}"))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "claude stdin missing".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "claude stdout missing".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "claude stderr missing".to_string())?;
+
+    spawn_reader(app.clone(), term_id.clone(), stdout, "stdout");
+    spawn_reader(app.clone(), term_id.clone(), stderr, "stderr");
+    spawn_exit_watcher(app.clone(), term_id.clone());
+
+    let stdin_writer: Box<dyn Write + Send> = Box::new(stdin);
+    let entry = ChatChild {
+        child,
+        stdin: Arc::new(Mutex::new(stdin_writer)),
+        session_id: Some(session_id),
+        cwd,
+        skip_permissions,
+        effort: prev_effort,
+    };
+    state.inner.lock().unwrap().insert(term_id, entry);
+    Ok(())
+}
+
 /// Soft-restart a chat session with a different model.
 ///
 /// The same `term_id` is reused so the webview's existing event
