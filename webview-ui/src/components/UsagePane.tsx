@@ -548,9 +548,9 @@ export function UsagePane(): React.JSX.Element {
               {limits.seven_day && (
                 <UsageBar label="Weekly" bucket={limits.seven_day} now={now} />
               )}
-              {limits.seven_day_sonnet && (
-                <UsageBar label="Sonnet wk" bucket={limits.seven_day_sonnet} now={now} />
-              )}
+              {/* Sonnet wk hidden — the API key the picker chose was
+                  reading 100% while claude.ai showed 1%; user asked to
+                  drop the row until the bucket-key mismatch is fixed. */}
               {limits.seven_day_opus && (
                 <UsageBar label="Opus wk" bucket={limits.seven_day_opus} now={now} />
               )}
