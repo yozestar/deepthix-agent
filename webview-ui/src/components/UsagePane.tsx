@@ -63,6 +63,60 @@ const POLL_MS = 5_000;
 const COUNTDOWN_TICK_MS = 30_000;
 const SNAPSHOT_STALE_MS = 5 * 60 * 1000; // 5 min → snapshot considered live
 const CLAUDE_USAGE_URL = 'https://claude.ai/settings/usage';
+// Persist the most recently observed limits + timestamp so the pane
+// can fall back to "last known" instead of going blank when both the
+// snapshot is stale AND the OAuth endpoint is rate-limited / down.
+// User explicitly asked for this — they'd rather see a 4h-old reading
+// than "limits unavailable" with nothing useful to act on.
+const LAST_LIMITS_STORAGE_KEY = 'deepthix.usage.lastLimits';
+
+interface CachedLimits {
+  ts: number;
+  source: 'snapshot' | 'oauth';
+  limits: {
+    five_hour?: RateLimitBucket;
+    seven_day?: RateLimitBucket;
+    seven_day_sonnet?: RateLimitBucket;
+    seven_day_opus?: RateLimitBucket;
+  };
+}
+
+function readCachedLimits(): CachedLimits | null {
+  try {
+    const raw = localStorage.getItem(LAST_LIMITS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedLimits;
+    if (!parsed || typeof parsed.ts !== 'number' || !parsed.limits) return null;
+    return parsed;
+  } catch (e) {
+    console.warn('[Deepthix][UsagePane] cached limits parse failed', e);
+    return null;
+  }
+}
+
+function writeCachedLimits(c: CachedLimits): void {
+  try {
+    localStorage.setItem(LAST_LIMITS_STORAGE_KEY, JSON.stringify(c));
+    console.debug('[Deepthix][UsagePane] cached limits written', { source: c.source, ts: c.ts });
+  } catch (e) {
+    console.warn('[Deepthix][UsagePane] cached limits write failed', e);
+  }
+}
+
+/** "2m ago" / "1h 14m ago" / "3d ago" — input is epoch ms (in the past). */
+function formatTimeAgo(tsMs: number, nowMs: number): string {
+  const ms = nowMs - tsMs;
+  if (ms < 60_000) return 'just now';
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const m = minutes % 60;
+    return m > 0 ? `${hours}h ${m}m ago` : `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 interface RateLimitBucket {
   used_percentage?: number;
@@ -215,12 +269,32 @@ export function UsagePane(): React.JSX.Element {
   // updated on every assistant turn). Fall back to the OAuth API
   // limits when the snapshot is stale (chat-mode sessions don't
   // emit statusLine because they run with --print, not the TUI).
-  const limits = snapshotFresh ? snapshot?.rate_limits : oauthLimitsToBuckets(oauthLimits);
-  const limitsSource: 'snapshot' | 'oauth' | 'none' = snapshotFresh
+  const liveLimits = snapshotFresh ? snapshot?.rate_limits : oauthLimitsToBuckets(oauthLimits);
+  const liveSource: 'snapshot' | 'oauth' | 'none' = snapshotFresh
     ? 'snapshot'
-    : limits
+    : liveLimits
       ? 'oauth'
       : 'none';
+
+  // Persist whatever live limits we just fetched, so a future "no
+  // data" render can fall back to them instead of showing nothing.
+  useEffect(() => {
+    if (liveSource === 'none' || !liveLimits) return;
+    writeCachedLimits({ ts: Date.now(), source: liveSource, limits: liveLimits });
+  }, [liveLimits, liveSource]);
+
+  // When live data is missing, surface the last cached reading so the
+  // user still sees their most recent percentages (and an "Xh ago"
+  // tag). Read once on mount + whenever the live source changes.
+  const [cachedLimits, setCachedLimits] = useState<CachedLimits | null>(() => readCachedLimits());
+  useEffect(() => {
+    if (liveSource !== 'none') return;
+    setCachedLimits(readCachedLimits());
+  }, [liveSource]);
+
+  const limits = liveLimits ?? cachedLimits?.limits;
+  const limitsSource: 'snapshot' | 'oauth' | 'cached' | 'none' =
+    liveSource !== 'none' ? liveSource : cachedLimits ? 'cached' : 'none';
   const totalCostUsd = snapshot?.cost?.total_cost_usd ?? 0;
   const ctxPct = snapshot?.context_window?.used_percentage ?? 0;
 
@@ -309,9 +383,22 @@ export function UsagePane(): React.JSX.Element {
               live from claude.ai/api/oauth/usage
             </div>
           )}
-          {limitsSource === 'none' && oauthLimits?.error && (
+          {limitsSource === 'cached' && cachedLimits && (
+            <div
+              style={{
+                fontSize: '9px',
+                opacity: 0.55,
+                lineHeight: 1.4,
+                color: 'var(--color-warning, #f59e0b)',
+              }}
+              title="Live limits endpoint is unavailable — these are the last values we observed"
+            >
+              last reading · {formatTimeAgo(cachedLimits.ts, now)} ({cachedLimits.source})
+            </div>
+          )}
+          {limitsSource === 'none' && (
             <div style={{ fontSize: '9px', opacity: 0.45, lineHeight: 1.4 }}>
-              limits unavailable — try in a few minutes
+              no readings yet — open a claude session to populate
             </div>
           )}
 
