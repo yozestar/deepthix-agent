@@ -569,45 +569,46 @@ export function UsagePane(): React.JSX.Element {
               live from claude.ai/api/oauth/usage
             </div>
           )}
-          {/* Debug toggle: shown whenever we have bucket data from
-              either live OAuth OR the cached fallback. Surfaces every
-              raw bucket key + value so mismatches (e.g. "Sonnet wk
-              shows 100% but claude.ai shows 1%") can be diagnosed by
-              the user without opening dev tools. */}
-          {(oauthLimits?.all_buckets || cachedLimits?.allBuckets) && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setDebugAllBuckets((v) => !v);
-                  // Also ship to console for easy copy/paste back to me.
-                  if (!debugAllBuckets) {
-                    const src = oauthLimits?.all_buckets ?? cachedLimits?.allBuckets ?? {};
-                    console.info(
-                      '[Deepthix][UsagePane] all buckets dump',
-                      Object.fromEntries(
-                        Object.entries(src).map(([k, v]) => [k, `${(v.utilization * 100).toFixed(1)}%`]),
-                      ),
-                    );
-                  }
-                }}
-                title="Show every bucket the API returned (for debugging mismatches)"
-                style={{
-                  background: 'transparent',
-                  color: 'inherit',
-                  border: '1px solid var(--color-border)',
-                  fontFamily: 'var(--font-pixel)',
-                  fontSize: '9px',
-                  padding: '1px 6px',
-                  cursor: 'pointer',
-                  opacity: 0.6,
-                }}
-              >
-                {debugAllBuckets ? '✗ debug' : 'debug buckets'}
-              </button>
-            </div>
-          )}
-          {debugAllBuckets && (oauthLimits?.all_buckets || cachedLimits?.allBuckets) && (
+          {/* Debug toggle: always rendered when the pane is open.
+              Forces a fresh OAuth fetch on click so the dump shows
+              current data even when the cached entry is stale (or was
+              written before all_buckets was cached). */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !debugAllBuckets;
+                setDebugAllBuckets(next);
+                if (next) {
+                  // Force a refresh so we don't show stale "no buckets"
+                  // when oauth has been down for a while.
+                  void refreshOauth();
+                  const src = oauthLimits?.all_buckets ?? cachedLimits?.allBuckets ?? {};
+                  console.info(
+                    '[Deepthix][UsagePane] all buckets dump',
+                    Object.fromEntries(
+                      Object.entries(src).map(([k, v]) => [k, `${(v.utilization * 100).toFixed(1)}%`]),
+                    ),
+                    { canonical: { five_hour: oauthLimits?.five_hour, seven_day: oauthLimits?.seven_day, seven_day_sonnet: oauthLimits?.seven_day_sonnet } },
+                  );
+                }
+              }}
+              title="Show every bucket the API returned (for debugging mismatches). Click again to refresh."
+              style={{
+                background: 'transparent',
+                color: 'inherit',
+                border: '1px solid var(--color-border)',
+                fontFamily: 'var(--font-pixel)',
+                fontSize: '9px',
+                padding: '1px 6px',
+                cursor: 'pointer',
+                opacity: 0.6,
+              }}
+            >
+              {debugAllBuckets ? '✗ debug' : 'debug buckets'}
+            </button>
+          </div>
+          {debugAllBuckets && (
             <div
               style={{
                 marginTop: 4,
@@ -619,22 +620,45 @@ export function UsagePane(): React.JSX.Element {
                 lineHeight: 1.4,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-all',
-                maxHeight: 240,
+                maxHeight: 280,
                 overflow: 'auto',
               }}
-              title="Every bucket the OAuth /usage endpoint returned, with raw key + utilization. Copy/paste this back if a value looks wrong."
+              title="Raw bucket data from the OAuth /usage endpoint. Copy/paste this back if a value looks wrong."
             >
               {(() => {
+                const lines: string[] = [];
+                const fmt = (b?: { utilization: number; resets_at: string }): string =>
+                  b ? `${(b.utilization * 100).toFixed(1)}% (resets ${b.resets_at || '?'})` : '—';
+                lines.push('# canonical (what the FE uses for the bars)');
+                if (oauthLimits) {
+                  lines.push(`five_hour:        ${fmt(oauthLimits.five_hour)}`);
+                  lines.push(`seven_day:        ${fmt(oauthLimits.seven_day)}`);
+                  lines.push(`seven_day_sonnet: ${fmt(oauthLimits.seven_day_sonnet)}`);
+                  if (oauthLimits.error) lines.push(`error: ${oauthLimits.error}`);
+                } else {
+                  lines.push('(no oauthLimits — call hasn\'t resolved yet)');
+                }
+                lines.push('');
                 const src = oauthLimits?.all_buckets ?? cachedLimits?.allBuckets ?? {};
-                const sourceTag = oauthLimits?.all_buckets ? '(live)' : '(cached)';
+                const sourceTag = oauthLimits?.all_buckets
+                  ? '(live)'
+                  : cachedLimits?.allBuckets
+                    ? '(cached)'
+                    : '(none)';
                 const entries = Object.entries(src).sort((a, b) =>
                   a[0].localeCompare(b[0]),
                 );
-                if (entries.length === 0) return 'no buckets';
-                return [
-                  `# all_buckets ${sourceTag}`,
-                  ...entries.map(([k, v]) => `${k}: ${(v.utilization * 100).toFixed(1)}%`),
-                ].join('\n');
+                lines.push(`# all_buckets ${sourceTag} — ${entries.length} keys`);
+                if (entries.length === 0) {
+                  lines.push('(empty — Rust harvest returned nothing,');
+                  lines.push(' or the cached entry was written before this');
+                  lines.push(' field existed. Wait ~10s for refreshOauth.)');
+                } else {
+                  for (const [k, v] of entries) {
+                    lines.push(`${k}: ${(v.utilization * 100).toFixed(1)}%`);
+                  }
+                }
+                return lines.join('\n');
               })()}
             </div>
           )}
