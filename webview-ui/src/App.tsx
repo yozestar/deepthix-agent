@@ -12,6 +12,7 @@ import { Sidebar } from './components/Sidebar';
 import { SkillsPane } from './components/SkillsPane';
 import { TerminalDropTarget } from './components/TerminalDropTarget';
 import { type Mode, TopTabs } from './components/TopTabs';
+import { VariablesPane } from './components/VariablesPane';
 import { VoiceRecorder } from './components/VoiceRecorder';
 import { Welcome } from './components/Welcome';
 import { WorkflowsPane } from './components/WorkflowsPane';
@@ -34,6 +35,7 @@ const VALID_MODES: ReadonlyArray<Mode> = [
   'skills',
   'schedule',
   'workflow',
+  'variables',
   'settings',
 ];
 
@@ -352,6 +354,11 @@ function App(): React.JSX.Element {
                 projects={projects}
                 onChangeMode={setMode}
               />
+            </ModeOverlay>
+          )}
+          {mode === 'variables' && (
+            <ModeOverlay>
+              <VariablesPane />
             </ModeOverlay>
           )}
         </div>

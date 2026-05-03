@@ -16,5 +16,6 @@ pub mod skills;
 pub mod terminals;
 pub mod usage;
 pub mod usage_snapshot;
+pub mod variables;
 pub mod voice;
 pub mod workflows;

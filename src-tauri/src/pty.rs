@@ -295,12 +295,19 @@ impl TerminalManager {
             cmd.env("DEEPTHIX_DASHBOARD_PATH", dashboard_path_str);
             cmd.env("DEEPTHIX_SESSION_ID", &session_id);
             cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
-            let workflows_path = std::path::PathBuf::from(home)
+            let workflows_path = std::path::PathBuf::from(home.clone())
                 .join(".deepthix")
                 .join("workflows.json");
             cmd.env(
                 "DEEPTHIX_WORKFLOWS_PATH",
                 workflows_path.to_string_lossy().into_owned(),
+            );
+            let variables_path = std::path::PathBuf::from(home)
+                .join(".deepthix")
+                .join("variables.json");
+            cmd.env(
+                "DEEPTHIX_VARIABLES_PATH",
+                variables_path.to_string_lossy().into_owned(),
             );
         }
 

@@ -141,6 +141,10 @@ pub fn run() {
             commands::workflows::delete_workflow,
             commands::workflows::list_workflow_runs,
             commands::workflows::append_workflow_run,
+            commands::variables::variables_path,
+            commands::variables::list_variables,
+            commands::variables::set_variable,
+            commands::variables::delete_variable,
         ])
         .setup(|app| {
             // Spawn the notifications watcher tied to the app handle so it

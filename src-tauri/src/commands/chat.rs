@@ -234,10 +234,17 @@ pub fn chat_spawn(
         // Workflow catalog — claude can Read/Edit/Write this JSON to
         // discover or define workflows the user can re-fire from the
         // WORKFLOW tab.
-        let workflows_path = PathBuf::from(home).join(".deepthix").join("workflows.json");
+        let workflows_path = PathBuf::from(home.clone()).join(".deepthix").join("workflows.json");
         cmd.env(
             "DEEPTHIX_WORKFLOWS_PATH",
             workflows_path.to_string_lossy().to_string(),
+        );
+        // Shared variables — small key/value scratchpad both the user
+        // (VARIABLES tab) and claude (Read/Write on the JSON) can use.
+        let variables_path = PathBuf::from(home).join(".deepthix").join("variables.json");
+        cmd.env(
+            "DEEPTHIX_VARIABLES_PATH",
+            variables_path.to_string_lossy().to_string(),
         );
     }
 
@@ -653,10 +660,15 @@ pub fn chat_interrupt_and_resume(
             dashboard_path.to_string_lossy().to_string(),
         );
         cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
-        let workflows_path = PathBuf::from(home).join(".deepthix").join("workflows.json");
+        let workflows_path = PathBuf::from(home.clone()).join(".deepthix").join("workflows.json");
         cmd.env(
             "DEEPTHIX_WORKFLOWS_PATH",
             workflows_path.to_string_lossy().to_string(),
+        );
+        let variables_path = PathBuf::from(home).join(".deepthix").join("variables.json");
+        cmd.env(
+            "DEEPTHIX_VARIABLES_PATH",
+            variables_path.to_string_lossy().to_string(),
         );
     }
     cmd.stdin(Stdio::piped())
@@ -787,10 +799,15 @@ pub fn chat_switch_model(
             dashboard_path.to_string_lossy().to_string(),
         );
         cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
-        let workflows_path = PathBuf::from(home).join(".deepthix").join("workflows.json");
+        let workflows_path = PathBuf::from(home.clone()).join(".deepthix").join("workflows.json");
         cmd.env(
             "DEEPTHIX_WORKFLOWS_PATH",
             workflows_path.to_string_lossy().to_string(),
+        );
+        let variables_path = PathBuf::from(home).join(".deepthix").join("variables.json");
+        cmd.env(
+            "DEEPTHIX_VARIABLES_PATH",
+            variables_path.to_string_lossy().to_string(),
         );
     }
     cmd.stdin(Stdio::piped())

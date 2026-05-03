@@ -183,6 +183,28 @@ steps, sweep scripts, weekly report, daily standup, repetitive
 maintenance), proactively offer to save it: "I can save this as a
 workflow you can re-run with one click — want me to add it?". On
 yes, write it to `$DEEPTHIX_WORKFLOWS_PATH`.
+
+### `$DEEPTHIX_VARIABLES_PATH`
+Absolute path to the shared variables catalog (`variables.json`).
+Each entry is `{key, value, description, created_ms, updated_ms}`.
+The app's VARIABLES tab lists every entry; both the user and you can
+read/write them. Use this as a cross-session scratchpad — share
+context that should outlive a single conversation.
+
+Examples worth saving:
+- `current_sprint = "S-42"` so every session knows the active sprint
+- `prod_host = "post2reach.com"` to avoid re-asking the user
+- `last_deploy_sha = "abc123"` so a follow-up session can compare
+
+How to use:
+- **Look up** a variable before asking the user: `Read $DEEPTHIX_VARIABLES_PATH`
+- **Set / update**: read the JSON, upsert the entry by key (replace
+  if `key` matches, else append), bump `updated_ms` to the current
+  epoch ms, write back.
+- **Delete**: drop the entry from the array.
+
+When you're about to ask the user a clarifying question, check the
+variables file first — they may have already pinned the answer.
 "#;
     format!("{GLOBAL_BEGIN}\n{body}{GLOBAL_END}\n")
 }

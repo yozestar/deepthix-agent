@@ -15,6 +15,7 @@ export type Mode =
   | 'skills'
   | 'schedule'
   | 'workflow'
+  | 'variables'
   | 'settings';
 
 interface Props {
@@ -33,6 +34,7 @@ const VISIBLE_MODES: ReadonlyArray<Mode> = [
   'skills',
   'schedule',
   'workflow',
+  'variables',
 ];
 
 export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.Element {

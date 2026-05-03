@@ -648,6 +648,42 @@ export async function appendWorkflowRun(run: WorkflowRun): Promise<void> {
   return await invoke<void>('append_workflow_run', { run });
 }
 
+// ─── Variables ──────────────────────────────────────────────────────────
+// Shared key/value scratchpad. Both the user (VARIABLES tab) and
+// claude (Read/Write on the JSON catalog) can read + write.
+
+export interface Variable {
+  key: string;
+  value: string;
+  description: string;
+  created_ms: number;
+  updated_ms: number;
+}
+
+/** Path to ~/.deepthix/variables.json (also exposed to claude as
+ *  $DEEPTHIX_VARIABLES_PATH so it can Read/Write the file directly). */
+export async function variablesPath(): Promise<string> {
+  return await invoke<string>('variables_path');
+}
+
+export async function listVariables(): Promise<Variable[]> {
+  return await invoke<Variable[]>('list_variables');
+}
+
+export async function setVariable(args: {
+  key: string;
+  value: string;
+  description?: string;
+}): Promise<Variable> {
+  log('setVariable', { key: args.key });
+  return await invoke<Variable>('set_variable', args);
+}
+
+export async function deleteVariable(key: string): Promise<void> {
+  log('deleteVariable', { key });
+  return await invoke<void>('delete_variable', { key });
+}
+
 // ─── Schedules ──────────────────────────────────────────────────────────
 
 export type Cadence =
