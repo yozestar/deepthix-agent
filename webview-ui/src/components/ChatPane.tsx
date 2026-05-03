@@ -621,7 +621,7 @@ export function ChatPane({
         }
         setTermId(res.term_id);
         if (res.session_id) setSessionId(res.session_id);
-        onSessionReady?.({ termId: res.term_id, sessionId: res.session_id });
+        onSessionReadyRef.current?.({ termId: res.term_id, sessionId: res.session_id });
       })
       .catch((e) => {
         const msg = e instanceof Error ? e.message : String(e);
@@ -631,7 +631,7 @@ export function ChatPane({
     return () => {
       cancelled = true;
     };
-  }, [cwd, resumeSessionId, skipPermissions, bindTermId, onSessionReady]);
+  }, [cwd, resumeSessionId, skipPermissions, bindTermId]);
 
   // Subscribe to events for THIS termId.
   useEffect(() => {
@@ -665,7 +665,7 @@ export function ChatPane({
             void chatSetSessionId(tid, a.sessionId).catch((e) =>
               console.warn('[Deepthix][ChatPane] chat_set_session_id failed', e),
             );
-            onSessionReady?.({ termId: tid, sessionId: a.sessionId });
+            onSessionReadyRef.current?.({ termId: tid, sessionId: a.sessionId });
             break;
           }
           case 'append': {
@@ -773,7 +773,10 @@ export function ChatPane({
       if (unEvent) unEvent();
       if (unExit) unExit();
     };
-  }, [termId, onSessionReady]);
+    // intentionally NOT depending on onSessionReady — see the
+    // onSessionReadyRef declaration above for why (Tauri listen()
+    // duplication = streamed deltas multiplied N times in chat).
+  }, [termId]);
 
   // Auto-scroll to the bottom on new messages.
   //   - First time messages appear (history hydration on session
@@ -797,6 +800,19 @@ export function ChatPane({
   // suppress the "claude exited" system bubble (the exit was on
   // purpose and a fresh claude is already on the way).
   const interruptedRef = useRef(false);
+  // Stable ref so we can drop onSessionReady from effect deps. The
+  // parent (BottomPanel) passes an inline arrow, which gets a new
+  // reference on every parent render — when this ref was a dep, the
+  // chat_event subscription effect re-ran on every parent render.
+  // listen() registers the subscription EAGERLY (before its Promise
+  // resolves), so each re-run added a fresh active listener while the
+  // old one was still in the cancellation window. Deltas reaching N
+  // active listeners got appended N times — claude's reply repeated
+  // 5+ times in the chat (user-reported bug).
+  const onSessionReadyRef = useRef(onSessionReady);
+  useEffect(() => {
+    onSessionReadyRef.current = onSessionReady;
+  }, [onSessionReady]);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
