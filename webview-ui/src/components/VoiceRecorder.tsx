@@ -157,8 +157,11 @@ export function VoiceRecorder({
         type: rec.mimeType || 'audio/webm',
       });
       chunksRef.current = [];
-      const buf = await blob.arrayBuffer();
-      const b64 = arrayBufferToBase64(buf);
+      // Async FileReader → non-blocking, even for multi-MB recordings.
+      // The previous synchronous Uint8Array → String.fromCharCode loop
+      // froze the whole webview for 100-500ms on long takes; the user
+      // could see typing lag and animations stutter mid-transcription.
+      const b64 = await blobToBase64(blob);
       const result = await transcribeAudio(b64, rec.mimeType || null, 'fr');
       const text = result.text.trim();
       console.info('[Deepthix][VoiceRecorder] transcribed', {
@@ -400,15 +403,26 @@ export function VoiceRecorder({
   );
 }
 
-function arrayBufferToBase64(buf: ArrayBuffer): string {
-  // Stream the buffer through small chunks to avoid blowing the
-  // call-stack on long recordings (~2MB+).
-  const bytes = new Uint8Array(buf);
-  const chunkSize = 0x8000;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const slice = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode.apply(null, Array.from(slice));
-  }
-  return btoa(binary);
+/** Encode a Blob as base64 via FileReader.readAsDataURL. Async + done
+ *  in native code, so a 5MB audio buffer doesn't block the React
+ *  reconciler / animations the way the previous synchronous loop did. */
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (): void => {
+      const result = reader.result;
+      if (typeof result !== 'string') {
+        reject(new Error('FileReader returned non-string result'));
+        return;
+      }
+      const comma = result.indexOf(',');
+      // result = "data:<mime>;base64,XXXXX" — strip everything up to
+      // the comma so we ship just the base64 payload.
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = (): void => {
+      reject(reader.error ?? new Error('FileReader failed'));
+    };
+    reader.readAsDataURL(blob);
+  });
 }

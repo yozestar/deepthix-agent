@@ -334,8 +334,11 @@
   --surface-blur: 16px;
   --shadow-pixel: 0 6px 22px rgba(0, 0, 0, 0.32);
 }
-/* Shape — applies to every surface, accent or neutral. */
-:root[data-box-style='glass'] .dt-chat-msg,
+/* Shape — applies to every surface (anything carrying our shadow var
+ * inline, plus the canonical surface classes). NOT .dt-chat-msg —
+ * that class is animation-only; bubble outer containers that wrap
+ * other cards would otherwise get a duplicate border around the
+ * cards inside. */
 :root[data-box-style='glass'] .dt-card,
 :root[data-box-style='glass'] .pixel-panel,
 :root[data-box-style='glass'] [style*='var(--shadow-pixel)'],
@@ -369,7 +372,6 @@
   --surface-radius: 0px;
   --shadow-pixel: none;
 }
-:root[data-box-style='flat'] .dt-chat-msg,
 :root[data-box-style='flat'] .dt-card,
 :root[data-box-style='flat'] .pixel-panel,
 :root[data-box-style='flat'] [style*='var(--shadow-pixel)'],
@@ -386,7 +388,6 @@
   --surface-radius: 12px;
   --shadow-pixel: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
-:root[data-box-style='soft'] .dt-chat-msg,
 :root[data-box-style='soft'] .dt-card,
 :root[data-box-style='soft'] .pixel-panel,
 :root[data-box-style='soft'] [style*='var(--shadow-pixel)'],
@@ -410,7 +411,6 @@
 :root[data-box-style='neon'] {
   --surface-radius: 6px;
 }
-:root[data-box-style='neon'] .dt-chat-msg,
 :root[data-box-style='neon'] .dt-card,
 :root[data-box-style='neon'] .pixel-panel,
 :root[data-box-style='neon'] [style*='var(--shadow-pixel)'],
