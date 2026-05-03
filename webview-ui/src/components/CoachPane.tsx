@@ -26,6 +26,7 @@ import {
   type CoachState,
   coachWorkspacePath,
   createSchedule,
+  createWorkflow,
   readGlobalCoachMessages,
   readGlobalCoachState,
   readSessionExcerpt,
@@ -38,7 +39,7 @@ const COACH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 const EXCERPT_TURNS_PER_SESSION = 10;
 const COACH_PROMPT_PREFIX = `You are a coaching agent watching multiple claude sessions in a project. Your job is two-fold:
 
-(A) PROPOSALS — emit cards the user can Accept/Reject in the UI. Two kinds:
+(A) PROPOSALS — emit cards the user can Accept/Reject in the UI. Three kinds:
 
 1. <proposal> — a rule worth remembering for future sessions. Write the memory text as a directive ("When editing X, always Y because Z.").
 
@@ -56,6 +57,16 @@ const COACH_PROMPT_PREFIX = `You are a coaching agent watching multiple claude s
 <prompt>Exact prompt the scheduled run will send to claude. Self-contained — the session must be able to act on it with no extra context.</prompt>
 <every_minutes>Integer minutes between runs. 60=hourly, 1440=daily, 10080=weekly. Omit for one-shot (then include <at_iso> with an ISO-8601 datetime).</every_minutes>
 </schedule>
+
+3. <workflow> — a saved prompt recipe the user (or you) can re-fire on demand from the WORKFLOW tab. Use this for sequences the user keeps re-typing manually (deploy steps, sweep scripts, weekly reports, anything reusable). The user accepts → we add it to the catalog at $DEEPTHIX_WORKFLOWS_PATH and they can run it any time.
+
+<workflow>
+<title>Short workflow name (becomes the entry's name)</title>
+<why>One sentence — what pattern in the user's activity made this worth saving</why>
+<description>One-liner shown in the WORKFLOW list (optional)</description>
+<prompt>Exact prompt the workflow will ship to claude on Run. Self-contained, parameterised in plain English ("the latest deploy", "this week's data") since v1 has no variables.</prompt>
+<tags>Comma-separated tags (optional, e.g. "deploy,prod"). Skip if none.</tags>
+</workflow>
 
 (B) DIRECT ACTIONS — you also have access to your tools (Write, Read, Bash, Grep, etc.). Use them WITHOUT asking when:
 - You see a project-wide insight worth pinning to the dashboard. The path is in the env var $DEEPTHIX_DASHBOARD_PATH (a single dashboard.html for the project, rendered in the OVERVIEW tab). Use Write with semantic, scannable HTML — keep it under ~15KB, no external assets. Last writer wins; rewrite the whole file so partial updates can't corrupt earlier sections.
@@ -1133,6 +1144,32 @@ function parseSchedules(text: string): ScheduleProposal[] {
   return out;
 }
 
+interface WorkflowProposal {
+  title: string;
+  why: string;
+  description: string;
+  prompt: string;
+  tags: string[];
+}
+function parseWorkflowProposals(text: string): WorkflowProposal[] {
+  const out: WorkflowProposal[] = [];
+  const blockRe = /<workflow>([\s\S]*?)<\/workflow>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = blockRe.exec(text)) !== null) {
+    const inner = m[1];
+    const title = (inner.match(/<title>([\s\S]*?)<\/title>/i)?.[1] ?? '').trim();
+    const why = (inner.match(/<why>([\s\S]*?)<\/why>/i)?.[1] ?? '').trim();
+    const description = (inner.match(/<description>([\s\S]*?)<\/description>/i)?.[1] ?? '').trim();
+    const prompt = (inner.match(/<prompt>([\s\S]*?)<\/prompt>/i)?.[1] ?? '').trim();
+    const tagsRaw = (inner.match(/<tags>([\s\S]*?)<\/tags>/i)?.[1] ?? '').trim();
+    const tags = tagsRaw
+      ? tagsRaw.split(',').map((t) => t.trim()).filter((t) => t.length > 0)
+      : [];
+    out.push({ title, why, description, prompt, tags });
+  }
+  return out;
+}
+
 type ProposalDecision = 'pending' | 'accepted' | 'dismissed';
 
 // memo: every text_delta on the streaming message triggers setMessages,
@@ -1220,10 +1257,11 @@ function _CoachBubble({
 
   const proposals = parseProposals(m.text);
   const schedules = parseSchedules(m.text);
+  const workflows = parseWorkflowProposals(m.text);
 
   // No structured cards → coach went off-format. Render as markdown
   // so we never lose information.
-  if (proposals.length === 0 && schedules.length === 0) {
+  if (proposals.length === 0 && schedules.length === 0 && workflows.length === 0) {
     return (
       <div
         className="dt-chat-msg"
@@ -1252,7 +1290,7 @@ function _CoachBubble({
     );
   }
 
-  const cardCount = proposals.length + schedules.length;
+  const cardCount = proposals.length + schedules.length + workflows.length;
   return (
     <div className="dt-chat-msg" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div
@@ -1276,6 +1314,9 @@ function _CoachBubble({
           projectId={projectId}
           proxySessionId={proxySessionId}
         />
+      ))}
+      {workflows.map((w, idx) => (
+        <WorkflowCard key={`${m.uid}-w-${idx}`} workflow={w} />
       ))}
     </div>
   );
@@ -1564,6 +1605,157 @@ function ScheduleCardImpl({
         <div style={{ fontSize: 10, opacity: 0.7 }}>
           {decision === 'accepted'
             ? '⏱ schedule created — manage it in the SCHEDULE tab'
+            : '✗ dismissed'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const WorkflowCard = memo(WorkflowCardImpl);
+function WorkflowCardImpl({
+  workflow,
+}: {
+  workflow: WorkflowProposal;
+}): React.JSX.Element {
+  const [decision, setDecision] = useState<ProposalDecision>('pending');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onAccept = useCallback(async (): Promise<void> => {
+    if (busy) return;
+    if (!workflow.prompt) {
+      setErr('workflow prompt is empty — coach must include <prompt>');
+      return;
+    }
+    setBusy(true);
+    try {
+      await createWorkflow({
+        name: workflow.title || 'Coach-suggested workflow',
+        description: workflow.description,
+        prompt: workflow.prompt,
+        tags: workflow.tags,
+      });
+      console.info('[Deepthix][CoachPane] workflow created from coach', {
+        title: workflow.title,
+      });
+      setDecision('accepted');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Deepthix][CoachPane] createWorkflow failed', e);
+      setErr(msg);
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, workflow]);
+
+  const onDismiss = useCallback((): void => setDecision('dismissed'), []);
+
+  const accent =
+    decision === 'accepted'
+      ? 'var(--color-status-success, #34d399)'
+      : decision === 'dismissed'
+        ? 'var(--color-border)'
+        : 'var(--color-accent)';
+
+  return (
+    <div
+      style={{
+        alignSelf: 'flex-start',
+        maxWidth: '92%',
+        background: 'var(--color-bg-dark)',
+        color: 'var(--color-text)',
+        border: '2px solid var(--color-border)',
+        borderLeft: `4px solid ${accent}`,
+        boxShadow: 'var(--shadow-pixel)',
+        padding: '10px 12px',
+        fontSize: 13,
+        opacity: decision === 'dismissed' ? 0.45 : 1,
+        textDecoration: decision === 'dismissed' ? 'line-through' : 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 'bold', lineHeight: 1.3 }}>
+          {workflow.title || '(no title)'}
+        </span>
+        <span
+          style={{
+            fontSize: 10,
+            padding: '1px 6px',
+            background: 'var(--color-bg)',
+            border: '1px solid var(--color-border)',
+            opacity: 0.85,
+            letterSpacing: '0.05em',
+          }}
+        >
+          🧰 WORKFLOW
+        </span>
+        {workflow.tags.map((t) => (
+          <span
+            key={t}
+            style={{
+              fontSize: 9,
+              padding: '1px 5px',
+              background: 'var(--color-bg)',
+              border: '1px solid var(--color-border)',
+              opacity: 0.7,
+            }}
+          >
+            #{t}
+          </span>
+        ))}
+      </div>
+      {workflow.why && (
+        <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>{workflow.why}</div>
+      )}
+      {workflow.description && (
+        <div style={{ fontSize: 11, opacity: 0.7, lineHeight: 1.4 }}>
+          {workflow.description}
+        </div>
+      )}
+      {workflow.prompt && (
+        <pre
+          style={{
+            margin: 0,
+            padding: '6px 8px',
+            background: 'var(--color-bg)',
+            border: '1px solid var(--color-border)',
+            fontFamily: 'Menlo, Consolas, monospace',
+            fontSize: 11,
+            lineHeight: 1.4,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            maxHeight: 160,
+            overflow: 'auto',
+          }}
+          title="Prompt the workflow will fire on Run"
+        >
+          {workflow.prompt}
+        </pre>
+      )}
+      {err && <div style={{ fontSize: 11, color: 'var(--color-danger)' }}>error: {err}</div>}
+      {decision === 'pending' ? (
+        <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+          <button
+            type="button"
+            onClick={() => void onAccept()}
+            disabled={busy}
+            title="Save this workflow to the catalog — runnable from the WORKFLOW tab"
+            style={cardBtn(true, busy)}
+          >
+            {busy ? '…' : '✓ Yes — save workflow'}
+          </button>
+          <button type="button" onClick={onDismiss} style={cardBtn(false, false)}>
+            ✗ No
+          </button>
+        </div>
+      ) : (
+        <div style={{ fontSize: 10, opacity: 0.7 }}>
+          {decision === 'accepted'
+            ? '🧰 saved — find it in the WORKFLOW tab'
             : '✗ dismissed'}
         </div>
       )}
