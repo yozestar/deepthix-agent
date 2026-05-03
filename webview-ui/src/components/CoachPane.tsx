@@ -11,7 +11,7 @@
 // `{ enabled, coach_session_id, last_run_ms }`. Coach session lives
 // in the same project cwd; survives app restarts via --resume.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -882,7 +882,13 @@ function parseSchedules(text: string): ScheduleProposal[] {
 
 type ProposalDecision = 'pending' | 'accepted' | 'dismissed';
 
-function CoachBubble({
+// memo: every text_delta on the streaming message triggers setMessages,
+// which re-renders the whole pane. Without memo we'd re-run
+// parseProposals + parseSchedules + ReactMarkdown on EVERY existing
+// bubble for every delta — coach analyses with many proposals were
+// pegging the CPU and making the whole app feel laggy.
+const CoachBubble = memo(_CoachBubble);
+function _CoachBubble({
   m,
   cwd,
   projectId,
@@ -924,6 +930,37 @@ function CoachBubble({
         }}
       >
         <span style={{ opacity: 0.5 }}>▌</span>
+      </div>
+    );
+  }
+
+  // While streaming we just render a plain "thinking" preview — don't
+  // run the XML parsers / markdown on every text_delta. Coach answers
+  // are 1–5 cards, sometimes ~5KB each; parsing on every chunk was
+  // pegging the CPU. Cards land in their final form when streaming ends.
+  if (m.streaming) {
+    return (
+      <div
+        className="dt-chat-msg"
+        style={{
+          alignSelf: 'flex-start',
+          maxWidth: '92%',
+          background: 'var(--color-bg-dark)',
+          color: 'var(--color-text)',
+          border: '2px solid var(--color-border)',
+          boxShadow: 'var(--shadow-pixel)',
+          padding: '8px 10px',
+          fontSize: 13,
+          lineHeight: 1.45,
+          wordBreak: 'break-word',
+          whiteSpace: 'pre-wrap',
+        }}
+      >
+        <div style={{ fontSize: 10, opacity: 0.6, marginBottom: 4 }}>
+          coach · writing…
+        </div>
+        <span style={{ opacity: 0.5 }}>▌</span>
+        {m.text.length > 600 ? `${m.text.slice(0, 600)}…` : m.text}
       </div>
     );
   }
@@ -991,7 +1028,8 @@ function CoachBubble({
   );
 }
 
-function ProposalCard({
+const ProposalCard = memo(_ProposalCard);
+function _ProposalCard({
   proposal,
   cwd,
 }: {
@@ -1105,7 +1143,8 @@ function ProposalCard({
   );
 }
 
-function ScheduleCard({
+const ScheduleCard = memo(_ScheduleCard);
+function _ScheduleCard({
   schedule,
   projectId,
   proxySessionId,
