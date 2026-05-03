@@ -3,17 +3,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ProcessPane, SessionsPane } from './components/BottomPanel';
 import { FilesPane } from './components/FilesPane';
 import { MemoryPane } from './components/MemoryPane';
+import { NotificationToasts } from './components/NotificationToasts';
 import { OverviewPane } from './components/OverviewPane';
+import { SchedulesPane } from './components/SchedulesPane';
+import { SessionsTopArea } from './components/SessionsTopArea';
 import { SettingsPane } from './components/SettingsPane';
 import { Sidebar } from './components/Sidebar';
-import { SchedulesPane } from './components/SchedulesPane';
 import { SkillsPane } from './components/SkillsPane';
-import { SessionsTopArea } from './components/SessionsTopArea';
-import { type Mode, TopTabs } from './components/TopTabs';
-import { NotificationToasts } from './components/NotificationToasts';
 import { TerminalDropTarget } from './components/TerminalDropTarget';
+import { type Mode, TopTabs } from './components/TopTabs';
 import { VoiceRecorder } from './components/VoiceRecorder';
 import { Welcome } from './components/Welcome';
+import { WorkflowsPane } from './components/WorkflowsPane';
 import { useFileTree } from './hooks/useFileTree';
 import { useGlobalConfig } from './hooks/useGlobalConfig';
 import { useOpenFiles } from './hooks/useOpenFiles';
@@ -31,6 +32,8 @@ const VALID_MODES: ReadonlyArray<Mode> = [
   'memory',
   'files',
   'skills',
+  'schedule',
+  'workflow',
   'settings',
 ];
 
@@ -129,7 +132,6 @@ function App(): React.JSX.Element {
   }, []);
 
   const hasProjects = projects.projects.length > 0;
-  const visibleAgents = terminals.forProject(projects.activeProjectId);
 
   const SKIP_PERMS_KEY = 'deepthix.skipPermissions';
   const [skipPerms, setSkipPerms] = useState<boolean>(() => {
@@ -341,6 +343,15 @@ function App(): React.JSX.Element {
           {mode === 'schedule' && (
             <ModeOverlay>
               <SchedulesPane terminals={terminals} />
+            </ModeOverlay>
+          )}
+          {mode === 'workflow' && (
+            <ModeOverlay>
+              <WorkflowsPane
+                terminals={terminals}
+                projects={projects}
+                onChangeMode={setMode}
+              />
             </ModeOverlay>
           )}
         </div>

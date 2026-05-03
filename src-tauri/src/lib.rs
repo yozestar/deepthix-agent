@@ -134,6 +134,13 @@ pub fn run() {
             commands::chat::read_global_coach_messages,
             commands::chat::write_global_coach_messages,
             commands::chat::coach_workspace_path,
+            commands::workflows::workflows_path,
+            commands::workflows::list_workflows,
+            commands::workflows::create_workflow,
+            commands::workflows::update_workflow,
+            commands::workflows::delete_workflow,
+            commands::workflows::list_workflow_runs,
+            commands::workflows::append_workflow_run,
         ])
         .setup(|app| {
             // Spawn the notifications watcher tied to the app handle so it

@@ -278,7 +278,7 @@ impl TerminalManager {
         // board (matches the new OverviewPane behaviour).
         let project_id = crate::state::project_id_for_path(&cwd);
         if let Ok(home) = std::env::var("HOME") {
-            let dashboard_path = std::path::PathBuf::from(home)
+            let dashboard_path = std::path::PathBuf::from(home.clone())
                 .join(".deepthix")
                 .join("projects")
                 .join(&project_id)
@@ -295,6 +295,13 @@ impl TerminalManager {
             cmd.env("DEEPTHIX_DASHBOARD_PATH", dashboard_path_str);
             cmd.env("DEEPTHIX_SESSION_ID", &session_id);
             cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
+            let workflows_path = std::path::PathBuf::from(home)
+                .join(".deepthix")
+                .join("workflows.json");
+            cmd.env(
+                "DEEPTHIX_WORKFLOWS_PATH",
+                workflows_path.to_string_lossy().into_owned(),
+            );
         }
 
         let child = pair

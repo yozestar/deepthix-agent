@@ -17,3 +17,4 @@ pub mod terminals;
 pub mod usage;
 pub mod usage_snapshot;
 pub mod voice;
+pub mod workflows;

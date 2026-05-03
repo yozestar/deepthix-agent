@@ -218,7 +218,7 @@ pub fn chat_spawn(
     // known until claude emits the system/init event later.)
     let project_id = crate::state::project_id_for_path(&args.cwd);
     if let Ok(home) = std::env::var("HOME") {
-        let dashboard_path = PathBuf::from(home)
+        let dashboard_path = PathBuf::from(home.clone())
             .join(".deepthix")
             .join("projects")
             .join(&project_id)
@@ -231,6 +231,14 @@ pub fn chat_spawn(
             dashboard_path.to_string_lossy().to_string(),
         );
         cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
+        // Workflow catalog — claude can Read/Edit/Write this JSON to
+        // discover or define workflows the user can re-fire from the
+        // WORKFLOW tab.
+        let workflows_path = PathBuf::from(home).join(".deepthix").join("workflows.json");
+        cmd.env(
+            "DEEPTHIX_WORKFLOWS_PATH",
+            workflows_path.to_string_lossy().to_string(),
+        );
     }
 
     // Pipe all three handles. We need stdin to send user turns and
@@ -632,7 +640,7 @@ pub fn chat_interrupt_and_resume(
     }
     let project_id = crate::state::project_id_for_path(&cwd);
     if let Ok(home) = std::env::var("HOME") {
-        let dashboard_path = PathBuf::from(home)
+        let dashboard_path = PathBuf::from(home.clone())
             .join(".deepthix")
             .join("projects")
             .join(&project_id)
@@ -645,6 +653,11 @@ pub fn chat_interrupt_and_resume(
             dashboard_path.to_string_lossy().to_string(),
         );
         cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
+        let workflows_path = PathBuf::from(home).join(".deepthix").join("workflows.json");
+        cmd.env(
+            "DEEPTHIX_WORKFLOWS_PATH",
+            workflows_path.to_string_lossy().to_string(),
+        );
     }
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -761,7 +774,7 @@ pub fn chat_switch_model(
     // etc. so the new child sees the project context.
     let project_id = crate::state::project_id_for_path(&cwd);
     if let Ok(home) = std::env::var("HOME") {
-        let dashboard_path = PathBuf::from(home)
+        let dashboard_path = PathBuf::from(home.clone())
             .join(".deepthix")
             .join("projects")
             .join(&project_id)
@@ -774,6 +787,11 @@ pub fn chat_switch_model(
             dashboard_path.to_string_lossy().to_string(),
         );
         cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
+        let workflows_path = PathBuf::from(home).join(".deepthix").join("workflows.json");
+        cmd.env(
+            "DEEPTHIX_WORKFLOWS_PATH",
+            workflows_path.to_string_lossy().to_string(),
+        );
     }
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())

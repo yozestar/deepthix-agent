@@ -578,6 +578,76 @@ export async function coachWorkspacePath(): Promise<string> {
   return await invoke<string>('coach_workspace_path');
 }
 
+// ─── Workflows ──────────────────────────────────────────────────────────
+// Named claude prompt recipes the user (or claude itself) can save and
+// re-fire on demand. Storage lives at ~/.deepthix/workflows.json + per-
+// workflow runs at ~/.deepthix/workflows/<id>/runs.jsonl.
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  tags: string[];
+  created_ms: number;
+  updated_ms: number;
+}
+
+export interface WorkflowRun {
+  run_id: string;
+  workflow_id: string;
+  started_ms: number;
+  ended_ms?: number | null;
+  target_session_id?: string | null;
+  target_project_id?: string | null;
+  prompt: string;
+  /** "running" | "ok" | "error" | "interrupted" */
+  status: string;
+}
+
+/** Path to ~/.deepthix/workflows.json. Exposed so claude sessions can
+ *  Read/Edit/Write it directly to discover or modify workflows. */
+export async function workflowsPath(): Promise<string> {
+  return await invoke<string>('workflows_path');
+}
+
+export async function listWorkflows(): Promise<Workflow[]> {
+  return await invoke<Workflow[]>('list_workflows');
+}
+
+export async function createWorkflow(args: {
+  name: string;
+  description: string;
+  prompt: string;
+  tags: string[];
+}): Promise<Workflow> {
+  log('createWorkflow', { name: args.name });
+  return await invoke<Workflow>('create_workflow', args);
+}
+
+export async function updateWorkflow(args: {
+  id: string;
+  name?: string;
+  description?: string;
+  prompt?: string;
+  tags?: string[];
+}): Promise<Workflow> {
+  return await invoke<Workflow>('update_workflow', args);
+}
+
+export async function deleteWorkflow(id: string): Promise<void> {
+  log('deleteWorkflow', { id });
+  return await invoke<void>('delete_workflow', { id });
+}
+
+export async function listWorkflowRuns(workflowId: string): Promise<WorkflowRun[]> {
+  return await invoke<WorkflowRun[]>('list_workflow_runs', { workflowId });
+}
+
+export async function appendWorkflowRun(run: WorkflowRun): Promise<void> {
+  return await invoke<void>('append_workflow_run', { run });
+}
+
 // ─── Schedules ──────────────────────────────────────────────────────────
 
 export type Cadence =
