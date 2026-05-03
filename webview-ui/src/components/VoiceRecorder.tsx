@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { chatSendUserText, ptyWrite, transcribeAudio } from '../tauri/commands';
+import { ptyWrite, transcribeAudio } from '../tauri/commands';
 
 type RecorderState =
   | { kind: 'idle' }
@@ -222,20 +222,17 @@ export function VoiceRecorder({
       // (~120 chars/sec) but reliable.
       try {
         if (targetTerm.kind === 'claude') {
-          // Chat sessions go through stream-json, not PTY. Send the
-          // whole transcript as one user turn — the multi-character
-          // chunking trick was a PTY/Ink workaround.
-          await chatSendUserText(target, text);
-          // Tell ChatPane to add a user bubble + flip busy=true.
-          // Without this the user sees no feedback that their voice
-          // got injected — claude's response just appears out of
-          // nowhere later.
+          // Per user request: don't auto-send. Drop the transcript
+          // into the textarea so they can review / edit / extend
+          // before hitting Send. ChatPane listens for this event and
+          // appends to its existing input value (so recording twice
+          // accumulates into one composed message).
           window.dispatchEvent(
-            new CustomEvent('deepthix:chat:user-text', {
+            new CustomEvent('deepthix:chat:append-input', {
               detail: { termId: target, text },
             }),
           );
-          console.info('[Deepthix][VoiceRecorder] chat send complete', {
+          console.info('[Deepthix][VoiceRecorder] transcript appended to composer', {
             target,
             chars: text.length,
           });

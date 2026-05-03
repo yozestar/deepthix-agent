@@ -938,6 +938,32 @@ export function ChatPane({
     return () => window.removeEventListener('deepthix:chat:user-text', onVoiceUserText);
   }, [termId]);
 
+  // Voice → composer: VoiceRecorder no longer auto-sends. It dispatches
+  // `deepthix:chat:append-input` with { termId, text } so the user can
+  // review / edit / extend the transcript before clicking Send.
+  // Multiple recordings accumulate (separated by a space).
+  useEffect(() => {
+    if (!termId) return;
+    function onAppendInput(ev: Event): void {
+      const detail = (ev as CustomEvent<{ termId: string; text: string }>).detail;
+      if (!detail || detail.termId !== termId) return;
+      const next = detail.text.trim();
+      if (!next) return;
+      setInput((prev) => {
+        const cur = prev.trimEnd();
+        if (!cur) return next;
+        // If the existing draft ends with sentence-stop punctuation,
+        // start a new sentence with a space; else append with a space.
+        return `${cur} ${next}`;
+      });
+      console.info('[Deepthix][ChatPane] voice transcript appended to composer', {
+        chars: next.length,
+      });
+    }
+    window.addEventListener('deepthix:chat:append-input', onAppendInput);
+    return () => window.removeEventListener('deepthix:chat:append-input', onAppendInput);
+  }, [termId]);
+
   // Drop-target bridge — TerminalDropTarget catches the OS drag-drop
   // and dispatches `deepthix:chat:add-attachments` with { termId,
   // paths }. We stage them as previews instead of sending immediately
