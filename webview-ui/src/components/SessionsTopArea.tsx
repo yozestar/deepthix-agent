@@ -1,55 +1,45 @@
 /* eslint-disable deepthix/no-inline-colors */
-// Top half of the SESSIONS view. Hosts the project-level Coach
-// (Sonnet sub-session that watches every claude session in the
-// project and proposes improvements every 10 min when ON).
+// Top half of the SESSIONS view. Hosts the GLOBAL Coach (Sonnet
+// sub-session that watches every claude session in EVERY project and
+// proposes improvements every 10 min when ON). One coach for the whole
+// app — flipping ON in any project means ON for every project.
 
 import { useMemo } from 'react';
 
+import type { ProjectInfo } from '../tauri/commands';
 import type { TerminalEntry } from '../hooks/useTerminals';
 import { CoachPane } from './CoachPane';
 
 interface Props {
-  /** All terminals visible for the active project. */
-  visibleTerminals: TerminalEntry[];
-  /** Active project id — drives the coach's persisted state file. */
-  activeProjectId: string | null;
-  /** Active project's working directory — coach is spawned there. */
-  activeProjectPath: string | null;
+  /** EVERY terminal across every project — the coach is global so it
+   *  needs the whole list, not just the active project's slice. */
+  allTerminals: TerminalEntry[];
+  /** Project list — used to resolve project name + cwd from each
+   *  session's projectId. */
+  projects: ProjectInfo[];
 }
 
 export function SessionsTopArea({
-  visibleTerminals,
-  activeProjectId,
-  activeProjectPath,
+  allTerminals,
+  projects,
 }: Props): React.JSX.Element {
-  // Filter to claude sessions that already learned their UUID. The
-  // coach reads each session's JSONL by stable session_id; sessions
-  // mid-spawn (no init event yet) are skipped until they're ready.
-  const sessions = useMemo(
-    () =>
-      visibleTerminals
-        .filter((t) => t.kind === 'claude' && t.sessionId)
-        .map((t) => ({ sessionId: t.sessionId as string, label: t.label })),
-    [visibleTerminals],
-  );
-
-  if (!activeProjectId || !activeProjectPath) {
-    return (
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontFamily: 'var(--font-pixel)',
-          fontSize: 12,
-          opacity: 0.6,
-        }}
-      >
-        Open a project to enable the Coach.
-      </div>
-    );
-  }
+  // Filter to claude sessions that already learned their UUID, then
+  // join project metadata so the coach can read each one's JSONL.
+  const sessions = useMemo(() => {
+    const byId = new Map(projects.map((p) => [p.id, p]));
+    return allTerminals
+      .filter((t) => t.kind === 'claude' && t.sessionId && byId.has(t.projectId))
+      .map((t) => {
+        const p = byId.get(t.projectId);
+        return {
+          sessionId: t.sessionId as string,
+          label: t.label,
+          cwd: p?.path ?? '',
+          projectName: p?.name ?? t.projectId,
+          projectId: t.projectId,
+        };
+      });
+  }, [allTerminals, projects]);
 
   return (
     <div
@@ -60,14 +50,7 @@ export function SessionsTopArea({
         flexDirection: 'column',
       }}
     >
-      <CoachPane
-        // Re-mount on project switch so the coach state is loaded
-        // for the new project.
-        key={activeProjectId}
-        projectId={activeProjectId}
-        cwd={activeProjectPath}
-        sessions={sessions}
-      />
+      <CoachPane sessions={sessions} />
     </div>
   );
 }

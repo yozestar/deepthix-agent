@@ -231,9 +231,8 @@ function App(): React.JSX.Element {
                 }}
               >
                 <SessionsTopArea
-                  visibleTerminals={visibleAgents}
-                  activeProjectId={projects.activeProjectId}
-                  activeProjectPath={projects.activeProject?.path ?? null}
+                  allTerminals={terminals.terminals}
+                  projects={projects.projects}
                 />
                 <div
                   style={{

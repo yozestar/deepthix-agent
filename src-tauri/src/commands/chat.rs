@@ -1009,6 +1009,77 @@ fn coach_messages_path(project_id: &str) -> std::io::Result<PathBuf> {
     Ok(crate::storage::project_dir(project_id)?.join("coach-messages.json"))
 }
 
+/// Path to the global (cross-project) coach workspace. The coach
+/// session is spawned in this directory so it has a stable cwd that
+/// doesn't change with project switches. Created on demand.
+fn coach_workspace_dir() -> std::io::Result<PathBuf> {
+    let dir = crate::storage::deepthix_dir()?.join("coach-workspace");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+#[tauri::command]
+pub fn coach_workspace_path() -> Result<String, String> {
+    let dir = coach_workspace_dir().map_err(|e| e.to_string())?;
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+fn global_coach_state_path() -> std::io::Result<PathBuf> {
+    Ok(crate::storage::deepthix_dir()?.join("coach.json"))
+}
+
+fn global_coach_messages_path() -> std::io::Result<PathBuf> {
+    Ok(crate::storage::deepthix_dir()?.join("coach-messages.json"))
+}
+
+/// Read the GLOBAL coach state (toggle ON/OFF + coach session UUID).
+/// Replaces the per-project read for the new "one coach for the whole
+/// app" model — flipping ON in one project means ON for every project.
+#[tauri::command]
+pub fn read_global_coach_state() -> Result<CoachState, String> {
+    let path = global_coach_state_path().map_err(|e| e.to_string())?;
+    match std::fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str(&s).map_err(|e| e.to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(CoachState::default()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn write_global_coach_state(state: CoachState) -> Result<(), String> {
+    let path = global_coach_state_path().map_err(|e| e.to_string())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let body = serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, body.as_bytes()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn read_global_coach_messages() -> Result<String, String> {
+    let path = global_coach_messages_path().map_err(|e| e.to_string())?;
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Ok(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn write_global_coach_messages(body: String) -> Result<(), String> {
+    let path = global_coach_messages_path().map_err(|e| e.to_string())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, body.as_bytes()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn read_project_coach_messages(project_id: String) -> Result<String, String> {
     let path = coach_messages_path(&project_id).map_err(|e| e.to_string())?;

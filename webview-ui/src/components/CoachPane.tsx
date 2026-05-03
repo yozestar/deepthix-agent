@@ -24,12 +24,13 @@ import {
   chatSetSessionId,
   chatSpawn,
   type CoachState,
+  coachWorkspacePath,
   createSchedule,
-  readProjectCoachMessages,
-  readProjectCoachState,
+  readGlobalCoachMessages,
+  readGlobalCoachState,
   readSessionExcerpt,
-  writeProjectCoachMessages,
-  writeProjectCoachState,
+  writeGlobalCoachMessages,
+  writeGlobalCoachState,
 } from '../tauri/commands';
 import { onChatEvent, onChatExit } from '../tauri/events';
 
@@ -74,15 +75,22 @@ interface SessionRef {
   sessionId: string;
   /** Friendly label shown in the excerpt header. */
   label: string;
+  /** Project working directory the session lives in — needed because
+   *  readSessionExcerpt resolves the JSONL path from cwd + session_id.
+   *  In the global model the coach watches sessions across projects, so
+   *  each excerpt fetch needs its own cwd. */
+  cwd: string;
+  /** Friendly project name shown in the excerpt header for context. */
+  projectName: string;
+  /** Project id — passed through so ScheduleCard / ProposalCard can
+   *  target a real project when the user accepts. */
+  projectId: string;
 }
 
 interface Props {
-  /** Project id (storage key for coach.json). */
-  projectId: string;
-  /** Project cwd — coach is spawned here so it sees CLAUDE.md / files. */
-  cwd: string;
-  /** Every claude session UUID in the project. Used to gather excerpts
-   *  on each tick. */
+  /** Every claude session UUID across EVERY project. Used to gather
+   *  excerpts on each tick. The coach is global — there's no per-
+   *  project filter. */
   sessions: SessionRef[];
 }
 
@@ -102,7 +110,7 @@ function shortId(s: string | null | undefined, n = 8): string {
   return s ? s.slice(0, n) : '?';
 }
 
-export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Element {
+export function CoachPane({ sessions }: Props): React.JSX.Element {
   const [state, setState] = useState<CoachState>({
     enabled: false,
     coach_session_id: null,
@@ -112,11 +120,14 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
   const [messages, setMessages] = useState<CoachMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Workspace cwd the coach session is spawned in. Resolved once on
+  // mount via Tauri (~/.deepthix/coach-workspace, created on demand).
+  const [coachCwd, setCoachCwd] = useState<string | null>(null);
   // Refs the timer can read without re-binding.
   const coachTermIdRef = useRef<string | null>(null);
   const sessionsRef = useRef<SessionRef[]>(sessions);
   const busyRef = useRef(false);
-  const cwdRef = useRef(cwd);
+  const coachCwdRef = useRef<string | null>(null);
   useEffect(() => {
     coachTermIdRef.current = coachTermId;
   }, [coachTermId]);
@@ -127,23 +138,38 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     busyRef.current = busy;
   }, [busy]);
   useEffect(() => {
-    cwdRef.current = cwd;
-  }, [cwd]);
+    coachCwdRef.current = coachCwd;
+  }, [coachCwd]);
   const streamingMsgIdRef = useRef<string | null>(null);
 
-  // Load persisted state + message log on project change. Without
-  // message persistence the user lost every proposal on reload —
-  // the pane sat at the empty "Coach is watching" placeholder even
-  // after dozens of analyses.
+  // Resolve the coach's workspace dir on mount (one-shot).
   useEffect(() => {
     let cancelled = false;
-    void readProjectCoachState(projectId)
+    void coachWorkspacePath()
+      .then((p) => {
+        if (cancelled) return;
+        console.info('[Deepthix][CoachPane] workspace', { path: p });
+        setCoachCwd(p);
+      })
+      .catch((e) => console.warn('[Deepthix][CoachPane] workspace path failed', e));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load persisted GLOBAL state + message log on mount. The coach is
+  // global now — flipping ON in one project means ON for every project
+  // — so there's no per-project key. Storage lives at
+  // ~/.deepthix/coach.json and ~/.deepthix/coach-messages.json.
+  useEffect(() => {
+    let cancelled = false;
+    void readGlobalCoachState()
       .then((s) => {
         if (cancelled) return;
         setState(s);
       })
       .catch((e) => console.warn('[Deepthix][CoachPane] read state failed', e));
-    void readProjectCoachMessages(projectId)
+    void readGlobalCoachMessages()
       .then((body) => {
         if (cancelled || !body) return;
         try {
@@ -162,7 +188,7 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, []);
 
   // Persist messages whenever they change (debounced — bursty deltas
   // during streaming would otherwise hammer the disk). Skip the empty
@@ -170,18 +196,15 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
   // mount before the read above has populated state.
   const messagesPersistInitDoneRef = useRef(false);
   useEffect(() => {
-    // First render with messages === [] (initial useState default) is
-    // common — wait until either we've loaded existing messages OR
-    // genuinely added a message.
     if (!messagesPersistInitDoneRef.current && messages.length === 0) return;
     messagesPersistInitDoneRef.current = true;
     const id = setTimeout(() => {
-      void writeProjectCoachMessages(projectId, JSON.stringify(messages)).catch((e) =>
+      void writeGlobalCoachMessages(JSON.stringify(messages)).catch((e) =>
         console.warn('[Deepthix][CoachPane] write messages failed', e),
       );
     }, 500);
     return () => clearTimeout(id);
-  }, [projectId, messages]);
+  }, [messages]);
 
   /** Persist state delta + update local. */
   const updateState = useCallback(
@@ -189,13 +212,13 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
       const next = { ...state, ...patch };
       setState(next);
       try {
-        await writeProjectCoachState(projectId, next);
+        await writeGlobalCoachState(next);
       } catch (e) {
         console.warn('[Deepthix][CoachPane] write state failed', e);
       }
       return next;
     },
-    [state, projectId],
+    [state],
   );
 
   // Subscribe to chat events for the coach term.
@@ -329,11 +352,17 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     if (spawnPromiseRef.current) return spawnPromiseRef.current;
     const p = (async (): Promise<string | null> => {
       try {
+        const cwd = coachCwdRef.current;
+        if (!cwd) {
+          console.warn('[Deepthix][CoachPane] spawn aborted — workspace path not yet resolved');
+          return null;
+        }
         console.info('[Deepthix][CoachPane] spawning coach', {
           resume: state.coach_session_id ?? null,
+          cwd,
         });
         const r = await chatSpawn({
-          cwd: cwdRef.current,
+          cwd,
           skip_permissions: true,
           model: 'sonnet',
           resume_session_id: state.coach_session_id ?? null,
@@ -407,9 +436,12 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
       setError(null);
       const blocks: string[] = [];
       for (const s of sessions) {
-        const ex = await readSessionExcerpt(cwdRef.current, s.sessionId, EXCERPT_TURNS_PER_SESSION);
+        // Each session lives under its own project cwd (the coach is
+        // global — sessions span every project), so we resolve the
+        // JSONL path with that session's cwd, not the coach's workspace.
+        const ex = await readSessionExcerpt(s.cwd, s.sessionId, EXCERPT_TURNS_PER_SESSION);
         if (!ex.trim()) continue;
-        blocks.push(`### Session ${s.label} (${shortId(s.sessionId)})\n${ex}`);
+        blocks.push(`### ${s.projectName} · ${s.label} (${shortId(s.sessionId)})\n${ex}`);
       }
       if (blocks.length === 0) {
         setMessages((prev) => [
@@ -682,8 +714,14 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
               <CoachBubble
                 key={m.uid}
                 m={m}
-                cwd={cwd}
-                projectId={projectId}
+                // Proposals append to CLAUDE.md and schedules attach
+                // to a session — both need a project anchor. With a
+                // global coach there's no single "current project",
+                // so we pin to the FIRST claude session in the list
+                // (typically the one in the user's most-used project).
+                // TODO: let the user pick the target per card.
+                cwd={sessions[0]?.cwd ?? ''}
+                projectId={sessions[0]?.projectId ?? ''}
                 proxySessionId={sessions[0]?.sessionId ?? null}
               />
             ))

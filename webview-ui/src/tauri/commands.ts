@@ -552,6 +552,32 @@ export async function writeProjectCoachMessages(
   return await invoke<void>('write_project_coach_messages', { projectId, body });
 }
 
+/** Global (cross-project) coach state — single ON/OFF toggle for the
+ *  whole app. Replaces the per-project state for the new "one coach
+ *  watches every project's sessions" model. */
+export async function readGlobalCoachState(): Promise<CoachState> {
+  return await invoke<CoachState>('read_global_coach_state');
+}
+
+export async function writeGlobalCoachState(state: CoachState): Promise<void> {
+  return await invoke<void>('write_global_coach_state', { state });
+}
+
+export async function readGlobalCoachMessages(): Promise<string> {
+  return await invoke<string>('read_global_coach_messages');
+}
+
+export async function writeGlobalCoachMessages(body: string): Promise<void> {
+  return await invoke<void>('write_global_coach_messages', { body });
+}
+
+/** Path to the dedicated coach workspace under ~/.deepthix/coach-workspace.
+ *  Created on demand. The global coach session is spawned with this as
+ *  its cwd so it stays alive across project switches. */
+export async function coachWorkspacePath(): Promise<string> {
+  return await invoke<string>('coach_workspace_path');
+}
+
 // ─── Schedules ──────────────────────────────────────────────────────────
 
 export type Cadence =
