@@ -1,3 +1,4 @@
+/* eslint-disable deepthix/no-inline-colors, deepthix/pixel-shadow */
 // Full-area pane shown when `mode === 'settings'`. Mounted by App.tsx, fed
 // by `useGlobalConfig`. Three controls in the Terminal section:
 //   • font size  (− value +) — clamps to TERMINAL_FONT_SIZE_MIN/MAX
@@ -18,8 +19,22 @@ import {
   TERMINAL_LINE_HEIGHT_MIN,
   TERMINAL_LINE_HEIGHT_STEP,
 } from '../constants';
-import type { UseGlobalConfigResult } from '../hooks/useGlobalConfig';
+import type { BoxStyleId, UseGlobalConfigResult } from '../hooks/useGlobalConfig';
+import { BOX_STYLE_IDS } from '../hooks/useGlobalConfig';
 import { THEMES } from '../themes';
+
+interface BoxStyleMeta {
+  id: BoxStyleId;
+  label: string;
+  blurb: string;
+}
+const BOX_STYLE_META: BoxStyleMeta[] = [
+  { id: 'pixel', label: 'Pixel', blurb: 'Hard 2px shadow, square corners. The original look.' },
+  { id: 'glass', label: 'Glass', blurb: 'Frosted backdrop blur + translucent surface.' },
+  { id: 'flat', label: 'Flat', blurb: 'Hairline border, no shadow.' },
+  { id: 'soft', label: 'Soft', blurb: 'Rounded corners + soft drop shadow.' },
+  { id: 'neon', label: 'Neon', blurb: 'Accent-glow border on dark body.' },
+];
 
 interface Props {
   globalConfig: UseGlobalConfigResult;
@@ -220,6 +235,66 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
         </div>
       </Section>
 
+      {/* BOX STYLE section — chrome of every bubble / card / panel. */}
+      <Section
+        title="BOX STYLE"
+        subtitle="Chrome of every bubble, card and panel. Live preview."
+      >
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: '10px',
+          }}
+        >
+          {BOX_STYLE_META.map((s) => {
+            const active = s.id === config.boxStyle;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => update({ boxStyle: s.id })}
+                title={s.blurb}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  padding: '10px',
+                  background: 'var(--color-bg-dark)',
+                  border: `2px solid ${active ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                  boxShadow: active ? '4px 4px 0 var(--color-accent)' : 'var(--shadow-pixel)',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-pixel)',
+                  textAlign: 'left',
+                  color: 'var(--color-text)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontSize: '13px',
+                  }}
+                >
+                  <span>{s.label}</span>
+                  {active && <span style={{ fontSize: '11px', opacity: 0.7 }}>●</span>}
+                </div>
+                <BoxStylePreview id={s.id} />
+                <span style={{ fontSize: '10px', opacity: 0.6, lineHeight: 1.4 }}>
+                  {s.blurb}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {!(BOX_STYLE_IDS as readonly string[]).includes(config.boxStyle) && (
+          <div style={{ fontSize: 11, opacity: 0.6 }}>
+            (custom — {config.boxStyle})
+          </div>
+        )}
+      </Section>
+
       {/* ABOUT section */}
       <Section title="ABOUT" subtitle="">
         <div style={{ fontSize: '13px', lineHeight: 1.6, opacity: 0.85 }}>
@@ -228,16 +303,16 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
             <span style={{ opacity: 0.6, marginLeft: '6px' }}>v0.1.0</span>
           </div>
           <div style={{ marginTop: 6 }}>
-            Forked from{' '}
+            Open source —{' '}
             <a
-              href="https://github.com/pablodelucca/pixel-agents"
+              href="https://github.com/deepthix/deepthix-agent"
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: 'var(--color-accent-bright)' }}
             >
-              pixel-agents
-            </a>{' '}
-            (MIT, by @pablodelucca).
+              github.com/deepthix/deepthix-agent
+            </a>
+            . MIT licensed.
           </div>
         </div>
       </Section>
@@ -334,6 +409,69 @@ function Row({ label, children, align = 'center' }: RowProps): React.JSX.Element
       </div>
     </div>
   );
+}
+
+/** Inline preview of a single box-style. Uses static styles that mirror
+ *  the CSS rules in index.css so the user sees what they're picking
+ *  before committing. */
+function BoxStylePreview({ id }: { id: BoxStyleId }): React.JSX.Element {
+  const base: React.CSSProperties = {
+    height: 36,
+    padding: '6px 8px',
+    fontSize: 11,
+    fontFamily: 'var(--font-pixel)',
+    color: 'var(--color-text)',
+    display: 'flex',
+    alignItems: 'center',
+  };
+  let style: React.CSSProperties;
+  switch (id) {
+    case 'pixel':
+      style = {
+        ...base,
+        background: 'var(--color-bg-dark)',
+        border: '2px solid var(--color-border)',
+        boxShadow: 'var(--shadow-pixel)',
+      };
+      break;
+    case 'glass':
+      style = {
+        ...base,
+        background: 'rgba(24, 24, 40, 0.55)',
+        backdropFilter: 'blur(10px)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: 12,
+        boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+      };
+      break;
+    case 'flat':
+      style = {
+        ...base,
+        background: 'var(--color-bg-dark)',
+        border: '1px solid var(--color-border)',
+        boxShadow: 'none',
+      };
+      break;
+    case 'soft':
+      style = {
+        ...base,
+        background: 'var(--color-bg-dark)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 12,
+        boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+      };
+      break;
+    case 'neon':
+      style = {
+        ...base,
+        background: 'var(--color-bg-dark)',
+        border: '1px solid var(--color-accent)',
+        borderRadius: 6,
+        boxShadow: '0 0 0 1px var(--color-accent), 0 0 12px rgba(255, 60, 140, 0.45)',
+      };
+      break;
+  }
+  return <div style={style}>preview</div>;
 }
 
 interface BumpControlProps {

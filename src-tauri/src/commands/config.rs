@@ -27,6 +27,14 @@ pub struct GlobalConfig {
     /// Theme id (color palette). None → frontend default.
     #[serde(default)]
     pub theme_id: Option<String>,
+    /// Box / surface style: "pixel" (default hard-shadow), "glass"
+    /// (frosted backdrop blur), "flat" (no shadow, thin border),
+    /// "soft" (rounded + soft drop shadow), "neon" (glowing accent
+    /// border). Drives the data-box-style attribute applied to
+    /// document.documentElement so CSS rules can override surface
+    /// chrome without touching component code.
+    #[serde(default)]
+    pub box_style: Option<String>,
 }
 
 #[tauri::command]

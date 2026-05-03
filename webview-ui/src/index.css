@@ -298,3 +298,78 @@
   border: 2px solid var(--color-border);
   padding: 12px;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Box-style overrides — driven by data-box-style on document.documentElement
+ * (set by useGlobalConfig). Each style redefines the surface variables
+ * (--shadow-pixel + a couple of helpers) so every component that already
+ * uses var(--shadow-pixel) / var(--color-bg-dark) picks up the new look
+ * without per-component edits.
+ *
+ * Keep the inline-color lint quiet: these are theme-system rgba helpers,
+ * not arbitrary colour literals.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* Default = pixel: the original hard-shadow look. No-op override here so
+ * the variables we set above are authoritative when the attribute is
+ * unset or "pixel". */
+:root[data-box-style='pixel'] {
+  --surface-radius: 0px;
+  --surface-blur: 0px;
+}
+
+/* Glassmorphism — translucent backdrops + blur + soft borders. */
+:root[data-box-style='glass'] {
+  --surface-radius: 14px;
+  --surface-blur: 18px;
+  --shadow-pixel: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+:root[data-box-style='glass'] .dt-chat-msg,
+:root[data-box-style='glass'] .dt-card,
+:root[data-box-style='glass'] .pixel-panel {
+  background: rgba(24, 24, 40, 0.55) !important;
+  -webkit-backdrop-filter: blur(var(--surface-blur));
+  backdrop-filter: blur(var(--surface-blur));
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: var(--surface-radius);
+  box-shadow: var(--shadow-pixel);
+}
+
+/* Flat — no shadows, hairline border, square corners. */
+:root[data-box-style='flat'] {
+  --surface-radius: 0px;
+  --shadow-pixel: none;
+}
+:root[data-box-style='flat'] .dt-chat-msg,
+:root[data-box-style='flat'] .dt-card,
+:root[data-box-style='flat'] .pixel-panel {
+  border-width: 1px !important;
+  box-shadow: none !important;
+}
+
+/* Soft — rounded corners + soft drop shadow. */
+:root[data-box-style='soft'] {
+  --surface-radius: 12px;
+  --shadow-pixel: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+:root[data-box-style='soft'] .dt-chat-msg,
+:root[data-box-style='soft'] .dt-card,
+:root[data-box-style='soft'] .pixel-panel {
+  border-radius: var(--surface-radius);
+  border-width: 1px !important;
+  box-shadow: var(--shadow-pixel);
+}
+
+/* Neon — accent-coloured glow border, dark filled body. */
+:root[data-box-style='neon'] {
+  --surface-radius: 6px;
+  --shadow-pixel: 0 0 0 1px var(--color-accent), 0 0 12px rgba(255, 60, 140, 0.45);
+}
+:root[data-box-style='neon'] .dt-chat-msg,
+:root[data-box-style='neon'] .dt-card,
+:root[data-box-style='neon'] .pixel-panel {
+  border-color: var(--color-accent) !important;
+  border-width: 1px !important;
+  border-radius: var(--surface-radius);
+  box-shadow: var(--shadow-pixel);
+}

@@ -66,6 +66,16 @@ export interface GlobalConfig {
   terminalLineHeight: number;
   /** Theme id — drives the live :root CSS variables. */
   themeId: string;
+  /** Box / surface style: pixel | glass | flat | soft | neon. */
+  boxStyle: BoxStyleId;
+}
+
+export const BOX_STYLE_IDS = ['pixel', 'glass', 'flat', 'soft', 'neon'] as const;
+export type BoxStyleId = (typeof BOX_STYLE_IDS)[number];
+const DEFAULT_BOX_STYLE: BoxStyleId = 'pixel';
+
+function applyBoxStyle(style: BoxStyleId): void {
+  document.documentElement.setAttribute('data-box-style', style);
 }
 
 export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
@@ -73,6 +83,7 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   terminalFontFamily: TERMINAL_DEFAULT_FONT_FAMILY,
   terminalLineHeight: TERMINAL_DEFAULT_LINE_HEIGHT,
   themeId: DEFAULT_THEME_ID,
+  boxStyle: DEFAULT_BOX_STYLE,
 };
 
 export interface UseGlobalConfigResult {
@@ -104,6 +115,11 @@ function payloadToConfig(payload: GlobalConfigPayload | null | undefined): Globa
       typeof payload?.theme_id === 'string' && payload.theme_id.length > 0
         ? payload.theme_id
         : DEFAULT_GLOBAL_CONFIG.themeId,
+    boxStyle:
+      typeof payload?.box_style === 'string' &&
+      (BOX_STYLE_IDS as readonly string[]).includes(payload.box_style)
+        ? (payload.box_style as BoxStyleId)
+        : DEFAULT_GLOBAL_CONFIG.boxStyle,
   };
 }
 
@@ -114,6 +130,7 @@ function configToPayload(config: GlobalConfig): GlobalConfigPayload {
     terminal_font_family: config.terminalFontFamily,
     terminal_line_height: config.terminalLineHeight,
     theme_id: config.themeId,
+    box_style: config.boxStyle,
   };
 }
 
@@ -140,6 +157,7 @@ export function useGlobalConfig(): UseGlobalConfigResult {
         applyTheme(resolved.themeId);
         applyAppFont(resolved.terminalFontFamily);
         applyUiZoom(resolved.terminalFontSize);
+        applyBoxStyle(resolved.boxStyle);
         setConfig(resolved);
         setLoaded(true);
       })
@@ -183,6 +201,9 @@ export function useGlobalConfig(): UseGlobalConfigResult {
       }
       if (partial.terminalFontSize && partial.terminalFontSize !== prev.terminalFontSize) {
         applyUiZoom(next.terminalFontSize);
+      }
+      if (partial.boxStyle && partial.boxStyle !== prev.boxStyle) {
+        applyBoxStyle(next.boxStyle);
       }
       return next;
     });

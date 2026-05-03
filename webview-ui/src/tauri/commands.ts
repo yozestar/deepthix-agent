@@ -683,6 +683,7 @@ export interface GlobalConfigPayload {
   terminal_font_family?: string | null;
   terminal_line_height?: number | null;
   theme_id?: string | null;
+  box_style?: string | null;
 }
 
 export async function readGlobalConfig(): Promise<GlobalConfigPayload> {
