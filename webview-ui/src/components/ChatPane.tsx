@@ -565,10 +565,22 @@ export function ChatPane({
   // claude itself — `--resume <id>` already gives the model its full
   // context — but the user expects to SEE the past conversation when
   // they reopen a session, not a blank pane.
+  //
+  // CRITICAL: only fire ONCE per mount, using the resumeSessionId we
+  // had at mount. The prop is bound to entry.sessionId in the parent
+  // (BottomPanel.tsx:288), which starts NULL for a fresh session and
+  // flips to the real UUID after claude's system/init event. Re-running
+  // on that null→uuid transition would re-load the JSONL — which now
+  // contains the user's just-sent message — and prepend it on top of
+  // the bubble we already added locally (and the streamed assistant
+  // reply). Result: every message in a brand-new session appeared
+  // twice. Capture the initial value in a ref and ignore later changes.
+  const initialResumeSessionIdRef = useRef(resumeSessionId ?? null);
   useEffect(() => {
-    if (!resumeSessionId) return;
+    const sid = initialResumeSessionIdRef.current;
+    if (!sid) return;
     let cancelled = false;
-    void chatLoadHistory(cwd, resumeSessionId)
+    void chatLoadHistory(cwd, sid)
       .then((lines) => {
         if (cancelled) return;
         const restored: Message[] = [];
@@ -578,7 +590,7 @@ export function ChatPane({
         if (restored.length > 0) {
           setMessages((prev) => [...restored, ...prev]);
           console.info('[Deepthix][ChatPane] history loaded', {
-            session: resumeSessionId,
+            session: sid,
             messages: restored.length,
             lines: lines.length,
           });
@@ -590,7 +602,7 @@ export function ChatPane({
     return () => {
       cancelled = true;
     };
-  }, [cwd, resumeSessionId]);
+  }, [cwd]);
 
   // Spawn on mount (unless we were handed a pre-existing termId).
   useEffect(() => {
