@@ -56,22 +56,36 @@ fn pick_model() -> Option<PathBuf> {
     // whisper context" instead of telling us the model is busted.
     let home = dirs::home_dir()?;
     let cache = home.join(".cache").join("whisper");
-    // Order = preference. large-v3-turbo (Sept 2024, 809M params, 1.62GB)
-    // is the sweet spot in 2026: ~6-7% French WER (close to large-v3's
-    // ~5-6%) at ~6× the decoding speed thanks to a 32→4 decoder-layer
-    // distillation. On Apple Silicon CPU it transcribes a 30s clip in
-    // ~2-4s, so we prefer it over the heavier large-v3/v2 even though
-    // they nominally win on accuracy. Drops down to the original models
-    // if the user already has them on disk.
+    // Order = preference. We now favor SMALLER, FASTER models because
+    // the user reported the larger ones were freezing the whole UI
+    // during transcription (CPU-pegged inference + the model loading
+    // 1.5GB+ into RAM). small.bin (~466MB) gives ~10-15% French WER
+    // and transcribes a 5s clip in ~200-500ms on Apple Silicon — fast
+    // enough to feel snappy. base.bin (~150MB) is even faster
+    // (~100-200ms) for short prompts. Falls UP to the heavier models
+    // only if those aren't on disk, and the env var DEEPTHIX_VOX_MODEL
+    // can force a specific one when the user explicitly wants quality.
+    let env_pref = std::env::var("DEEPTHIX_VOX_MODEL").ok();
     let candidates: &[(&str, u64)] = &[
+        ("ggml-small.bin", 400_000_000),
+        ("ggml-base.bin", 130_000_000),
+        ("ggml-tiny.bin", 70_000_000),
         ("ggml-large-v3-turbo.bin", 1_500_000_000),
         ("ggml-large-v3.bin", 2_800_000_000),
         ("ggml-large-v2.bin", 2_800_000_000),
         ("ggml-medium.bin", 1_400_000_000),
-        ("ggml-small.bin", 400_000_000),
-        ("ggml-base.bin", 130_000_000),
-        ("ggml-tiny.bin", 70_000_000),
     ];
+    if let Some(pref) = env_pref.as_deref() {
+        // Try the user-pinned model first (e.g. "large-v3-turbo"),
+        // falling through to the default order if absent.
+        let pinned = format!("ggml-{pref}.bin");
+        let p = cache.join(&pinned);
+        if let Ok(m) = std::fs::metadata(&p) {
+            if m.is_file() && m.len() >= 50_000_000 {
+                return Some(p);
+            }
+        }
+    }
     for (name, min_size) in candidates {
         let p = cache.join(name);
         match std::fs::metadata(&p) {
@@ -195,6 +209,18 @@ pub fn transcribe_audio(
     cmd.arg(&wav);
     cmd.args(["-ng", "--no-prints", "--output-txt", "-of"]);
     cmd.arg(&stem);
+    // Cap threads to ~half the cores (min 2). whisper-cli defaults to
+    // "all available" which on Apple Silicon (8-12 cores) pegs every
+    // core at 100% during inference — the webview's render thread gets
+    // starved and the whole UI feels frozen for 2-4s. Half-cores still
+    // transcribes fast enough that the user barely notices, and the
+    // app stays responsive throughout. User reported: "le système de
+    // transcription est beaucoup trop lourd il fait bugger toute l'app".
+    let cpu_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(8);
+    let whisper_threads = (cpu_count / 2).max(2);
+    cmd.args(["--threads", &whisper_threads.to_string()]);
     if let Some(l) = lang.as_deref() {
         cmd.args(["-l", l]);
     } else {
