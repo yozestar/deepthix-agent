@@ -315,24 +315,43 @@ export function CoachPane({ projectId, cwd, sessions }: Props): React.JSX.Elemen
     };
   }, [coachTermId, updateState]);
 
-  /** Spawn (or resume) the coach session for this project. */
+  // Shared in-flight spawn promise. Toggling Coach ON used to fire
+  // TWO chatSpawn calls in parallel — once from setEnabled and once
+  // from the mount effect that re-runs when state.enabled flips —
+  // because both check coachTermIdRef.current === null at the same
+  // moment, before either spawn settles. Two claude sonnet processes
+  // started, each ~100-200MB resident, and the whole app crawled.
+  // Now every caller awaits the same promise.
+  const spawnPromiseRef = useRef<Promise<string | null> | null>(null);
+  /** Spawn (or resume) the coach session for this project. Idempotent. */
   const spawnCoach = useCallback(async (): Promise<string | null> => {
-    try {
-      const r = await chatSpawn({
-        cwd: cwdRef.current,
-        skip_permissions: true,
-        model: 'sonnet',
-        resume_session_id: state.coach_session_id ?? null,
-      });
-      setCoachTermId(r.term_id);
-      coachTermIdRef.current = r.term_id;
-      return r.term_id;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[Deepthix][CoachPane] spawnCoach failed', e);
-      setError(msg);
-      return null;
-    }
+    if (coachTermIdRef.current) return coachTermIdRef.current;
+    if (spawnPromiseRef.current) return spawnPromiseRef.current;
+    const p = (async (): Promise<string | null> => {
+      try {
+        console.info('[Deepthix][CoachPane] spawning coach', {
+          resume: state.coach_session_id ?? null,
+        });
+        const r = await chatSpawn({
+          cwd: cwdRef.current,
+          skip_permissions: true,
+          model: 'sonnet',
+          resume_session_id: state.coach_session_id ?? null,
+        });
+        setCoachTermId(r.term_id);
+        coachTermIdRef.current = r.term_id;
+        return r.term_id;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[Deepthix][CoachPane] spawnCoach failed', e);
+        setError(msg);
+        return null;
+      } finally {
+        spawnPromiseRef.current = null;
+      }
+    })();
+    spawnPromiseRef.current = p;
+    return p;
   }, [state.coach_session_id]);
 
   /** Read excerpts from every claude session and feed the coach. */
