@@ -13,7 +13,7 @@
 // reads a `{"type":"user","message":{...}}` line on stdin and produces
 // the matching response.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -798,6 +798,20 @@ export function ChatPane({
       console.debug('[Deepthix][ChatPane] skip auto-scroll — pane hidden');
       return;
     }
+    // Don't yank the scroll while the user is selecting text inside
+    // the conversation. Streaming deltas would otherwise re-pin to
+    // bottom on every chunk and the selection anchor would jump,
+    // making it impossible to copy a quote out of claude's reply.
+    const sel = window.getSelection();
+    if (
+      sel &&
+      !sel.isCollapsed &&
+      sel.rangeCount > 0 &&
+      el.contains(sel.getRangeAt(0).commonAncestorContainer)
+    ) {
+      console.debug('[Deepthix][ChatPane] skip auto-scroll — active selection');
+      return;
+    }
     if (!initialScrollDoneRef.current && messages.length > 0) {
       el.scrollTop = el.scrollHeight;
       initialScrollDoneRef.current = true;
@@ -1181,6 +1195,18 @@ export function ChatPane({
     return out;
   }, [messages]);
 
+  // Seed the textarea up/down history with EVERY user message in the
+  // current transcript — without this, ↑/↓ did nothing until the user
+  // sent a fresh message in the current ChatInput mount, which made
+  // it look like the arrow keys were broken on a reopened session.
+  const userTextsForHistory = useMemo(() => {
+    const out: string[] = [];
+    for (const m of messages) {
+      if (m.kind === 'user' && m.text) out.push(m.text);
+    }
+    return out;
+  }, [messages]);
+
   // Show a "claude is thinking" placeholder at the bottom of the log
   // when busy AND there's no in-progress streaming bubble for the user
   // to watch grow. Prevents the dead-air feeling between message_start
@@ -1387,6 +1413,7 @@ export function ChatPane({
         slashCommands={slashCommands}
         attachments={pendingAttachments}
         onRemoveAttachment={removeAttachment}
+        historySeed={userTextsForHistory}
         // Always enabled once spawned. claude code in
         // --input-format=stream-json mode queues incoming user
         // turns — you can type a follow-up while the previous one is
@@ -1640,6 +1667,7 @@ function ChatInput({
   slashCommands,
   attachments,
   onRemoveAttachment,
+  historySeed,
   canSend,
   spawning,
   busy,
@@ -1651,6 +1679,10 @@ function ChatInput({
   slashCommands: string[];
   attachments: PendingAttachment[];
   onRemoveAttachment: (uid: string) => void;
+  /** Past sent messages from the loaded transcript — used to seed
+   *  the up/down history navigation so the user doesn't have to
+   *  re-type a fresh message before ↑/↓ does anything. */
+  historySeed: string[];
   canSend: boolean;
   spawning: boolean;
   busy: boolean;
@@ -1663,7 +1695,16 @@ function ChatInput({
   // first line goes to the previous sent message; Down comes back
   // forward; past the newest the input restores to whatever the
   // user was drafting before they navigated.
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<string[]>(historySeed);
+  // historySeed grows as the parent re-renders with new transcript
+  // data. Keep history aligned with it, but only when we haven't
+  // started archiving fresh sends (otherwise we'd clobber the user's
+  // in-session history).
+  const historyHasUserSendsRef = useRef(false);
+  useEffect(() => {
+    if (historyHasUserSendsRef.current) return;
+    setHistory(historySeed);
+  }, [historySeed]);
   const [historyIdx, setHistoryIdx] = useState<number | null>(null);
   const [draftBeforeNav, setDraftBeforeNav] = useState<string>('');
   // Wrap `send` so we can capture into the history without leaking
@@ -1671,6 +1712,7 @@ function ChatInput({
   const sendAndArchive = useCallback((): void => {
     const text = input.trim();
     if (!text) return;
+    historyHasUserSendsRef.current = true;
     setHistory((h) => {
       // De-dupe consecutive identical sends so up-arrow doesn't make
       // you press through five copies of the same message.
@@ -2165,7 +2207,14 @@ function ThinkingIndicator(): React.JSX.Element {
   );
 }
 
-function MessageBubble({ m, running }: { m: Message; running?: boolean }): React.JSX.Element {
+// memo: typing in the textarea re-renders ChatPane on every keystroke,
+// which without memo re-runs every MessageBubble (and the heavy
+// MarkdownBody underneath). Shallow-compare on props (m is a stable
+// object reference for unchanged messages, running is a boolean) keeps
+// existing bubbles untouched while typing — fixes the "ultra slow"
+// composer perf user reported.
+const MessageBubble = memo(_MessageBubble);
+function _MessageBubble({ m, running }: { m: Message; running?: boolean }): React.JSX.Element {
   switch (m.kind) {
     case 'user':
       return (
@@ -2251,7 +2300,8 @@ function MessageBubble({ m, running }: { m: Message; running?: boolean }): React
   }
 }
 
-function Bubble({
+const Bubble = memo(_Bubble);
+function _Bubble({
   align,
   bg,
   fg,
@@ -2314,7 +2364,8 @@ function Bubble({
  * are reset by inline styles since we're inside a pixel-themed bubble
  * with no global Tailwind typography plugin.
  */
-function MarkdownBody({ source }: { source: string }): React.JSX.Element {
+const MarkdownBody = memo(_MarkdownBody);
+function _MarkdownBody({ source }: { source: string }): React.JSX.Element {
   return (
     <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
       <ReactMarkdown
@@ -2579,7 +2630,8 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function ToolBubble({
+const ToolBubble = memo(_ToolBubble);
+function _ToolBubble({
   m,
   running,
 }: {
