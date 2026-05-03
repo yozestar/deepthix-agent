@@ -717,12 +717,23 @@ export function ChatPane({
     };
   }, [termId, onSessionReady]);
 
-  // Auto-scroll to the bottom on new messages — but ONLY if the user
-  // is already near the bottom. If they've scrolled up to read history
-  // we leave them alone instead of yanking them down on every token.
+  // Auto-scroll to the bottom on new messages.
+  //   - First time messages appear (history hydration on session
+  //     reopen): force-scroll regardless of distance. Default is
+  //     scrollTop=0 — without this the user lands at the TOP of an
+  //     hours-old conversation instead of seeing the latest exchange.
+  //   - After that: only scroll if the user is already near the bottom.
+  //     Reading history gets to stay anchored even while a new turn
+  //     streams in below.
+  const initialScrollDoneRef = useRef(false);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    if (!initialScrollDoneRef.current && messages.length > 0) {
+      el.scrollTop = el.scrollHeight;
+      initialScrollDoneRef.current = true;
+      return;
+    }
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (distanceFromBottom < 80) {
       el.scrollTop = el.scrollHeight;
