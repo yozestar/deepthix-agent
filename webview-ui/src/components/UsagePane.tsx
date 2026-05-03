@@ -150,6 +150,17 @@ function oauthLimitsToBuckets(
  *  slots (e.g., new "claude_design_weekly" surfaced after the API
  *  added the bucket). Caller renders these as extra rows so we don't
  *  drop server data on the floor. */
+// Hide buckets the API returns that aren't useful in the pane:
+//   - extra_usage: not a rate limit bucket — it's a separate billing
+//     concept the user can't act on from this view.
+//   - seven_day_omelette: parser harvested it from a nested non-bucket
+//     object that happens to have a utilization-shaped field. Noise.
+//   - sonnet/opus naming variants we already render as canonical.
+const HIDDEN_EXTRA_BUCKETS = new Set([
+  'extra_usage',
+  'seven_day_omelette',
+]);
+
 function extraBuckets(oauth: ClaudeUsageLimits | null): { key: string; label: string; bucket: RateLimitBucket }[] {
   if (!oauth || oauth.error || !oauth.all_buckets) return [];
   const known = new Set([
@@ -177,6 +188,7 @@ function extraBuckets(oauth: ClaudeUsageLimits | null): { key: string; label: st
   const out: { key: string; label: string; bucket: RateLimitBucket }[] = [];
   for (const [key, value] of Object.entries(oauth.all_buckets)) {
     if (known.has(key)) continue;
+    if (HIDDEN_EXTRA_BUCKETS.has(key)) continue;
     out.push({ key, label: humanizeBucketKey(key), bucket: toBucket(value) });
   }
   return out;
