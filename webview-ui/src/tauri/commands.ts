@@ -417,6 +417,9 @@ export interface ChatSpawnArgs {
   resume_session_id?: string | null;
   skip_permissions?: boolean;
   model?: string | null;
+  /** Reasoning effort level — `low | medium | high | xhigh | max`.
+   *  null lets claude pick its default. */
+  effort?: string | null;
 }
 
 export interface ChatSpawnResult {
@@ -449,11 +452,19 @@ export async function chatInterrupt(termId: string): Promise<void> {
 }
 
 /** Soft-restart a chat session under a different model. Same term_id,
- *  same session_id (--resume), new --model. The webview's existing
- *  event subscription keeps working. */
-export async function chatSwitchModel(termId: string, model: string): Promise<void> {
-  log('chat_switch_model', { termId, model });
-  return await invoke<void>('chat_switch_model', { termId, model });
+ *  same session_id (--resume), new --model + optional --effort. The
+ *  webview's existing event subscription keeps working.
+ *
+ *  effort semantics: undefined → preserve existing effort. null → clear
+ *  (let claude pick the default). string → use that level
+ *  (low | medium | high | xhigh | max). */
+export async function chatSwitchModel(
+  termId: string,
+  model: string,
+  effort?: string | null,
+): Promise<void> {
+  log('chat_switch_model', { termId, model, effort });
+  return await invoke<void>('chat_switch_model', { termId, model, effort });
 }
 
 export async function chatSetSessionId(termId: string, sessionId: string): Promise<void> {

@@ -53,6 +53,11 @@ pub struct ChatSpawnArgs {
     /// uses its default.
     #[serde(default)]
     pub model: Option<String>,
+    /// Optional reasoning effort forwarded as `--effort`. Valid values
+    /// per `claude --help`: low | medium | high | xhigh | max. None →
+    /// claude uses its default for the chosen model.
+    #[serde(default)]
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -100,6 +105,10 @@ struct ChatChild {
     /// Whether the child was started with --dangerously-skip-permissions.
     /// Same reason as `cwd`.
     skip_permissions: bool,
+    /// Last `--effort` value used when spawning. Lets `chat_switch_model`
+    /// preserve the user's effort choice unless they explicitly pick
+    /// a new one in the picker.
+    effort: Option<String>,
 }
 
 /// Tauri-managed state. Same pattern as TerminalManager.
@@ -196,6 +205,9 @@ pub fn chat_spawn(
     if let Some(m) = args.model.as_ref() {
         cmd.arg("--model").arg(m);
     }
+    if let Some(e) = args.effort.as_ref() {
+        cmd.arg("--effort").arg(e);
+    }
 
     // Same env-var injection pty.rs does for the legacy spawn:
     // - DEEPTHIX_DASHBOARD_PATH lets claude `Write` straight into the
@@ -260,6 +272,7 @@ pub fn chat_spawn(
         session_id: args.resume_session_id.clone(),
         cwd: args.cwd.clone(),
         skip_permissions: args.skip_permissions,
+        effort: args.effort.clone(),
     };
     state.inner.lock().unwrap().insert(term_id.clone(), entry);
 
@@ -441,17 +454,21 @@ pub fn chat_interrupt(state: State<'_, ChatManager>, term_id: String) -> Result<
 /// invocation. The conversation history is preserved (claude resumes
 /// from the same JSONL); the user just sees a brief "switching model…"
 /// system message followed by the new model picking up the next turn.
+/// `effort` semantics: None = preserve the existing one. Some("") =
+/// clear (let claude pick its default for the model). Some("<level>")
+/// = use that level (low | medium | high | xhigh | max).
 #[tauri::command]
 pub fn chat_switch_model(
     app: AppHandle,
     state: State<'_, ChatManager>,
     term_id: String,
     model: String,
+    effort: Option<String>,
 ) -> Result<(), String> {
-    tracing::info!(target: "deepthix::chat", %term_id, %model, "chat_switch_model");
+    tracing::info!(target: "deepthix::chat", %term_id, %model, ?effort, "chat_switch_model");
     // Snapshot what we need to respawn under the lock, then release
     // before doing the heavy work.
-    let (cwd, session_id, skip_permissions) = {
+    let (cwd, session_id, skip_permissions, prev_effort) = {
         let map = state.inner.lock().unwrap();
         let entry = map
             .get(&term_id)
@@ -460,7 +477,19 @@ pub fn chat_switch_model(
             .session_id
             .clone()
             .ok_or_else(|| "session has no UUID yet — wait for init before switching".to_string())?;
-        (entry.cwd.clone(), sid, entry.skip_permissions)
+        (
+            entry.cwd.clone(),
+            sid,
+            entry.skip_permissions,
+            entry.effort.clone(),
+        )
+    };
+    // Resolve effort: explicit Some("") clears, None preserves prev,
+    // Some("<level>") replaces.
+    let next_effort = match effort {
+        Some(s) if s.is_empty() => None,
+        Some(s) => Some(s),
+        None => prev_effort,
     };
 
     // Kill the current child + remove it. The exit_watcher will pick
@@ -485,6 +514,9 @@ pub fn chat_switch_model(
         .arg(&session_id)
         .arg("--model")
         .arg(&model);
+    if let Some(e) = next_effort.as_ref() {
+        cmd.arg("--effort").arg(e);
+    }
     if skip_permissions {
         cmd.arg("--dangerously-skip-permissions");
     }
@@ -535,6 +567,7 @@ pub fn chat_switch_model(
         session_id: Some(session_id),
         cwd,
         skip_permissions,
+        effort: next_effort,
     };
     state.inner.lock().unwrap().insert(term_id, entry);
     Ok(())

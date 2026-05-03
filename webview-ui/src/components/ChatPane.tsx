@@ -515,6 +515,7 @@ export function ChatPane({
   const [termId, setTermId] = useState<string | null>(bindTermId ?? null);
   const [sessionId, setSessionId] = useState<string | null>(resumeSessionId ?? null);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const [currentEffort, setCurrentEffort] = useState<string | null>(null);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -1061,7 +1062,7 @@ export function ChatPane({
             type="button"
             onClick={() => setShowModelPicker(true)}
             disabled={!termId}
-            title="Click to switch model"
+            title="Click to switch model + reasoning effort"
             style={{
               padding: '2px 8px',
               background: currentModel ? 'var(--color-accent)' : 'transparent',
@@ -1072,9 +1073,26 @@ export function ChatPane({
               cursor: termId ? 'pointer' : 'default',
               letterSpacing: '0.04em',
               opacity: termId ? 1 : 0.4,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
             }}
           >
-            {modelLabel ?? '?'}
+            <span>{modelLabel ?? '?'}</span>
+            {currentEffort && (
+              <span
+                style={{
+                  padding: '0 4px',
+                  background: 'var(--color-bg-dark)',
+                  color: 'var(--color-accent)',
+                  fontWeight: 'bold',
+                  letterSpacing: '0.06em',
+                  fontSize: 9,
+                }}
+              >
+                {currentEffort.toUpperCase()}
+              </span>
+            )}
           </button>
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1098,10 +1116,16 @@ export function ChatPane({
       {showModelPicker && termId && (
         <ModelPicker
           current={currentModel}
-          onPick={(m) => {
+          currentEffort={currentEffort}
+          onPick={(m, e) => {
             setShowModelPicker(false);
-            void chatSwitchModel(termId, m)
+            // effort: '' means default (clears the flag); chatSwitchModel
+            // accepts null for that semantic.
+            const effortArg = e === '' ? null : e;
+            setCurrentEffort(e || null);
+            void chatSwitchModel(termId, m, effortArg)
               .then(() => {
+                const effortLabel = e ? ` · effort=${e}` : '';
                 setMessages((prev) => [
                   ...prev,
                   {
@@ -1109,12 +1133,12 @@ export function ChatPane({
                     uid: uid(),
                     ts: Date.now(),
                     subtype: 'model',
-                    summary: `Model switched to ${m}. Conversation context preserved.`,
+                    summary: `Switched to ${m}${effortLabel}. Conversation context preserved.`,
                   },
                 ]);
               })
-              .catch((e) => {
-                const msg = e instanceof Error ? e.message : String(e);
+              .catch((err) => {
+                const msg = err instanceof Error ? err.message : String(err);
                 setMessages((prev) => [
                   ...prev,
                   {
@@ -1228,6 +1252,22 @@ const MODEL_CHOICES: ModelChoice[] = [
   },
 ];
 
+/** Reasoning-effort levels claude code accepts via `--effort`.
+ *  `default` clears the flag and lets claude pick. */
+interface EffortChoice {
+  id: string; // '' means default
+  label: string;
+  tagline: string;
+}
+const EFFORT_CHOICES: EffortChoice[] = [
+  { id: '', label: 'Default', tagline: "claude picks based on the model" },
+  { id: 'low', label: 'Low', tagline: 'Skip extended thinking · fastest' },
+  { id: 'medium', label: 'Medium', tagline: 'Light thinking · default for most tasks' },
+  { id: 'high', label: 'High', tagline: 'Deeper thinking · longer answers' },
+  { id: 'xhigh', label: 'X-High', tagline: 'Heavy thinking · multi-step planning' },
+  { id: 'max', label: 'Max', tagline: 'Ultrathink · burns tokens but goes deep' },
+];
+
 /**
  * Centered modal picker shown when the user types `/model` (no arg)
  * or clicks the model badge in the header. Pick a model → triggers
@@ -1235,14 +1275,29 @@ const MODEL_CHOICES: ModelChoice[] = [
  */
 function ModelPicker({
   current,
+  currentEffort,
   onPick,
   onClose,
 }: {
   current: string | null;
-  onPick: (model: string) => void;
+  /** Effort level claude is currently running with, or null if unset. */
+  currentEffort: string | null;
+  /** Fired when the user picks model + effort. effort = '' means
+   *  "default", null only used internally. */
+  onPick: (model: string, effort: string) => void;
   onClose: () => void;
 }): React.JSX.Element {
-  // Esc to close. Trap focus inside the dialog while open.
+  // Local draft state so the user can pick model + effort then click
+  // Apply (instead of triggering a respawn on each click). Pre-fills
+  // from the live values.
+  const initialModelId = useMemo(() => {
+    const lower = current?.toLowerCase() ?? '';
+    const match = MODEL_CHOICES.find((c) => lower.includes(c.id.toLowerCase()));
+    return match?.id ?? 'sonnet';
+  }, [current]);
+  const [draftModel, setDraftModel] = useState<string>(initialModelId);
+  const [draftEffort, setDraftEffort] = useState<string>(currentEffort ?? '');
+
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if (e.key === 'Escape') {
@@ -1253,6 +1308,9 @@ function ModelPicker({
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose]);
+
+  const isUnchanged =
+    draftModel === initialModelId && draftEffort === (currentEffort ?? '');
 
   return (
     <div
@@ -1274,53 +1332,58 @@ function ModelPicker({
           background: 'var(--color-bg-dark)',
           border: '2px solid var(--color-border)',
           boxShadow: 'var(--shadow-pixel)',
-          padding: 16,
-          maxWidth: 380,
+          padding: 18,
+          maxWidth: 480,
           width: '100%',
           display: 'flex',
           flexDirection: 'column',
-          gap: 10,
+          gap: 14,
           fontFamily: 'var(--font-pixel)',
           color: 'var(--color-text)',
         }}
       >
-        <div style={{ fontSize: 13, fontWeight: 'bold', letterSpacing: '0.05em' }}>
-          Switch model
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 'bold', letterSpacing: '0.05em' }}>
+            Switch model & reasoning effort
+          </div>
+          <div style={{ fontSize: 11, opacity: 0.65, marginTop: 2 }}>
+            Conversation context is preserved (--resume).
+          </div>
         </div>
-        <div style={{ fontSize: 11, opacity: 0.65 }}>
-          Conversation context is preserved (--resume). Pick a model:
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+
+        {/* Model column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="dt-section-header" style={{ padding: 0 }}>
+            Model
+          </div>
           {MODEL_CHOICES.map((c) => {
-            const isCurrent =
-              current?.toLowerCase().includes(c.id.toLowerCase()) ?? false;
+            const isSelected = draftModel === c.id;
             return (
               <button
                 key={c.id}
                 type="button"
-                onClick={() => onPick(c.id)}
-                disabled={isCurrent}
-                title={isCurrent ? 'Already running this model' : `Switch to ${c.label}`}
+                onClick={() => setDraftModel(c.id)}
+                title={`Use ${c.label}`}
                 style={{
                   textAlign: 'left',
                   padding: '8px 12px',
-                  background: isCurrent ? 'transparent' : 'var(--color-bg)',
+                  background: isSelected ? 'var(--color-bg)' : 'transparent',
                   color: 'inherit',
-                  border: `2px solid ${isCurrent ? 'var(--color-accent)' : 'var(--color-border)'}`,
-                  cursor: isCurrent ? 'default' : 'pointer',
+                  border: `2px solid ${isSelected ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                  cursor: 'pointer',
                   fontFamily: 'var(--font-pixel)',
                   fontSize: 12,
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 2,
-                  opacity: isCurrent ? 0.65 : 1,
+                  transition: 'border-color 120ms ease, background 120ms ease',
                 }}
               >
                 <span style={{ fontWeight: 'bold', fontSize: 13 }}>
                   {c.label}
-                  {isCurrent && (
+                  {isSelected && (
                     <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--color-accent)' }}>
-                      ✓ current
+                      ✓
                     </span>
                   )}
                 </span>
@@ -1329,23 +1392,57 @@ function ModelPicker({
             );
           })}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          style={{
-            alignSelf: 'flex-end',
-            padding: '4px 14px',
-            background: 'transparent',
-            color: 'inherit',
-            border: '2px solid var(--color-border)',
-            fontFamily: 'var(--font-pixel)',
-            fontSize: 11,
-            cursor: 'pointer',
-            marginTop: 4,
-          }}
-        >
-          Cancel
-        </button>
+
+        {/* Effort column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="dt-section-header" style={{ padding: 0 }}>
+            Reasoning effort
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+            {EFFORT_CHOICES.map((e) => {
+              const isSelected = draftEffort === e.id;
+              return (
+                <button
+                  key={e.id || 'default'}
+                  type="button"
+                  onClick={() => setDraftEffort(e.id)}
+                  title={e.tagline}
+                  style={{
+                    padding: '6px 8px',
+                    background: isSelected ? 'var(--color-bg)' : 'transparent',
+                    color: 'inherit',
+                    border: `2px solid ${isSelected ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-pixel)',
+                    fontSize: 11,
+                    fontWeight: isSelected ? 'bold' : 'normal',
+                    transition: 'border-color 120ms ease, background 120ms ease',
+                  }}
+                >
+                  {e.label}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 10, opacity: 0.7, lineHeight: 1.45 }}>
+            {EFFORT_CHOICES.find((e) => e.id === draftEffort)?.tagline ?? ''}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+          <button type="button" onClick={onClose} className="dt-btn" style={{ fontSize: 11 }}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onPick(draftModel, draftEffort)}
+            disabled={isUnchanged}
+            className="dt-btn dt-btn--primary"
+            style={{ fontSize: 11 }}
+          >
+            {isUnchanged ? 'No change' : 'Apply'}
+          </button>
+        </div>
       </div>
     </div>
   );
