@@ -1,3 +1,4 @@
+mod claude_bin;
 mod claude_md;
 mod commands;
 mod jsonl_watcher;

@@ -216,18 +216,16 @@ impl TerminalManager {
             })
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-        // Try `claude` from PATH first; fall back to user-local install path.
-        let claude_bin = if which_claude().is_some() {
-            "claude".to_string()
-        } else {
-            let home = dirs::home_dir().unwrap_or_default();
-            let fallback = home.join(".local/bin/claude");
-            tracing::warn!(target: "deepthix::pty", ?fallback, "claude not on PATH, trying fallback");
-            fallback.to_string_lossy().into_owned()
-        };
-        tracing::debug!(target: "deepthix::pty", %claude_bin, "resolved claude");
+        // Resolve claude across the same install paths chat.rs uses,
+        // and on Windows wrap .cmd / .ps1 shims with cmd.exe / powershell
+        // so CreateProcess doesn't blow up with OS error 193.
+        let claude_bin = crate::claude_bin::resolve_opt().ok_or_else(|| {
+            tracing::warn!(target: "deepthix::pty", "claude not found on PATH or fallback paths");
+            std::io::Error::other("claude CLI not found")
+        })?;
+        tracing::debug!(target: "deepthix::pty", ?claude_bin, "resolved claude");
 
-        let mut cmd = CommandBuilder::new(claude_bin);
+        let mut cmd = crate::claude_bin::build_pty_command_builder(&claude_bin);
         if resuming {
             // Re-attach to an existing transcript.
             cmd.arg("--resume");
@@ -410,39 +408,3 @@ impl TerminalManager {
     }
 }
 
-/// Best-effort lookup for `claude`. PATH first, then a hand-rolled list of
-/// the places modern installers actually drop the binary — needed because
-/// macOS GUI apps don't inherit the user's shell PATH (only /usr/bin etc.).
-fn which_claude() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&path) {
-            let candidate = dir.join("claude");
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    let home = std::env::var("HOME").unwrap_or_default();
-    let mut candidates: Vec<PathBuf> = vec![
-        PathBuf::from("/opt/homebrew/bin/claude"),
-        PathBuf::from("/usr/local/bin/claude"),
-        PathBuf::from("/usr/bin/claude"),
-    ];
-    if !home.is_empty() {
-        let hp = PathBuf::from(&home);
-        candidates.extend([
-            hp.join(".local/bin/claude"),
-            hp.join(".npm-global/bin/claude"),
-            hp.join(".bun/bin/claude"),
-            hp.join(".volta/bin/claude"),
-            hp.join(".cargo/bin/claude"),
-        ]);
-        let nvm_versions = hp.join(".nvm/versions/node");
-        if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
-            for e in entries.flatten() {
-                candidates.push(e.path().join("bin/claude"));
-            }
-        }
-    }
-    candidates.into_iter().find(|p| p.is_file())
-}

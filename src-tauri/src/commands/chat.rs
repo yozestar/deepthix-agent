@@ -179,9 +179,9 @@ pub fn chat_spawn(
 
     // Resolve the claude binary the same way pty.rs does — prefer the
     // user's installed CLI on PATH, fall back to /opt/homebrew/bin.
-    let claude_bin = which_claude()?;
+    let claude_bin = crate::claude_bin::resolve()?;
 
-    let mut cmd = Command::new(&claude_bin);
+    let mut cmd = crate::claude_bin::build_command(&claude_bin);
     cmd.current_dir(&args.cwd)
         .arg("--print")
         .arg("--output-format")
@@ -295,70 +295,6 @@ pub fn chat_spawn(
         term_id,
         session_id: None,
     })
-}
-
-fn which_claude() -> Result<PathBuf, String> {
-    // GUI apps on macOS inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:
-    // /sbin) — they DON'T see /opt/homebrew/bin or any user-level npm /
-    // bun / nvm / volta dir, even though the user's shell does. So
-    // `which claude` from a Finder-launched app almost always fails.
-    // We try in this order:
-    //   1. PATH (works in `npm run dev` from terminal, fallback in GUI)
-    //   2. `which claude` shelled out (same caveat as #1)
-    //   3. A hand-rolled list of every place modern installers drop the
-    //      claude binary — this is what actually rescues GUI launches.
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path) {
-            let p = dir.join("claude");
-            if p.is_file() {
-                return Ok(p);
-            }
-        }
-    }
-    if let Ok(out) = Command::new("which").arg("claude").output() {
-        if out.status.success() {
-            let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !p.is_empty() && PathBuf::from(&p).is_file() {
-                return Ok(PathBuf::from(p));
-            }
-        }
-    }
-    let home = std::env::var("HOME").unwrap_or_default();
-    let mut candidates: Vec<PathBuf> = vec![
-        PathBuf::from("/opt/homebrew/bin/claude"),
-        PathBuf::from("/usr/local/bin/claude"),
-        PathBuf::from("/usr/bin/claude"),
-    ];
-    if !home.is_empty() {
-        let hp = PathBuf::from(&home);
-        candidates.extend([
-            hp.join(".local/bin/claude"),       // Anthropic native installer + many python/pipx setups
-            hp.join(".npm-global/bin/claude"),  // npm with --prefix
-            hp.join(".bun/bin/claude"),         // Bun
-            hp.join(".volta/bin/claude"),       // Volta
-            hp.join(".cargo/bin/claude"),       // Cargo (rare but cheap to check)
-        ]);
-        // NVM: scan every installed node version and look for bin/claude.
-        let nvm_versions = hp.join(".nvm/versions/node");
-        if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
-            for e in entries.flatten() {
-                candidates.push(e.path().join("bin/claude"));
-            }
-        }
-    }
-    for p in &candidates {
-        if p.is_file() {
-            return Ok(p.clone());
-        }
-    }
-    Err(format!(
-        "claude CLI not found. Tried: {}. Install with: npm install -g @anthropic-ai/claude-code, brew install claude, or use the Anthropic native installer (drops it at ~/.local/bin/claude).",
-        candidates
-            .iter()
-            .map(|p| p.to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join(", ")
-    ))
 }
 
 fn spawn_reader<R: std::io::Read + Send + 'static>(
@@ -598,17 +534,27 @@ pub fn chat_interrupt(state: State<'_, ChatManager>, term_id: String) -> Result<
         .ok_or_else(|| format!("no chat session {term_id}"))?;
     let pid = entry.child.id();
     drop(map);
-    // Shell out to /bin/kill so we don't pull in `nix` as a dependency
-    // just for one signal call. macOS / Linux only — Tauri windows
-    // build (when we get there) will need a different path.
-    let status = Command::new("/bin/kill")
-        .arg("-INT")
-        .arg(pid.to_string())
-        .status()
-        .map_err(|e| format!("kill spawn: {e}"))?;
-    if !status.success() {
-        return Err(format!("kill -INT exited {status}"));
+    // SIGINT on Unix; Windows has no equivalent for non-attached console
+    // children, so we fall through to TerminateProcess (the caller's
+    // immediate child.kill() if any). The Stop button uses
+    // chat_interrupt_and_resume which always pairs with kill().
+    #[cfg(unix)]
+    {
+        let status = Command::new("/bin/kill")
+            .arg("-INT")
+            .arg(pid.to_string())
+            .status()
+            .map_err(|e| format!("kill spawn: {e}"))?;
+        if !status.success() {
+            return Err(format!("kill -INT exited {status}"));
+        }
     }
+    #[cfg(windows)]
+    {
+        let _ = pid;
+        return Err("interrupt is unix-only on this build; use chat_interrupt_and_resume".to_string());
+    }
+    #[allow(unreachable_code)]
     Ok(())
 }
 
@@ -652,7 +598,11 @@ pub fn chat_interrupt_and_resume(
     };
 
     // SIGINT first to give claude a chance to flush partial state,
-    // then settle briefly + remove + hard-kill to be sure.
+    // then settle briefly + remove + hard-kill to be sure. Windows has
+    // no SIGINT for non-console children, so we skip straight to the
+    // hard kill below — that path still gives us "stop turn + resume"
+    // behavior, just without the graceful flush.
+    #[cfg(unix)]
     if let Some(entry) = state.inner.lock().unwrap().get(&term_id) {
         let pid = entry.child.id();
         let _ = Command::new("/bin/kill")
@@ -667,8 +617,8 @@ pub fn chat_interrupt_and_resume(
 
     // Respawn — same skeleton as chat_switch_model but model is
     // optional (preserve current; FE passes its currentModel).
-    let claude_bin = which_claude()?;
-    let mut cmd = Command::new(&claude_bin);
+    let claude_bin = crate::claude_bin::resolve()?;
+    let mut cmd = crate::claude_bin::build_command(&claude_bin);
     cmd.current_dir(&cwd)
         .arg("--print")
         .arg("--output-format")
@@ -805,8 +755,8 @@ pub fn chat_switch_model(
     }
 
     // Re-spawn with the new model, --resume on the same session_id.
-    let claude_bin = which_claude()?;
-    let mut cmd = Command::new(&claude_bin);
+    let claude_bin = crate::claude_bin::resolve()?;
+    let mut cmd = crate::claude_bin::build_command(&claude_bin);
     cmd.current_dir(&cwd)
         .arg("--print")
         .arg("--output-format")
@@ -1246,8 +1196,8 @@ pub fn chat_resume_other_session(
         let _ = prev.child.kill();
     }
 
-    let claude_bin = which_claude()?;
-    let mut cmd = Command::new(&claude_bin);
+    let claude_bin = crate::claude_bin::resolve()?;
+    let mut cmd = crate::claude_bin::build_command(&claude_bin);
     cmd.current_dir(&cwd)
         .arg("--print")
         .arg("--output-format")
