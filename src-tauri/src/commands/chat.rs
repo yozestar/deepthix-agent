@@ -298,9 +298,23 @@ pub fn chat_spawn(
 }
 
 fn which_claude() -> Result<PathBuf, String> {
-    // Mirror pty::resolve_claude_bin behavior — PATH first, then a few
-    // common Homebrew prefixes. Surfaced as a string so the webview can
-    // show a useful error if the user doesn't have claude installed.
+    // GUI apps on macOS inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:
+    // /sbin) — they DON'T see /opt/homebrew/bin or any user-level npm /
+    // bun / nvm / volta dir, even though the user's shell does. So
+    // `which claude` from a Finder-launched app almost always fails.
+    // We try in this order:
+    //   1. PATH (works in `npm run dev` from terminal, fallback in GUI)
+    //   2. `which claude` shelled out (same caveat as #1)
+    //   3. A hand-rolled list of every place modern installers drop the
+    //      claude binary — this is what actually rescues GUI launches.
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let p = dir.join("claude");
+            if p.is_file() {
+                return Ok(p);
+            }
+        }
+    }
     if let Ok(out) = Command::new("which").arg("claude").output() {
         if out.status.success() {
             let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -309,13 +323,42 @@ fn which_claude() -> Result<PathBuf, String> {
             }
         }
     }
-    for prefix in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
-        let p = PathBuf::from(prefix).join("claude");
-        if p.is_file() {
-            return Ok(p);
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut candidates: Vec<PathBuf> = vec![
+        PathBuf::from("/opt/homebrew/bin/claude"),
+        PathBuf::from("/usr/local/bin/claude"),
+        PathBuf::from("/usr/bin/claude"),
+    ];
+    if !home.is_empty() {
+        let hp = PathBuf::from(&home);
+        candidates.extend([
+            hp.join(".local/bin/claude"),       // Anthropic native installer + many python/pipx setups
+            hp.join(".npm-global/bin/claude"),  // npm with --prefix
+            hp.join(".bun/bin/claude"),         // Bun
+            hp.join(".volta/bin/claude"),       // Volta
+            hp.join(".cargo/bin/claude"),       // Cargo (rare but cheap to check)
+        ]);
+        // NVM: scan every installed node version and look for bin/claude.
+        let nvm_versions = hp.join(".nvm/versions/node");
+        if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
+            for e in entries.flatten() {
+                candidates.push(e.path().join("bin/claude"));
+            }
         }
     }
-    Err("claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code or brew install claude".to_string())
+    for p in &candidates {
+        if p.is_file() {
+            return Ok(p.clone());
+        }
+    }
+    Err(format!(
+        "claude CLI not found. Tried: {}. Install with: npm install -g @anthropic-ai/claude-code, brew install claude, or use the Anthropic native installer (drops it at ~/.local/bin/claude).",
+        candidates
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
 }
 
 fn spawn_reader<R: std::io::Read + Send + 'static>(

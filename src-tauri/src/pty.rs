@@ -410,14 +410,39 @@ impl TerminalManager {
     }
 }
 
-/// Best-effort PATH lookup for `claude`. Returns Some(path) if found.
+/// Best-effort lookup for `claude`. PATH first, then a hand-rolled list of
+/// the places modern installers actually drop the binary — needed because
+/// macOS GUI apps don't inherit the user's shell PATH (only /usr/bin etc.).
 fn which_claude() -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let candidate = dir.join("claude");
-        if candidate.is_file() {
-            return Some(candidate);
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join("claude");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
         }
     }
-    None
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut candidates: Vec<PathBuf> = vec![
+        PathBuf::from("/opt/homebrew/bin/claude"),
+        PathBuf::from("/usr/local/bin/claude"),
+        PathBuf::from("/usr/bin/claude"),
+    ];
+    if !home.is_empty() {
+        let hp = PathBuf::from(&home);
+        candidates.extend([
+            hp.join(".local/bin/claude"),
+            hp.join(".npm-global/bin/claude"),
+            hp.join(".bun/bin/claude"),
+            hp.join(".volta/bin/claude"),
+            hp.join(".cargo/bin/claude"),
+        ]);
+        let nvm_versions = hp.join(".nvm/versions/node");
+        if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
+            for e in entries.flatten() {
+                candidates.push(e.path().join("bin/claude"));
+            }
+        }
+    }
+    candidates.into_iter().find(|p| p.is_file())
 }
