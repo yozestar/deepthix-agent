@@ -752,6 +752,11 @@ export function ChatPane({
       // clear busy. If no, fall through to the regular exit notice.
       if (interruptedRef.current) {
         interruptedRef.current = false;
+        interruptingRef.current = false;
+        if (interruptSafetyTimerRef.current) {
+          clearTimeout(interruptSafetyTimerRef.current);
+          interruptSafetyTimerRef.current = null;
+        }
         console.info('[Deepthix][ChatPane] exit was intentional (interrupt+resume)');
         setMessages((prev) => [
           ...prev,
@@ -760,7 +765,7 @@ export function ChatPane({
             uid: uid(),
             ts: Date.now(),
             subtype: 'exit',
-            summary: '⏹ turn stopped — session resumed',
+            summary: '✓ turn stopped — session resumed',
           },
         ]);
         setBusy(false);
@@ -819,6 +824,14 @@ export function ChatPane({
   // suppress the "claude exited" system bubble (the exit was on
   // purpose and a fresh claude is already on the way).
   const interruptedRef = useRef(false);
+  // Tracks the safety timer that auto-clears busy if chat_exit never
+  // arrives after Stop (rare but possible if claude hangs in a tool
+  // call that ignores SIGINT).
+  const interruptSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Latch: prevents Stop from being fired multiple times in quick
+  // succession (rapid Ctrl+C / button mash) which would queue redundant
+  // chat_interrupt_and_resume calls.
+  const interruptingRef = useRef(false);
   // Stable ref so we can drop onSessionReady from effect deps. The
   // parent (BottomPanel) passes an inline arrow, which gets a new
   // reference on every parent render — when this ref was a dep, the
@@ -1314,6 +1327,100 @@ export function ChatPane({
     }
   }, [input, termId, handleSlashCommand, pendingAttachments, agentId]);
 
+  /** Stop the current turn — wired to both the Stop button and Ctrl+C
+   *  (the same interrupt convention claude code's TUI uses). Optimistic
+   *  UI: we drop a "⏹ stopping…" bubble + clear busy locally right
+   *  away, then the real chat_exit handler upgrades it to "✓ turn
+   *  stopped — session resumed" once the respawn lands. A 5s safety
+   *  timer force-clears busy if exit never fires (e.g. claude hung in
+   *  a tool that ate SIGINT). */
+  const interruptTurn = useCallback((): void => {
+    if (!termId) return;
+    if (interruptingRef.current) {
+      console.debug('[Deepthix][ChatPane] interrupt already in flight — ignored');
+      return;
+    }
+    interruptingRef.current = true;
+    interruptedRef.current = true;
+    setMessages((prev) => [
+      ...prev,
+      {
+        kind: 'system',
+        uid: uid(),
+        ts: Date.now(),
+        subtype: 'exit',
+        summary: '⏹ stopping turn…',
+      },
+    ]);
+    // Clear busy locally for immediate UI feedback — the chat_exit
+    // handler will set the final "stopped" message and set busy=false
+    // again once the respawn completes.
+    setBusy(false);
+    // Safety timer: if no chat_exit arrives within 5s, something's
+    // stuck. Surface it so the user isn't left wondering if Stop did
+    // anything.
+    if (interruptSafetyTimerRef.current) clearTimeout(interruptSafetyTimerRef.current);
+    interruptSafetyTimerRef.current = setTimeout(() => {
+      if (!interruptedRef.current) return; // exit already arrived
+      console.warn('[Deepthix][ChatPane] interrupt timeout — no chat_exit after 5s');
+      interruptedRef.current = false;
+      interruptingRef.current = false;
+      setMessages((prev) => [
+        ...prev,
+        {
+          kind: 'system',
+          uid: uid(),
+          ts: Date.now(),
+          subtype: 'exit',
+          summary:
+            '⚠ stop signal sent but claude did not exit (likely stuck in a tool). Try again or close the session.',
+        },
+      ]);
+    }, 5000);
+    void chatInterruptAndResume(termId, currentModel)
+      .then(() => {
+        // chat_exit handler will release interruptingRef.
+        console.info('[Deepthix][ChatPane] interrupt+resume RPC ok — waiting for exit event');
+      })
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn('[Deepthix][ChatPane] interrupt+resume failed', e);
+        interruptedRef.current = false;
+        interruptingRef.current = false;
+        if (interruptSafetyTimerRef.current) {
+          clearTimeout(interruptSafetyTimerRef.current);
+          interruptSafetyTimerRef.current = null;
+        }
+        setError(`Stop failed: ${msg}`);
+      });
+  }, [termId, currentModel]);
+
+  // Ctrl+C global shortcut → stop the turn (same as claude code TUI).
+  // Cmd+C is NOT touched (macOS native copy). On any platform, if the
+  // user has an active text selection, we don't preventDefault — they
+  // probably wanted to copy first.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if (!busy) return;
+      if (e.key !== 'c' && e.key !== 'C') return;
+      if (!e.ctrlKey || e.metaKey || e.altKey) return;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      e.preventDefault();
+      console.info('[Deepthix][ChatPane] Ctrl+C → interrupt');
+      interruptTurn();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, interruptTurn]);
+
+  // Cleanup safety timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (interruptSafetyTimerRef.current) clearTimeout(interruptSafetyTimerRef.current);
+    };
+  }, []);
+
   const headerLabel = useMemo(
     () => (sessionId ? `claude · ${sessionId.slice(0, 8)}` : 'claude · starting…'),
     [sessionId],
@@ -1613,20 +1720,7 @@ export function ChatPane({
         canSend={Boolean(termId)}
         spawning={!termId}
         busy={busy}
-        onInterrupt={() => {
-          if (!termId) return;
-          // Mark the exit as intentional BEFORE shipping the kill so
-          // the chat_exit handler that fires shortly after suppresses
-          // the misleading "claude exited" bubble. Rust respawns a
-          // fresh claude under the same term_id with --resume.
-          interruptedRef.current = true;
-          void chatInterruptAndResume(termId, currentModel).catch((e) => {
-            // Resume failed → undo the suppression flag so the user
-            // sees the real exit notice instead of silent death.
-            interruptedRef.current = false;
-            console.warn('[Deepthix][ChatPane] interrupt+resume failed', e);
-          });
-        }}
+        onInterrupt={interruptTurn}
       />
     </div>
   );
@@ -2175,7 +2269,7 @@ function ChatInput({
           <button
             type="button"
             onClick={onInterrupt}
-            title="Stop (interrupt the current turn)"
+            title="Stop the current turn (Ctrl+C)"
             style={{
               padding: '4px 12px',
               background: 'var(--color-danger)',

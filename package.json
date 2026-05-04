@@ -2,7 +2,7 @@
   "name": "deepthix-agent",
   "displayName": "Deepthix Agent",
   "description": "Standalone macOS app for running and watching Claude Code agents in a pixel art office.",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "license": "MIT",
   "private": true,
   "type": "module",
