@@ -81,17 +81,33 @@ jobs:
       - name: Install webview deps
         run: npm install --prefix webview-ui --legacy-peer-deps
 
+      # Disable updater-artifact creation when signing isn't configured
+      # — otherwise the bundler aborts with "incorrect updater private
+      # key password" because tauri-action passes empty env strings to
+      # the bundler, which it treats as "use this empty key" instead of
+      # "skip signing". Patching tauri.conf.json before build gracefully
+      # ships unsigned installers when secrets aren't set on the repo.
+      - name: Disable updater artifacts if signing key is missing
+        shell: bash
+        env:
+          HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$HAS_SIGNING_KEY" != "true" ]; then
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY not set in repo secrets — building installers WITHOUT updater artifacts (auto-update from this version will be a no-op)"
+            python3 -c "import json; p='src-tauri/tauri.conf.json'; c=json.load(open(p)); c['bundle']['createUpdaterArtifacts']=False; json.dump(c, open(p,'w'), indent=2)"
+          else
+            echo "Signing key detected — building updater artifacts (.app.tar.gz / .nsis.zip + .sig)"
+          fi
+
       - name: Build + bundle + release
         id: tauri
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Auto-updater signing keys. When these are present in repo
-          # secrets the bundler emits .sig files alongside each updater
-          # artifact (.app.tar.gz / .nsis.zip / .msi.zip). When they are
-          # missing, tauri-action skips signing entirely so a fork can
-          # still build without setting up signing — but the in-app
-          # updater won't accept the resulting artifacts.
+          # Auto-updater signing keys. When TAURI_SIGNING_PRIVATE_KEY is
+          # empty the previous step has already disabled updater artifacts
+          # in tauri.conf.json, so the bundler won't try to sign anything.
+          # Passing empty strings here is harmless in that case.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
