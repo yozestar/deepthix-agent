@@ -42,6 +42,26 @@ pub fn resolve_opt() -> Option<PathBuf> {
     //    happy path for users who launched Deepthix Agent from a shell.
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
+            // Windows: when a directory contains the npm shim layout
+            // (`claude.cmd` next to `node_modules\@anthropic-ai\…`),
+            // prefer the real `claude.exe` nested in node_modules. The
+            // .cmd shim has to be wrapped with `cmd.exe /C`, but Rust's
+            // `Command` arg quoting + cmd.exe's `/C` parsing don't agree
+            // on multi-arg invocations: the spawn can fall through to
+            // an interactive cmd prompt instead of running claude. Going
+            // straight to the .exe avoids the shim entirely.
+            #[cfg(windows)]
+            {
+                let nested = dir
+                    .join("node_modules")
+                    .join("@anthropic-ai")
+                    .join("claude-code")
+                    .join("bin")
+                    .join("claude.exe");
+                if nested.is_file() {
+                    return Some(nested);
+                }
+            }
             for name in names {
                 let p = dir.join(name);
                 if p.is_file() {
@@ -144,9 +164,12 @@ fn shim_kind(bin: &Path) -> ShimKind {
 fn candidate_names() -> &'static [&'static str] {
     #[cfg(windows)]
     {
-        // Order matters: .cmd is the npm-shim default on Windows, .exe
-        // is what the Anthropic native installer drops.
-        &["claude.cmd", "claude.exe", "claude.bat", "claude.ps1", "claude"]
+        // Order matters: prefer .exe over the .cmd npm-shim. The .cmd
+        // requires `cmd.exe /C` wrapping (see `build_command`), and
+        // multi-arg /C invocations have flaky quoting — empirically the
+        // spawn can drop into an interactive cmd prompt instead of
+        // running claude. Direct .exe avoids the shim entirely.
+        &["claude.exe", "claude.cmd", "claude.bat", "claude.ps1", "claude"]
     }
     #[cfg(not(windows))]
     {
@@ -235,9 +258,18 @@ fn candidate_paths() -> Vec<PathBuf> {
 
         // npm global: %APPDATA%\npm\claude.cmd is the default install
         // location for `npm i -g @anthropic-ai/claude-code` on Windows.
+        // The real binary is nested in node_modules — try it first to
+        // bypass the .cmd shim (see resolve_opt for the why).
         if let Some(p) = appdata.as_ref() {
             let base = PathBuf::from(p).join("npm");
-            for name in ["claude.cmd", "claude.exe", "claude.ps1"] {
+            out.push(
+                base.join("node_modules")
+                    .join("@anthropic-ai")
+                    .join("claude-code")
+                    .join("bin")
+                    .join("claude.exe"),
+            );
+            for name in ["claude.exe", "claude.cmd", "claude.ps1"] {
                 out.push(base.join(name));
             }
         }
