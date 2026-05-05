@@ -126,7 +126,8 @@ mod tests {
     fn dashboard_path_is_at_project_root() {
         let pid = "abc123".to_string();
         let path = dashboard_path(pid.clone(), "ignored".into()).unwrap();
-        assert!(path.ends_with("/.deepthix/projects/abc123/dashboard.html"), "got {path}");
+        let normalized = path.replace('\\', "/");
+        assert!(normalized.ends_with("/.deepthix/projects/abc123/dashboard.html"), "got {path}");
     }
 
     #[test]

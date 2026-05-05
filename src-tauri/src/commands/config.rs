@@ -87,6 +87,7 @@ mod tests {
             terminal_font_family: Some("Menlo, monospace".into()),
             terminal_line_height: Some(1.2),
             theme_id: Some("dracula".into()),
+            box_style: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         assert!(json.contains("terminal_font_size"));
