@@ -205,6 +205,38 @@ How to use:
 
 When you're about to ask the user a clarifying question, check the
 variables file first — they may have already pinned the answer.
+
+### Asking the user a question
+
+**Do NOT call the `AskUserQuestion` tool in Deepthix Agent.** The
+chat surface runs you in `--print --input-format stream-json` mode,
+where `AskUserQuestion` auto-cancels immediately (claude-code issues
+#24594, #29618) — by the time the UI renders the prompt, you have
+already received an `is_error: "Answer questions?"` tool result and
+moved on. The user sees the prompt buttons appear but they do
+nothing.
+
+Instead, when you need to ask a question:
+
+1. **Write the question as plain text** in your assistant message, with
+   numbered or bulleted options if useful.
+2. **Stop the turn and wait** for the user to type their answer in the
+   composer. The next turn will arrive normally.
+
+Example (good):
+
+> Two ways to handle this:
+> 1. Add a fallback to the existing parser
+> 2. Rewrite the parser entirely
+>
+> Which do you prefer?
+
+Example (bad — do not do this):
+
+> [tool_use AskUserQuestion {questions: [{question: "Which approach?", options: [...]}]}]
+
+This is a Deepthix-specific instruction; in the regular `claude` TUI,
+`AskUserQuestion` works fine and you can keep using it there.
 "#;
     format!("{GLOBAL_BEGIN}\n{body}{GLOBAL_END}\n")
 }
