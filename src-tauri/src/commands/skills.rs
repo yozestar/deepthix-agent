@@ -187,6 +187,9 @@ pub fn list_skills(project_path: Option<String>) -> Result<Vec<SkillInfo>, Strin
         let root = PathBuf::from(p).join(".claude").join("skills");
         scan_skills_dir(&root, SkillScope::Project, None, &mut out);
     }
+    let before_dedupe = out.len();
+    dedupe_plugin_versions(&mut out);
+    let dropped = before_dedupe - out.len();
     out.sort_by(|a, b| {
         // scope order: project → global → plugin
         let order = |s: &SkillScope| match s {
@@ -198,8 +201,60 @@ pub fn list_skills(project_path: Option<String>) -> Result<Vec<SkillInfo>, Strin
             .cmp(&order(&b.scope))
             .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
-    tracing::debug!(target: "deepthix::commands", count = out.len(), "list_skills");
+    tracing::debug!(
+        target: "deepthix::commands",
+        count = out.len(), %dropped,
+        "list_skills",
+    );
     Ok(out)
+}
+
+/// Plugin caches keep older versions of every skill alongside the
+/// current one (e.g. `superpowers/5.0.7/skills/foo/SKILL.md` AND
+/// `superpowers/5.1.0/skills/foo/SKILL.md` AND a `temp_git_*` install
+/// scratch dir). Claude itself only loads the newest one, so showing
+/// 3 entries for the same skill in the UI is misleading — the older
+/// versions appear ACTIVE while the actually-loaded one might be
+/// DISABLED, exactly the confusion the user reported.
+///
+/// We keep the entry whose SKILL.md mtime is newest within each
+/// (plugin_namespace, skill_name) group. Mtime is the most reliable
+/// signal because the plugin manager touches the file when it caches
+/// the new version. Project + global skills are never deduped (the
+/// user owns those, every entry is intentional).
+fn dedupe_plugin_versions(skills: &mut Vec<SkillInfo>) {
+    use std::collections::HashMap;
+    use std::time::SystemTime;
+    type Key = (String, String); // (plugin_namespace, skill_name)
+    let mut groups: HashMap<Key, Vec<(usize, SystemTime)>> = HashMap::new();
+    for (i, s) in skills.iter().enumerate() {
+        if !matches!(s.scope, SkillScope::Plugin) {
+            continue;
+        }
+        let plugin = s.plugin.clone().unwrap_or_default();
+        let mtime = std::fs::metadata(&s.path)
+            .and_then(|m| m.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        groups.entry((plugin, s.name.clone())).or_default().push((i, mtime));
+    }
+    let mut to_drop: Vec<usize> = Vec::new();
+    for (_key, mut entries) in groups {
+        if entries.len() <= 1 {
+            continue;
+        }
+        // Sort newest mtime first; keep entries[0], drop the rest.
+        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        for (i, _) in entries.iter().skip(1) {
+            to_drop.push(*i);
+        }
+    }
+    // Drop in descending index order so earlier indices stay valid.
+    to_drop.sort_unstable();
+    to_drop.dedup();
+    to_drop.reverse();
+    for i in to_drop {
+        skills.remove(i);
+    }
 }
 
 /// Toggle `disable-model-invocation` in a SKILL.md's frontmatter. We
