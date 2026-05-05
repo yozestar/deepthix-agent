@@ -70,18 +70,45 @@ impl Drop for JsonlWatcher {
 }
 
 /// Computes the JSONL path Claude Code would write for this project + session.
-/// Mirrors pixel-agents convention: `~/.claude/projects/<hash>/<uuid>.jsonl`
-/// where `hash` = absolute project path with `/`, `\`, `:` replaced by `-`.
+/// Mirrors pixel-agents convention: `~/.claude/projects/<hash>/<uuid>.jsonl`.
+///
+/// Claude Code's hash rule (verified against `~/.claude/projects/` on a
+/// real Windows install): replace any non-alphanumeric ASCII char that
+/// isn't `-` with `-`. So `/`, `\`, `:`, `.`, `_`, ` ` (space), and any
+/// accented/non-ASCII char all collapse to `-`. Empirically:
+///
+///   `C:\Claude\claude_agent`         -> `C--Claude-claude-agent`
+///   `C:\Claude\Récupération de…`     -> `C--Claude-R-cup-ration-de-…`
+///
+/// The previous implementation only converted `/`, `\`, `:`, `.`. Every
+/// project path containing `_` or a space mis-predicted the hash and the
+/// resume code silently saw "no history" because the wrong directory
+/// was queried.
 pub fn predict_jsonl_path(project_cwd: &std::path::Path, session_id: &str) -> PathBuf {
     let raw = project_cwd.to_string_lossy();
-    // claude converts `/`, `\`, `:` AND `.` to `-` when hashing the
-    // project path. Missing the `.` means we mis-predict the JSONL path
-    // for any cwd containing a dot (e.g. ~/.deepthix/orchestrator) and
-    // the resume code thinks the transcript doesn't exist.
     let hash: String = raw
         .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    // Defense in depth: a session_id arriving from the JS side with a
+    // path separator or a Windows-invalid char (`<>"|?*` / control / NUL)
+    // would land us with a malformed final path and `read_to_string`
+    // returns ERROR_INVALID_NAME (os error 123) on Windows — which
+    // surfaces in the UI as the cryptic "read jsonl: La syntaxe du nom
+    // de fichier est incorrecte". UUIDs from claude don't have these
+    // chars, but we sanitize anyway so a stale or hand-edited
+    // session_id can never produce error 123.
+    let safe_session_id: String = session_id
+        .chars()
         .map(|c| match c {
-            '/' | '\\' | ':' | '.' => '-',
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' | '\0' => '-',
+            c if c.is_control() => '-',
             other => other,
         })
         .collect();
@@ -90,7 +117,7 @@ pub fn predict_jsonl_path(project_cwd: &std::path::Path, session_id: &str) -> Pa
         .join(".claude")
         .join("projects")
         .join(hash)
-        .join(format!("{session_id}.jsonl"));
+        .join(format!("{safe_session_id}.jsonl"));
     tracing::debug!(target: "deepthix::jsonl", ?project_cwd, %session_id, ?path, "predicted jsonl path");
     path
 }
@@ -126,5 +153,38 @@ mod tests {
         let p = predict_jsonl_path(std::path::Path::new("/Users/x/foo"), "abc-123");
         let s = p.to_string_lossy();
         assert!(s.ends_with("-Users-x-foo/abc-123.jsonl"), "got {}", s);
+    }
+
+    #[test]
+    fn predict_jsonl_path_collapses_underscore_and_space() {
+        // Matches the actual on-disk dir for `C:\Claude\claude_agent` =
+        // `C--Claude-claude-agent` and for paths containing spaces.
+        let p = predict_jsonl_path(
+            std::path::Path::new("C:\\Claude\\claude_agent"),
+            "0bd378fb-e286-46ef-8642-54db1d27a4e2",
+        );
+        let s = p.to_string_lossy().replace('\\', "/");
+        assert!(
+            s.contains("/C--Claude-claude-agent/"),
+            "underscore should collapse to dash, got {}",
+            s,
+        );
+        let p2 = predict_jsonl_path(std::path::Path::new("/Users/x/My Project"), "sid");
+        let s2 = p2.to_string_lossy().replace('\\', "/");
+        assert!(
+            s2.contains("/-Users-x-My-Project/"),
+            "space should collapse to dash, got {}",
+            s2,
+        );
+    }
+
+    #[test]
+    fn predict_jsonl_path_sanitizes_session_id() {
+        // A stale session_id with a forward slash would otherwise be
+        // interpreted as a path separator and the resulting filename
+        // would be syntactically invalid on Windows -> os error 123.
+        let p = predict_jsonl_path(std::path::Path::new("/x"), "bad/id?with*chars");
+        let name = p.file_name().unwrap().to_string_lossy();
+        assert_eq!(name, "bad-id-with-chars.jsonl");
     }
 }
