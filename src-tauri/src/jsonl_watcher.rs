@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn predict_jsonl_path_replaces_slashes() {
         let p = predict_jsonl_path(std::path::Path::new("/Users/x/foo"), "abc-123");
-        let s = p.to_string_lossy();
+        let s = p.to_string_lossy().replace('\\', "/");
         assert!(s.ends_with("-Users-x-foo/abc-123.jsonl"), "got {}", s);
     }
 
