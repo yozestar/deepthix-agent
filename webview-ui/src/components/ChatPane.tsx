@@ -2730,14 +2730,17 @@ function MessageBubbleImpl({
       );
     case 'assistant_text':
       return (
-        <Bubble
-          align="left"
-          bg="var(--color-bg-dark)"
-          fg="var(--color-text)"
-          label="claude"
-          body={m.text}
-          markdown={true}
-        />
+        <>
+          <Bubble
+            align="left"
+            bg="var(--color-bg-dark)"
+            fg="var(--color-text)"
+            label="claude"
+            body={m.text}
+            markdown={true}
+          />
+          <QuickReplies text={m.text} termId={termId} />
+        </>
       );
     case 'tool_use':
       return <ToolBubble m={m} running={Boolean(running)} termId={termId} />;
@@ -2799,6 +2802,125 @@ function MessageBubbleImpl({
         </div>
       );
   }
+}
+
+/** Detects when claude's message ends with a question + a short
+ *  bullet/numbered list (the v0.4.2+ pattern that replaced
+ *  AskUserQuestion: claude writes "Question?\n- Yes\n- No"). Renders
+ *  each option as a clickable chip below the bubble — click sends
+ *  the option text as the next user turn so the user doesn't have
+ *  to retype "oui".
+ *
+ *  Heuristic kept tight to avoid false positives:
+ *  - Last non-blank paragraph must be a markdown list (-, *, 1., etc.)
+ *  - 1–6 items, each ≤ 80 chars
+ *  - Preceded somewhere in the message by a "?" (it's an actual question)
+ *  - The list is the LAST thing in the message (no prose after) */
+const QuickReplies = memo(QuickRepliesImpl);
+function QuickRepliesImpl({
+  text,
+  termId,
+}: {
+  text: string;
+  termId: string | null;
+}): React.JSX.Element | null {
+  const [sent, setSent] = useState(false);
+
+  const options = useMemo(() => extractTrailingOptions(text), [text]);
+  if (options.length === 0) return null;
+  if (sent) return null;
+  if (!termId) return null;
+
+  const onClick = (opt: string): void => {
+    setSent(true);
+    void chatSendUserText(termId, opt).catch((e) => {
+      console.warn('[Deepthix][QuickReplies] send failed', e);
+      setSent(false);
+    });
+    // Mirror to the conversation pane so the user sees their choice
+    // rendered as a normal user bubble (the actual chat_event for
+    // this turn comes from claude later).
+    window.dispatchEvent(
+      new CustomEvent('deepthix:chat:user-text', {
+        detail: { termId, text: opt },
+      }),
+    );
+  };
+
+  return (
+    <div
+      style={{
+        alignSelf: 'flex-start',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginTop: -4,
+        marginLeft: 8,
+        maxWidth: '92%',
+      }}
+    >
+      {options.map((opt, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onClick(opt)}
+          className="dt-btn"
+          title={opt}
+          style={{
+            padding: '4px 12px',
+            fontSize: 11,
+            fontFamily: 'var(--font-pixel)',
+            background: 'var(--color-accent)',
+            color: 'var(--color-bg-dark)',
+            border: '2px solid var(--color-border)',
+            cursor: 'pointer',
+            maxWidth: 360,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function extractTrailingOptions(text: string): string[] {
+  if (!text || text.length > 4000) return [];
+  // Must contain a question mark somewhere — avoids treating a
+  // generic checklist of steps as a prompt.
+  if (!/[?？]/.test(text)) return [];
+
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  // Walk backwards: skip trailing blank lines, then collect contiguous
+  // markdown list items. Stop as soon as we hit a non-list, non-blank line.
+  const items: string[] = [];
+  let i = lines.length - 1;
+  while (i >= 0 && lines[i].trim() === '') i--;
+  while (i >= 0) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed === '') {
+      i--;
+      continue;
+    }
+    const m = trimmed.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/);
+    if (!m) break;
+    let item = m[1].trim();
+    // Strip surrounding markdown emphasis / code spans
+    item = item.replace(/^\*\*(.+)\*\*$/, '$1').replace(/^`(.+)`$/, '$1');
+    if (item.length === 0 || item.length > 80) {
+      // suspicious — abort entirely rather than offer a half-list
+      return [];
+    }
+    items.unshift(item);
+    i--;
+    if (items.length > 6) return []; // too many → probably not a prompt
+  }
+  if (items.length < 1 || items.length > 6) return [];
+  return items;
 }
 
 const Bubble = memo(BubbleImpl);

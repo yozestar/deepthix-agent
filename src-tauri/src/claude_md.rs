@@ -216,24 +216,48 @@ already received an `is_error: "Answer questions?"` tool result and
 moved on. The user sees the prompt buttons appear but they do
 nothing.
 
-Instead, when you need to ask a question:
+Instead, when you need to ask a question, follow this format:
 
-1. **Write the question as plain text** in your assistant message, with
-   numbered or bulleted options if useful.
-2. **Stop the turn and wait** for the user to type their answer in the
-   composer. The next turn will arrive normally.
+1. **Write the question as a single line** ending with `?`.
+2. **List the options as a markdown bullet list** with `- ` prefix
+   (one option per line, ≤ 80 chars each, 1-6 options total). The
+   Deepthix UI auto-detects this pattern and renders each bullet as a
+   clickable button — the user clicks instead of retyping.
+3. **The list MUST be the last thing** in your message — no extra prose
+   after the bullets, or the buttons won't appear.
+4. **Stop the turn and wait** for the user's reply.
 
-Example (good):
+Example (good — buttons appear):
 
-> Two ways to handle this:
-> 1. Add a fallback to the existing parser
-> 2. Rewrite the parser entirely
+> Veux-tu que je crée `~/Desktop/hello.txt` ?
 >
-> Which do you prefer?
+> - Oui, crée-le
+> - Non, annule
 
-Example (bad — do not do this):
+Example (also good):
 
-> [tool_use AskUserQuestion {questions: [{question: "Which approach?", options: [...]}]}]
+> Two ways to handle this. Which do you prefer?
+>
+> - Add a fallback to the existing parser
+> - Rewrite the parser entirely
+
+Example (BAD — no buttons because options aren't markdown bullets):
+
+> Veux-tu que je crée le fichier ?
+>   Oui
+>   Non
+
+Example (BAD — no buttons because there's prose after the list):
+
+> Pick one:
+> - Option A
+> - Option B
+>
+> I'll wait for your reply.
+
+Example (very bad — do not do this at all):
+
+> [tool_use AskUserQuestion {questions: [{question: "...", options: [...]}]}]
 
 This is a Deepthix-specific instruction; in the regular `claude` TUI,
 `AskUserQuestion` works fine and you can keep using it there.
