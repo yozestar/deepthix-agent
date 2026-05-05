@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.4.3"
+version = "0.4.4"
 description = "Standalone macOS app for running and watching Claude Code agents in a pixel art office."
 authors = ["Deepthix Agent contributors"]
 license = "MIT"

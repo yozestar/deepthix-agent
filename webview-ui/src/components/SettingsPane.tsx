@@ -9,7 +9,9 @@
 // Mutations apply LIVE to every open terminal because every TerminalTab is
 // reading the same `useGlobalConfig` snapshot.
 
-import { useCallback } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
+import { check, type Update } from '@tauri-apps/plugin-updater';
+import { useCallback, useEffect, useState } from 'react';
 
 import {
   TERMINAL_FONT_FAMILY_PRESETS,
@@ -295,51 +297,14 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
         )}
       </Section>
 
-      {/* UPDATES section — manual trigger; the auto-check on launch
-          (UpdaterBanner) covers the silent path. */}
-      <Section
-        title="UPDATES"
-        subtitle="Auto-check runs on every launch. Manual check is also fine."
-      >
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent('deepthix:updater:check'))}
-          style={{
-            alignSelf: 'flex-start',
-            padding: '6px 12px',
-            background: 'transparent',
-            color: 'inherit',
-            border: '2px solid var(--color-border)',
-            fontFamily: 'var(--font-pixel)',
-            fontSize: '12px',
-            cursor: 'pointer',
-          }}
-        >
-          ⬆ Check for updates
-        </button>
-      </Section>
+      {/* UPDATES section — shows current version + update status, with a
+          manual Check button. The UpdaterBanner at the top of the window
+          covers the silent on-launch check; this section is the explicit
+          place to look ("où je vois que je dois faire un update?"). */}
+      <UpdatesSection />
 
       {/* ABOUT section */}
-      <Section title="ABOUT" subtitle="">
-        <div style={{ fontSize: '13px', lineHeight: 1.6, opacity: 0.85 }}>
-          <div>
-            <strong>Deepthix Agent</strong>
-            <span style={{ opacity: 0.6, marginLeft: '6px' }}>v0.1.0</span>
-          </div>
-          <div style={{ marginTop: 6 }}>
-            Open source —{' '}
-            <a
-              href="https://github.com/deepthix/deepthix-agent"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: 'var(--color-accent-bright)' }}
-            >
-              github.com/deepthix/deepthix-agent
-            </a>
-            . MIT licensed.
-          </div>
-        </div>
-      </Section>
+      <AboutSection />
 
       <div
         style={{
@@ -555,3 +520,162 @@ function BumpControl({ value, onMinus, onPlus, ariaLabel }: BumpControlProps): R
     </>
   );
 }
+
+// ─── UPDATES + ABOUT sections ────────────────────────────────────────────
+// Pulled out of the main component so they can do their own state +
+// effects without forcing the whole pane to re-render.
+
+type UpdateStatus =
+  | { kind: 'idle' }
+  | { kind: 'checking' }
+  | { kind: 'up_to_date'; checkedAt: number }
+  | { kind: 'available'; update: Update }
+  | { kind: 'error'; message: string };
+
+function UpdatesSection(): React.JSX.Element {
+  const [version, setVersion] = useState<string>('…');
+  const [status, setStatus] = useState<UpdateStatus>({ kind: 'idle' });
+
+  useEffect(() => {
+    void getVersion()
+      .then(setVersion)
+      .catch((e) => console.warn('[Deepthix][SettingsPane] getVersion failed', e));
+  }, []);
+
+  // Run a check on mount so the user always sees a fresh status when
+  // they land on Settings — not the stale state from the last time.
+  useEffect(() => {
+    void runCheck();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const runCheck = useCallback(async (): Promise<void> => {
+    setStatus({ kind: 'checking' });
+    try {
+      const upd = await check();
+      if (upd) setStatus({ kind: 'available', update: upd });
+      else setStatus({ kind: 'up_to_date', checkedAt: Date.now() });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn('[Deepthix][SettingsPane] update check failed', e);
+      setStatus({ kind: 'error', message: msg });
+    }
+  }, []);
+
+  // Color-coded status pill so you can see at a glance: green = up to
+  // date, orange = update available, gray = checking, red = error.
+  let statusPill: React.JSX.Element;
+  switch (status.kind) {
+    case 'idle':
+      statusPill = <Pill bg="var(--color-border)" text="—" />;
+      break;
+    case 'checking':
+      statusPill = <Pill bg="var(--color-border)" text="checking…" />;
+      break;
+    case 'up_to_date':
+      statusPill = <Pill bg="#16a34a" text="UP TO DATE" />;
+      break;
+    case 'available':
+      statusPill = <Pill bg="#f59e0b" text={`UPDATE → v${status.update.version}`} />;
+      break;
+    case 'error':
+      statusPill = <Pill bg="#ef4444" text="ERROR" />;
+      break;
+  }
+
+  return (
+    <Section
+      title="UPDATES"
+      subtitle="Auto-checked on every launch. The orange banner at the top of the window appears when an update is available."
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13 }}>
+          Installed: <strong>v{version}</strong>
+        </span>
+        {statusPill}
+      </div>
+      {status.kind === 'available' && (
+        <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.5 }}>
+          A newer version is available. Open the orange banner at the top of the window and click
+          <strong> Install + restart</strong>. (Or run the manual install via the project README.)
+        </div>
+      )}
+      {status.kind === 'error' && (
+        <div style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.5 }}>
+          {status.message}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => {
+            void runCheck();
+            // Also poke the banner so it re-evaluates.
+            window.dispatchEvent(new CustomEvent('deepthix:updater:check'));
+          }}
+          disabled={status.kind === 'checking'}
+          style={{
+            padding: '6px 12px',
+            background: 'transparent',
+            color: 'inherit',
+            border: '2px solid var(--color-border)',
+            fontFamily: 'var(--font-pixel)',
+            fontSize: 12,
+            cursor: status.kind === 'checking' ? 'wait' : 'pointer',
+          }}
+        >
+          ⬆ Check now
+        </button>
+      </div>
+    </Section>
+  );
+}
+
+function AboutSection(): React.JSX.Element {
+  const [version, setVersion] = useState<string>('…');
+  useEffect(() => {
+    void getVersion().then(setVersion).catch(() => setVersion('?'));
+  }, []);
+  return (
+    <Section title="ABOUT" subtitle="">
+      <div style={{ fontSize: 13, lineHeight: 1.6, opacity: 0.85 }}>
+        <div>
+          <strong>Deepthix Agent</strong>
+          <span style={{ opacity: 0.6, marginLeft: 6 }}>v{version}</span>
+        </div>
+        <div style={{ marginTop: 6 }}>
+          Open source —{' '}
+          <a
+            href="https://github.com/deepthix/deepthix-agent"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--color-accent-bright)' }}
+          >
+            github.com/deepthix/deepthix-agent
+          </a>
+          . MIT licensed.
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function Pill({ bg, text }: { bg: string; text: string }): React.JSX.Element {
+  return (
+    <span
+      style={{
+        background: bg,
+        color: '#fff',
+        padding: '3px 8px',
+        fontSize: 10,
+        fontWeight: 'bold',
+        letterSpacing: '0.05em',
+        fontFamily: 'var(--font-pixel)',
+        border: '1px solid var(--color-border)',
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
