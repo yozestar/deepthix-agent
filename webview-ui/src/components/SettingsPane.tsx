@@ -295,6 +295,30 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
         )}
       </Section>
 
+      {/* UPDATES section — manual trigger; the auto-check on launch
+          (UpdaterBanner) covers the silent path. */}
+      <Section
+        title="UPDATES"
+        subtitle="Auto-check runs on every launch. Manual check is also fine."
+      >
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('deepthix:updater:check'))}
+          style={{
+            alignSelf: 'flex-start',
+            padding: '6px 12px',
+            background: 'transparent',
+            color: 'inherit',
+            border: '2px solid var(--color-border)',
+            fontFamily: 'var(--font-pixel)',
+            fontSize: '12px',
+            cursor: 'pointer',
+          }}
+        >
+          ⬆ Check for updates
+        </button>
+      </Section>
+
       {/* ABOUT section */}
       <Section title="ABOUT" subtitle="">
         <div style={{ fontSize: '13px', lineHeight: 1.6, opacity: 0.85 }}>

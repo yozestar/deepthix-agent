@@ -52,6 +52,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // tauri-plugin-updater drives the in-app auto-updater. The
+        // pubkey + endpoint live in tauri.conf.json. Pair plugin is
+        // process — the JS side calls relaunch() after install.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(app_state)
         .manage(crate::pty::TerminalManager::new())
         .manage(crate::commands::terminals::WatcherRegistry::default())

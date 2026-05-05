@@ -11,6 +11,7 @@ import { SettingsPane } from './components/SettingsPane';
 import { Sidebar } from './components/Sidebar';
 import { SkillsPane } from './components/SkillsPane';
 import { TerminalDropTarget } from './components/TerminalDropTarget';
+import { UpdaterBanner } from './components/UpdaterBanner';
 import { type Mode, TopTabs } from './components/TopTabs';
 import { VariablesPane } from './components/VariablesPane';
 import { VoiceRecorder } from './components/VoiceRecorder';
@@ -381,6 +382,9 @@ function App(): React.JSX.Element {
           from Tauri commands AND the JsonlWatcher on
           ~/.deepthix/notifications.jsonl (which deepthix-mcp writes to). */}
       <NotificationToasts />
+      {/* Auto-update banner: silent on launch, only paints itself if a
+          newer version is available at the configured updater endpoint. */}
+      <UpdaterBanner />
       {/* Drag a file from Finder onto the window → its absolute path is
           shell-quoted and char-by-char-injected into the active claude
           session's prompt. Picks the same target as VoiceRecorder. */}

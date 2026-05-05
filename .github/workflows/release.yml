@@ -82,9 +82,18 @@ jobs:
         run: npm install --prefix webview-ui --legacy-peer-deps
 
       - name: Build + bundle + release
+        id: tauri
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Auto-updater signing keys. When these are present in repo
+          # secrets the bundler emits .sig files alongside each updater
+          # artifact (.app.tar.gz / .nsis.zip / .msi.zip). When they are
+          # missing, tauri-action skips signing entirely so a fork can
+          # still build without setting up signing — but the in-app
+          # updater won't accept the resulting artifacts.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: Deepthix Agent ${{ env.RELEASE_TAG }}
@@ -98,3 +107,85 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+  # Once every platform has uploaded its updater artifact (.app.tar.gz
+  # for macOS, .nsis.zip for Windows) plus its detached .sig file,
+  # synthesize a single latest.json keyed by platform target and upload
+  # it as a release asset. The Tauri updater plugin fetches this JSON
+  # from the endpoint configured in tauri.conf.json, picks the row
+  # matching the user's platform, downloads + verifies + applies.
+  #
+  # Filename convention assumed:
+  #   macOS arm64  → Deepthix.Agent_<v>_aarch64.app.tar.gz + .sig
+  #   macOS x64    → Deepthix.Agent_<v>_x64.app.tar.gz     + .sig
+  #   Windows x64  → Deepthix.Agent_<v>_x64-setup.nsis.zip + .sig
+  assemble-updater-json:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout (for repo metadata only)
+        uses: actions/checkout@v4
+
+      - name: Build + upload latest.json
+        run: |
+          set -euo pipefail
+          TAG="$RELEASE_TAG"
+          REPO="${{ github.repository }}"
+          VERSION="${TAG#v}"
+          PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          fetch_sig() {
+            local fname="$1"
+            local url="${BASE_URL}/${fname}.sig"
+            curl -fsSL --retry 5 --retry-delay 4 "$url" || {
+              echo "::warning::missing sig: $fname.sig (skipping)"
+              return 1
+            }
+          }
+
+          ARM_TGZ="Deepthix.Agent_${VERSION}_aarch64.app.tar.gz"
+          INTEL_TGZ="Deepthix.Agent_${VERSION}_x64.app.tar.gz"
+          WIN_NSIS="Deepthix.Agent_${VERSION}_x64-setup.nsis.zip"
+
+          ARM_SIG="$(fetch_sig "$ARM_TGZ" || true)"
+          INTEL_SIG="$(fetch_sig "$INTEL_TGZ" || true)"
+          WIN_SIG="$(fetch_sig "$WIN_NSIS" || true)"
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "See https://github.com/${REPO}/releases/tag/${TAG}" \
+            --arg pub_date "$PUB_DATE" \
+            --arg arm_url "${BASE_URL}/${ARM_TGZ}" \
+            --arg intel_url "${BASE_URL}/${INTEL_TGZ}" \
+            --arg win_url "${BASE_URL}/${WIN_NSIS}" \
+            --arg arm_sig "$ARM_SIG" \
+            --arg intel_sig "$INTEL_SIG" \
+            --arg win_sig "$WIN_SIG" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: (
+                (if ($arm_sig | length) > 0 then {"darwin-aarch64": {signature: $arm_sig, url: $arm_url}} else {} end)
+                + (if ($intel_sig | length) > 0 then {"darwin-x86_64": {signature: $intel_sig, url: $intel_url}} else {} end)
+                + (if ($win_sig | length) > 0 then {"windows-x86_64": {signature: $win_sig, url: $win_url}} else {} end)
+              )
+            }' > latest.json
+
+          cat latest.json
+
+          # If we have zero platform entries (signing missing), fail loudly so the
+          # release still ships installers but we know auto-update is broken.
+          PLATFORMS_COUNT="$(jq '.platforms | length' latest.json)"
+          if [ "$PLATFORMS_COUNT" = "0" ]; then
+            echo "::warning::latest.json has no platform entries — auto-update will be a no-op until TAURI_SIGNING_PRIVATE_KEY is configured."
+          fi
+
+          # Replace any pre-existing latest.json (re-runs of the job).
+          gh release upload "$TAG" latest.json --clobber --repo "$REPO"

@@ -566,6 +566,12 @@ function SkillRow({
 }: RowProps): React.JSX.Element {
   const enabled = !skill.disabled;
   const isPlugin = skill.scope === 'plugin';
+  // Bigger, color-coded ACTIVE / DISABLED pill so the user can tell at a
+  // glance whether claude will auto-load this skill. The hidden tiny
+  // checkbox alone wasn't legible (user reported "on comprend pas où
+  // les skills sont actives ou non" against the v0.3.10 layout).
+  const badgeBg = enabled ? '#16a34a' : '#6b7280';
+  const badgeLabel = enabled ? 'ACTIVE' : 'DISABLED';
   return (
     <div
       style={{
@@ -574,9 +580,42 @@ function SkillRow({
         padding: '8px 12px',
         borderBottom: '1px solid var(--color-border)',
         opacity: pending ? 0.5 : 1,
+        background: enabled ? 'transparent' : 'rgba(107, 114, 128, 0.08)',
       }}
     >
-      <div style={{ flexShrink: 0, paddingTop: 2 }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={readonly || pending}
+        title={
+          readonly
+            ? 'plugin skill — managed by the plugin manager'
+            : enabled
+              ? 'Click to disable model auto-invocation'
+              : 'Click to re-enable model auto-invocation'
+        }
+        style={{
+          all: 'unset',
+          flexShrink: 0,
+          alignSelf: 'flex-start',
+          padding: '3px 8px',
+          marginTop: 2,
+          background: badgeBg,
+          color: '#fff',
+          fontSize: 10,
+          fontWeight: 'bold',
+          letterSpacing: '0.05em',
+          fontFamily: 'var(--font-pixel)',
+          border: '1px solid var(--color-border)',
+          cursor: readonly || pending ? 'not-allowed' : 'pointer',
+          minWidth: 64,
+          textAlign: 'center',
+        }}
+      >
+        {badgeLabel}
+      </button>
+      <div style={{ display: 'none' }}>
+        {/* legacy checkbox kept for a11y; the visible toggle is the badge above */}
         <input
           type="checkbox"
           checked={enabled}
@@ -630,19 +669,8 @@ function SkillRow({
               hidden
             </span>
           )}
-          {!enabled && (
-            <span
-              style={{
-                fontSize: '10px',
-                padding: '1px 6px',
-                background: 'var(--color-bg-dark)',
-                border: '1px solid var(--color-border)',
-                color: 'var(--color-danger)',
-              }}
-            >
-              disabled
-            </span>
-          )}
+          {/* The big ACTIVE/DISABLED badge on the left already shows
+              this — no need for a redundant inline pill. */}
         </div>
         {skill.description && (
           <div style={{ fontSize: '11px', opacity: 0.7, lineHeight: 1.4 }}>{skill.description}</div>

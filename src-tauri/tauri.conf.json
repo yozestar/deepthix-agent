@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Deepthix Agent",
-  "version": "0.3.10",
+  "version": "0.4.0",
   "identifier": "dev.deepthix.agent",
   "build": {
     "frontendDist": "../dist/webview",
@@ -27,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -37,6 +38,15 @@
     "macOS": {
       "signingIdentity": "-",
       "entitlements": "./Entitlements.plist"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJBRjdDNzE4OUYzMDc0RkYKUldUL2REQ2ZHTWYzS2pMWGZsa1kvWXhReVlQUzd3VEM0aDFVQk5aK3BNWkhtdHBHbkMxNkdkTmkK",
+      "endpoints": [
+        "https://github.com/deepthix/deepthix-agent/releases/latest/download/latest.json"
+      ]
     }
   }
 }
