@@ -156,22 +156,42 @@ jobs:
           PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 
-          fetch_sig() {
-            local fname="$1"
-            local url="${BASE_URL}/${fname}.sig"
-            curl -fsSL --retry 5 --retry-delay 4 "$url" || {
-              echo "::warning::missing sig: $fname.sig (skipping)"
-              return 1
-            }
+          # Query the actual asset names from the release rather than
+          # constructing them — tauri-action's filename convention varies
+          # between bundle types (e.g. `Deepthix.Agent_aarch64.app.tar.gz`
+          # has no version suffix, while `Deepthix.Agent_0.4.2_aarch64.dmg`
+          # does). Constructing them by hand caused v0.4.x's latest.json
+          # to point at non-existent URLs → 404 in the in-app updater.
+          ASSETS_JSON="$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name]')"
+
+          find_asset() {
+            local pattern="$1"
+            echo "$ASSETS_JSON" | jq -r --arg p "$pattern" '.[] | select(test($p))' | head -1
           }
 
-          ARM_TGZ="Deepthix.Agent_${VERSION}_aarch64.app.tar.gz"
-          INTEL_TGZ="Deepthix.Agent_${VERSION}_x64.app.tar.gz"
-          WIN_NSIS="Deepthix.Agent_${VERSION}_x64-setup.nsis.zip"
+          # Quiet curl — no echo on failure (the previous version echoed a
+          # ::warning:: into the function's stdout, which got captured as
+          # the "signature" string in v0.4.x's broken latest.json).
+          fetch_sig() {
+            local fname="$1"
+            curl -fsSL --retry 5 --retry-delay 4 "${BASE_URL}/${fname}.sig" 2>/dev/null
+          }
 
-          ARM_SIG="$(fetch_sig "$ARM_TGZ" || true)"
-          INTEL_SIG="$(fetch_sig "$INTEL_TGZ" || true)"
-          WIN_SIG="$(fetch_sig "$WIN_NSIS" || true)"
+          ARM_TGZ="$(find_asset 'aarch64.*\\.app\\.tar\\.gz$')"
+          INTEL_TGZ="$(find_asset 'x64.*\\.app\\.tar\\.gz$')"
+          WIN_NSIS="$(find_asset 'x64.*nsis\\.zip$')"
+
+          echo "Detected updater artifacts:"
+          echo "  arm   = ${ARM_TGZ:-<none>}"
+          echo "  intel = ${INTEL_TGZ:-<none>}"
+          echo "  win   = ${WIN_NSIS:-<none>}"
+
+          ARM_SIG=""
+          INTEL_SIG=""
+          WIN_SIG=""
+          [ -n "$ARM_TGZ" ]   && ARM_SIG="$(fetch_sig "$ARM_TGZ" || true)"
+          [ -n "$INTEL_TGZ" ] && INTEL_SIG="$(fetch_sig "$INTEL_TGZ" || true)"
+          [ -n "$WIN_NSIS" ]  && WIN_SIG="$(fetch_sig "$WIN_NSIS" || true)"
 
           jq -n \
             --arg version "$VERSION" \
@@ -196,12 +216,9 @@ jobs:
 
           cat latest.json
 
-          # If we have zero platform entries (signing missing), fail loudly so the
-          # release still ships installers but we know auto-update is broken.
           PLATFORMS_COUNT="$(jq '.platforms | length' latest.json)"
           if [ "$PLATFORMS_COUNT" = "0" ]; then
-            echo "::warning::latest.json has no platform entries — auto-update will be a no-op until TAURI_SIGNING_PRIVATE_KEY is configured."
+            echo "::warning::latest.json has no platform entries — auto-update will be a no-op until TAURI_SIGNING_PRIVATE_KEY is configured + a release is built with it."
           fi
 
-          # Replace any pre-existing latest.json (re-runs of the job).
           gh release upload "$TAG" latest.json --clobber --repo "$REPO"
