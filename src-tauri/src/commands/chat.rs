@@ -27,11 +27,29 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
+
+// Default: kill claude sessions that have had zero traffic (no user
+// input, no claude output) for 30 minutes. The user explicitly asked
+// for "kill direct" semantics — when a session is reaped, its term_id
+// is removed from ChatManager and a chat_exit event with subtype="idle"
+// is emitted so the UI can show a friendly "session paused, click to
+// resume" instead of a generic crash.
+pub const IDLE_TIMEOUT_MS: i64 = 30 * 60 * 1000;
+pub const IDLE_REAPER_TICK_SECS: u64 = 60;
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -109,6 +127,13 @@ struct ChatChild {
     /// preserve the user's effort choice unless they explicitly pick
     /// a new one in the picker.
     effort: Option<String>,
+    /// Wall-clock millis (UNIX epoch) of the last traffic on this
+    /// session — bumped by the reader threads on every line claude emits
+    /// AND by the chat_send_* commands on every user input. The idle
+    /// reaper checks this to kill sessions inactive for IDLE_TIMEOUT_MS.
+    /// Atomic so the reader threads can bump without taking the
+    /// ChatManager mutex.
+    last_activity_ms: Arc<AtomicI64>,
 }
 
 /// Tauri-managed state. Same pattern as TerminalManager.
@@ -123,6 +148,71 @@ impl ChatManager {
         }
     }
 
+    /// Kill every spawned claude. Called from the app exit handler so
+    /// children don't get re-parented to launchd and survive past the
+    /// app — the user reported one such orphan from 2 days back, and
+    /// the original load-avg-100+ snapshot showed 11 orphan candidates
+    /// per app instance. Best-effort: we don't want app shutdown to
+    /// hang on a wedged claude.
+    pub fn kill_all_blocking(&self) {
+        let mut map = self.inner.lock().unwrap();
+        let count = map.len();
+        if count == 0 {
+            return;
+        }
+        for (term_id, mut entry) in map.drain() {
+            tracing::info!(target: "deepthix::chat", %term_id, "killing on exit");
+            let _ = entry.child.kill();
+            // Quick wait so the child reaps cleanly; if it doesn't
+            // respond fast we move on — the OS will reap on app death.
+            let _ = entry.child.wait();
+        }
+        tracing::info!(target: "deepthix::chat", %count, "all chat children killed");
+    }
+
+    /// Kill every chat session whose last_activity is older than
+    /// `timeout_ms`. Returns the number killed. Each kill emits a
+    /// chat_exit event with subtype="idle" so the UI can paint a
+    /// friendly "session paused — click to resume" instead of
+    /// rendering a generic crash bubble.
+    pub fn reap_idle(&self, app: &AppHandle, timeout_ms: i64) -> usize {
+        let now = now_ms();
+        let mut map = self.inner.lock().unwrap();
+        let to_kill: Vec<String> = map
+            .iter()
+            .filter_map(|(term_id, entry)| {
+                let last = entry.last_activity_ms.load(Ordering::Relaxed);
+                if now.saturating_sub(last) > timeout_ms {
+                    Some(term_id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let n = to_kill.len();
+        for term_id in to_kill {
+            if let Some(mut entry) = map.remove(&term_id) {
+                let last = entry.last_activity_ms.load(Ordering::Relaxed);
+                let idle_ms = now.saturating_sub(last);
+                let _ = entry.child.kill();
+                tracing::info!(
+                    target: "deepthix::chat",
+                    %term_id, %idle_ms,
+                    "reaped idle session",
+                );
+                let evt = serde_json::json!({
+                    "term_id": term_id,
+                    "type": "exit",
+                    "subtype": "idle",
+                    "code": null,
+                    "idle_ms": idle_ms,
+                });
+                let _ = app.emit("chat_exit", &evt);
+            }
+        }
+        n
+    }
+
     /// Send a user-text turn to a chat session by term_id. Used by
     /// the scheduler thread (it doesn't go through the Tauri command
     /// because that requires a State<'_, ...> only valid in command
@@ -132,6 +222,10 @@ impl ChatManager {
         let entry = map
             .get(term_id)
             .ok_or_else(|| std::io::Error::other(format!("no chat session {term_id}")))?;
+        // Also bump activity here so scheduled jobs reset the idle
+        // timer — otherwise a long-running scheduled session would get
+        // killed while waiting for its next interval to fire.
+        entry.last_activity_ms.store(now_ms(), Ordering::Relaxed);
         let json = serde_json::json!({
             "type": "user",
             "message": { "role": "user", "content": text }
@@ -276,8 +370,21 @@ pub fn chat_spawn(
     // chat_event per line until the pipe closes. When stdout closes,
     // we know the child exited — emit a synthetic "exit" event so the
     // webview can stop waiting.
-    spawn_reader(app.clone(), term_id.clone(), stdout, "stdout");
-    spawn_reader(app.clone(), term_id.clone(), stderr, "stderr");
+    let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
+    spawn_reader(
+        app.clone(),
+        term_id.clone(),
+        stdout,
+        "stdout",
+        last_activity_ms.clone(),
+    );
+    spawn_reader(
+        app.clone(),
+        term_id.clone(),
+        stderr,
+        "stderr",
+        last_activity_ms.clone(),
+    );
     spawn_exit_watcher(app.clone(), term_id.clone());
 
     let stdin_writer: Box<dyn Write + Send> = Box::new(stdin);
@@ -288,6 +395,7 @@ pub fn chat_spawn(
         cwd: args.cwd.clone(),
         skip_permissions: args.skip_permissions,
         effort: args.effort.clone(),
+        last_activity_ms,
     };
     state.inner.lock().unwrap().insert(term_id.clone(), entry);
 
@@ -302,6 +410,7 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
     term_id: String,
     reader: R,
     stream: &'static str,
+    last_activity_ms: Arc<AtomicI64>,
 ) {
     thread::spawn(move || {
         let buf = BufReader::new(reader);
@@ -311,6 +420,9 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
                     if line.is_empty() {
                         continue;
                     }
+                    // Bump first so a slow emit doesn't make the
+                    // session look stale to the idle reaper.
+                    last_activity_ms.store(now_ms(), Ordering::Relaxed);
                     tracing::trace!(
                         target: "deepthix::chat",
                         %term_id, %stream, bytes = line.len(),
@@ -333,6 +445,38 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
                     );
                     break;
                 }
+            }
+        }
+    });
+}
+
+/// Background thread: every IDLE_REAPER_TICK_SECS, kill any chat session
+/// whose last_activity_ms is older than IDLE_TIMEOUT_MS. Spawned once at
+/// app startup. Runs until the process exits.
+pub fn start_idle_reaper(app: AppHandle, timeout_ms: i64) {
+    thread::spawn(move || {
+        tracing::info!(
+            target: "deepthix::chat",
+            timeout_ms,
+            tick_secs = IDLE_REAPER_TICK_SECS,
+            "idle reaper started",
+        );
+        loop {
+            thread::sleep(std::time::Duration::from_secs(IDLE_REAPER_TICK_SECS));
+            let state = match app.try_state::<ChatManager>() {
+                Some(s) => s,
+                None => {
+                    tracing::debug!(target: "deepthix::chat", "ChatManager gone — reaper exiting");
+                    return;
+                }
+            };
+            let killed = state.reap_idle(&app, timeout_ms);
+            if killed > 0 {
+                tracing::info!(
+                    target: "deepthix::chat",
+                    %killed,
+                    "idle reaper killed sessions",
+                );
             }
         }
     });
@@ -404,6 +548,7 @@ pub fn chat_send_user_text(
     let entry = map
         .get(&term_id)
         .ok_or_else(|| format!("no chat session {term_id}"))?;
+    entry.last_activity_ms.store(now_ms(), Ordering::Relaxed);
     let mut writer = entry.stdin.lock().unwrap();
     writer
         .write_all(line.as_bytes())
@@ -512,6 +657,7 @@ pub fn chat_send_user_with_attachments(
     let entry = map
         .get(&term_id)
         .ok_or_else(|| format!("no chat session {term_id}"))?;
+    entry.last_activity_ms.store(now_ms(), Ordering::Relaxed);
     let mut writer = entry.stdin.lock().unwrap();
     writer
         .write_all(line.as_bytes())
@@ -684,8 +830,21 @@ pub fn chat_interrupt_and_resume(
         .take()
         .ok_or_else(|| "claude stderr missing".to_string())?;
 
-    spawn_reader(app.clone(), term_id.clone(), stdout, "stdout");
-    spawn_reader(app.clone(), term_id.clone(), stderr, "stderr");
+    let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
+    spawn_reader(
+        app.clone(),
+        term_id.clone(),
+        stdout,
+        "stdout",
+        last_activity_ms.clone(),
+    );
+    spawn_reader(
+        app.clone(),
+        term_id.clone(),
+        stderr,
+        "stderr",
+        last_activity_ms.clone(),
+    );
     spawn_exit_watcher(app.clone(), term_id.clone());
 
     let stdin_writer: Box<dyn Write + Send> = Box::new(stdin);
@@ -696,6 +855,7 @@ pub fn chat_interrupt_and_resume(
         cwd,
         skip_permissions,
         effort: prev_effort,
+        last_activity_ms,
     };
     state.inner.lock().unwrap().insert(term_id, entry);
     Ok(())
@@ -821,8 +981,21 @@ pub fn chat_switch_model(
         .take()
         .ok_or_else(|| "claude stderr missing".to_string())?;
 
-    spawn_reader(app.clone(), term_id.clone(), stdout, "stdout");
-    spawn_reader(app.clone(), term_id.clone(), stderr, "stderr");
+    let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
+    spawn_reader(
+        app.clone(),
+        term_id.clone(),
+        stdout,
+        "stdout",
+        last_activity_ms.clone(),
+    );
+    spawn_reader(
+        app.clone(),
+        term_id.clone(),
+        stderr,
+        "stderr",
+        last_activity_ms.clone(),
+    );
     spawn_exit_watcher(app.clone(), term_id.clone());
 
     let stdin_writer: Box<dyn Write + Send> = Box::new(stdin);
@@ -833,6 +1006,7 @@ pub fn chat_switch_model(
         cwd,
         skip_permissions,
         effort: next_effort,
+        last_activity_ms,
     };
     state.inner.lock().unwrap().insert(term_id, entry);
     Ok(())
@@ -1263,8 +1437,21 @@ pub fn chat_resume_other_session(
         .take()
         .ok_or_else(|| "claude stderr missing".to_string())?;
 
-    spawn_reader(app.clone(), term_id.clone(), stdout, "stdout");
-    spawn_reader(app.clone(), term_id.clone(), stderr, "stderr");
+    let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
+    spawn_reader(
+        app.clone(),
+        term_id.clone(),
+        stdout,
+        "stdout",
+        last_activity_ms.clone(),
+    );
+    spawn_reader(
+        app.clone(),
+        term_id.clone(),
+        stderr,
+        "stderr",
+        last_activity_ms.clone(),
+    );
     spawn_exit_watcher(app.clone(), term_id.clone());
 
     let stdin_writer: Box<dyn Write + Send> = Box::new(stdin);
@@ -1275,6 +1462,7 @@ pub fn chat_resume_other_session(
         cwd,
         skip_permissions,
         effort: prev_effort,
+        last_activity_ms,
     };
     state.inner.lock().unwrap().insert(term_id, entry);
     Ok(())

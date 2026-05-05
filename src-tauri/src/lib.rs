@@ -7,6 +7,8 @@ mod pty;
 mod state;
 mod storage;
 
+use tauri::Manager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _log_guard = log::init();
@@ -157,6 +159,15 @@ pub fn run() {
             // Background scheduler thread: ticks every 5s and fires due
             // jobs via TerminalManager.
             crate::commands::schedules::start_scheduler(app.handle().clone());
+            // Background reaper: every 60s, kill chat sessions that have
+            // been idle (no user input AND no claude output) for longer
+            // than IDLE_TIMEOUT_MS. The user reported load avg 100+ from
+            // 11 stale claude children accumulating in one app instance
+            // — this is the safety net.
+            crate::commands::chat::start_idle_reaper(
+                app.handle().clone(),
+                crate::commands::chat::IDLE_TIMEOUT_MS,
+            );
             // Make sure every claude session knows about Deepthix's env
             // hooks (workflows, dashboard, project_id) by appending the
             // brief to ~/.claude/CLAUDE.md. Idempotent — markered block.
@@ -170,6 +181,22 @@ pub fn run() {
             tracing::info!(target: "deepthix::boot", "tauri setup complete");
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // App-exit hook: kill every spawned claude (chat + pty) so
+            // children don't get re-parented to launchd and outlive the
+            // app. The user reported finding orphan claudes from
+            // previous sessions still consuming CPU 2 days later — this
+            // is the fix.
+            if let tauri::RunEvent::Exit = event {
+                tracing::info!(target: "deepthix::boot", "exit event — killing all children");
+                if let Some(state) = app.try_state::<crate::commands::chat::ChatManager>() {
+                    state.kill_all_blocking();
+                }
+                if let Some(state) = app.try_state::<crate::pty::TerminalManager>() {
+                    state.kill_all_blocking();
+                }
+            }
+        });
 }

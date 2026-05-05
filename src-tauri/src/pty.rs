@@ -406,5 +406,21 @@ impl TerminalManager {
             tracing::warn!(target: "deepthix::pty", %id, "kill: no such terminal");
         }
     }
+
+    /// Kill every spawned pty child. Called from the app exit handler
+    /// so terminal claudes / shells don't get re-parented to launchd
+    /// when the app quits.
+    pub fn kill_all_blocking(&self) {
+        let mut map = self.inner.lock().unwrap();
+        let count = map.len();
+        if count == 0 {
+            return;
+        }
+        for (id, handle) in map.drain() {
+            tracing::info!(target: "deepthix::pty", %id, "killing on exit");
+            handle.kill();
+        }
+        tracing::info!(target: "deepthix::pty", %count, "all pty children killed");
+    }
 }
 

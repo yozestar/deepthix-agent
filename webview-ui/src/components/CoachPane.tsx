@@ -560,7 +560,19 @@ export function CoachPane({ sessions }: Props): React.JSX.Element {
     let cancelled = false;
     void (async () => {
       const term = await spawnCoachRef.current();
-      if (cancelled || !term) return;
+      if (cancelled) {
+        // Cleanup fired while we were spawning — kill the orphan we
+        // just created. Without this, switching away from the coach
+        // mid-spawn would leak a sonnet process for 30 min until the
+        // backend idle reaper catches it.
+        if (term) {
+          await chatKill(term).catch((e) =>
+            console.warn('[Deepthix][CoachPane] kill-on-cancel failed', e),
+          );
+        }
+        return;
+      }
+      if (!term) return;
       const sinceLast = Date.now() - (lastRunMsRef.current || 0);
       if (sinceLast >= COACH_INTERVAL_MS) {
         console.info(
@@ -576,6 +588,18 @@ export function CoachPane({ sessions }: Props): React.JSX.Element {
     })();
     return () => {
       cancelled = true;
+      // Kill the coach claude on unmount. The conversation lives in
+      // state.coach_session_id, so the next mount will --resume it; we
+      // don't lose history. But the OS process must die or we leak a
+      // sonnet child every time SessionsTopArea re-mounts (project
+      // switch, hot reload, recovery from crash, etc).
+      const term = coachTermIdRef.current;
+      if (term) {
+        coachTermIdRef.current = null;
+        void chatKill(term).catch((e) =>
+          console.warn('[Deepthix][CoachPane] kill-on-unmount failed', e),
+        );
+      }
     };
   }, [state.enabled]);
 
