@@ -86,7 +86,19 @@ impl Drop for JsonlWatcher {
 /// was queried.
 pub fn predict_jsonl_path(project_cwd: &std::path::Path, session_id: &str) -> PathBuf {
     let raw = project_cwd.to_string_lossy();
-    let hash: String = raw
+    // Strip Windows extended-length path prefixes (`\\?\` and `\\?\UNC\`).
+    // Tauri / `std::fs::canonicalize` hand back paths in this verbatim form
+    // (e.g. `\\?\C:\Claude\claude_agent`), but Claude Code hashes the
+    // user-facing path (`C:\Claude\claude_agent`). Without stripping, a
+    // verbatim-prefixed cwd hashes to `----C--Claude-claude-agent` and we
+    // miss the on-disk dir entirely — manifests as "session reopened but
+    // empty transcript" because chat_load_history returns Ok(vec![]).
+    let trimmed = raw
+        .strip_prefix(r"\\?\UNC\")
+        .map(|s| format!(r"\\{}", s))
+        .or_else(|| raw.strip_prefix(r"\\?\").map(|s| s.to_string()))
+        .unwrap_or_else(|| raw.to_string());
+    let hash: String = trimmed
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' {
@@ -175,6 +187,43 @@ mod tests {
             s2.contains("/-Users-x-My-Project/"),
             "space should collapse to dash, got {}",
             s2,
+        );
+    }
+
+    #[test]
+    fn predict_jsonl_path_strips_verbatim_prefix() {
+        // Tauri/canonicalize hand back `\\?\C:\…` — must hash to the same
+        // dir as the user-facing `C:\…` form, otherwise reopened sessions
+        // show an empty transcript.
+        let with = predict_jsonl_path(
+            std::path::Path::new(r"\\?\C:\Claude\claude_agent"),
+            "abc",
+        );
+        let without = predict_jsonl_path(
+            std::path::Path::new(r"C:\Claude\claude_agent"),
+            "abc",
+        );
+        assert_eq!(with, without);
+        let s = with.to_string_lossy().replace('\\', "/");
+        assert!(
+            s.contains("/C--Claude-claude-agent/"),
+            "verbatim prefix should not leak into hash, got {}",
+            s,
+        );
+    }
+
+    #[test]
+    fn predict_jsonl_path_strips_verbatim_unc_prefix() {
+        // UNC verbatim form: `\\?\UNC\server\share\…` -> `\\server\share\…`.
+        let p = predict_jsonl_path(
+            std::path::Path::new(r"\\?\UNC\server\share\proj"),
+            "abc",
+        );
+        let s = p.to_string_lossy().replace('\\', "/");
+        assert!(
+            s.contains("/--server-share-proj/"),
+            "UNC prefix should map to leading `\\\\` then dash, got {}",
+            s,
         );
     }
 
