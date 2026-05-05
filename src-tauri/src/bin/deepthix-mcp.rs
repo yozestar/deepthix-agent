@@ -242,11 +242,28 @@ fn tool_read_dashboard(args: &Value) -> Result<Value, String> {
 }
 
 fn predict_jsonl_path(project_cwd: &Path, session_id: &str) -> PathBuf {
+    // Mirror jsonl_watcher::predict_jsonl_path. Claude Code's actual
+    // hash rule is "any non-alphanumeric ASCII (except `-`) -> `-`".
+    // Keeping the two implementations in lockstep matters: this MCP
+    // sidecar has to find the same JSONL file the main app does for
+    // tool_read_transcript to work on Windows projects with `_` or
+    // spaces in the path.
     let raw = project_cwd.to_string_lossy();
     let hash: String = raw
         .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let safe_session_id: String = session_id
+        .chars()
         .map(|c| match c {
-            '/' | '\\' | ':' => '-',
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' | '\0' => '-',
+            c if c.is_control() => '-',
             other => other,
         })
         .collect();
@@ -254,7 +271,7 @@ fn predict_jsonl_path(project_cwd: &Path, session_id: &str) -> PathBuf {
     home.join(".claude")
         .join("projects")
         .join(hash)
-        .join(format!("{session_id}.jsonl"))
+        .join(format!("{safe_session_id}.jsonl"))
 }
 
 fn tool_read_transcript(args: &Value) -> Result<Value, String> {

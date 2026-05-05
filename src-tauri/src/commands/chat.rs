@@ -1269,7 +1269,18 @@ pub fn chat_load_history(project_cwd: PathBuf, session_id: String) -> Result<Vec
     let raw = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
-        Err(e) => return Err(format!("read jsonl: {e}")),
+        // Treat ANY filesystem error as "no history" rather than
+        // propagating to the UI: the worst case (history not shown)
+        // beats a red banner that tells the user nothing actionable.
+        // The full path + error is still logged for debugging.
+        Err(e) => {
+            tracing::warn!(
+                target: "deepthix::chat",
+                ?path, error = %e, kind = ?e.kind(),
+                "chat_load_history failed — returning empty",
+            );
+            return Ok(vec![]);
+        }
     };
     Ok(raw.lines().filter(|l| !l.is_empty()).map(|s| s.to_string()).collect())
 }
@@ -1293,7 +1304,18 @@ pub fn read_session_excerpt(
     let raw = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(String::new()),
-        Err(e) => return Err(format!("read jsonl: {e}")),
+        // Same policy as chat_load_history: prefer empty excerpt over
+        // a UI banner. The CoachPane polls this on a timer, so a
+        // transient FS error must not stick a red error in the user's
+        // face on every refresh.
+        Err(e) => {
+            tracing::warn!(
+                target: "deepthix::chat",
+                ?path, error = %e, kind = ?e.kind(),
+                "read_session_excerpt failed — returning empty",
+            );
+            return Ok(String::new());
+        }
     };
     // Walk from the end, collect up to `limit` user/assistant records,
     // then reverse so the excerpt reads forward.
@@ -1844,7 +1866,19 @@ pub fn rewind_session(
 ) -> Result<u32, String> {
     let n_drop = n.max(1);
     let path = crate::jsonl_watcher::predict_jsonl_path(&project_cwd, &session_id);
-    let body = std::fs::read_to_string(&path).map_err(|e| format!("read jsonl: {e}"))?;
+    // rewind_session is user-initiated (the /rewind command) and the
+    // user genuinely needs to see WHY we couldn't read the JSONL —
+    // returning empty here would silently no-op a destructive intent.
+    // Include the path in the error so a Windows os error 123 is
+    // diagnosable without instrumentation.
+    let body = std::fs::read_to_string(&path).map_err(|e| {
+        format!(
+            "read jsonl {} ({:?}): {}",
+            path.display(),
+            e.kind(),
+            e
+        )
+    })?;
     let lines: Vec<&str> = body.lines().collect();
 
     // Walk forward, mark indexes of every user record. Cut at the index
