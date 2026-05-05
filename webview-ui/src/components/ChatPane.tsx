@@ -772,6 +772,11 @@ export function ChatPane({
         setBusy(false);
         return;
       }
+      // Mark the session exited so the next send() call auto-respawns
+      // via --resume <session_id>. Without this the user types into a
+      // dead session and the message silently fails.
+      sessionExitedRef.current = true;
+      const isIdle = (evt as { subtype?: string }).subtype === 'idle';
       setMessages((prev) => [
         ...prev,
         {
@@ -779,7 +784,9 @@ export function ChatPane({
           uid: uid(),
           ts: Date.now(),
           subtype: 'exit',
-          summary: `claude exited (code ${evt.code ?? '?'})`,
+          summary: isIdle
+            ? '⏸ session paused (idle 30 min) — send a message to resume'
+            : `claude exited (code ${evt.code ?? '?'}) — send a message to resume`,
         },
       ]);
       setBusy(false);
@@ -825,6 +832,11 @@ export function ChatPane({
   // suppress the "claude exited" system bubble (the exit was on
   // purpose and a fresh claude is already on the way).
   const interruptedRef = useRef(false);
+  // Set true on every chat_exit (idle reaper, crash, intentional kill).
+  // The send() handler reads it to auto-respawn the session via
+  // --resume <session_id> on the next user message instead of failing
+  // silently with "no chat session <term_id>".
+  const sessionExitedRef = useRef(false);
   // Tracks the safety timer that auto-clears busy if chat_exit never
   // arrives after Stop (rare but possible if claude hangs in a tool
   // call that ignores SIGINT).
@@ -1281,6 +1293,42 @@ export function ChatPane({
     if (!termId) return;
     if (!text && attachments.length === 0) return;
     setInput('');
+
+    // Auto-respawn if the session has exited (idle reaper, crash,
+    // intentional kill). Spawn a fresh claude with --resume on the
+    // saved sessionId so the conversation context is preserved, then
+    // continue with the send below using the new term_id.
+    let activeTermId: string = termId;
+    if (sessionExitedRef.current) {
+      sessionExitedRef.current = false;
+      setMessages((prev) => [
+        ...prev,
+        {
+          kind: 'system',
+          uid: uid(),
+          ts: Date.now(),
+          subtype: 'exit',
+          summary: '↻ resuming session…',
+        },
+      ]);
+      try {
+        const res = await chatSpawn({
+          cwd,
+          resume_session_id: sessionId,
+          skip_permissions: skipPermissions ?? false,
+        });
+        activeTermId = res.term_id;
+        setTermId(res.term_id);
+        if (res.session_id) setSessionId(res.session_id);
+        onSessionReadyRef.current?.({ termId: res.term_id, sessionId: res.session_id });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[Deepthix][ChatPane] auto-respawn failed', e);
+        setError(`Resume failed: ${msg}`);
+        sessionExitedRef.current = true; // let the user retry
+        return;
+      }
+    }
     // Intercept client-side slash commands BEFORE shipping to claude
     // — otherwise claude wraps them in useless XML and the user sees
     // junk in the chat. Slash commands ignore any pending attachments.
@@ -1310,10 +1358,10 @@ export function ChatPane({
     setPendingAttachments([]);
     try {
       if (attachments.length === 0) {
-        await chatSendUserText(termId, text);
+        await chatSendUserText(activeTermId, text);
       } else {
         await chatSendUserWithAttachments(
-          termId,
+          activeTermId,
           text,
           attachments.map((a) => a.path),
         );
