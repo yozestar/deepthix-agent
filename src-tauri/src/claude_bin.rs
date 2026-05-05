@@ -17,6 +17,14 @@ use portable_pty::CommandBuilder;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+// Windows: suppress the console window that would otherwise pop up
+// when a GUI process spawns a console child (cmd.exe, powershell.exe,
+// or claude.exe itself if it's a console app). Without this flag the
+// user sees an external terminal window flash open every time a chat
+// session spawns — exactly the v0.3.7 regression report.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// Find the claude CLI binary. Returns `Err` with a helpful install hint
 /// if nothing matches.
 pub fn resolve() -> Result<PathBuf, String> {
@@ -55,23 +63,29 @@ pub fn resolve_opt() -> Option<PathBuf> {
 
 /// Build a `std::process::Command` ready to run claude. On Windows wraps
 /// `.cmd`/`.bat` shims with `cmd.exe /C` so `CreateProcess` doesn't fail
-/// with OS error 193, and `.ps1` shims with `powershell.exe -File`.
+/// with OS error 193, and `.ps1` shims with `powershell.exe -File`. All
+/// three Windows variants get `CREATE_NO_WINDOW` so no terminal pops
+/// up — chat-mode claude is piped, the UI doesn't want a visible
+/// console.
 pub fn build_command(bin: &Path) -> Command {
     #[cfg(windows)]
     {
-        match shim_kind(bin) {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = match shim_kind(bin) {
             ShimKind::Cmd => {
-                let mut cmd = Command::new("cmd.exe");
-                cmd.arg("/C").arg(bin);
-                cmd
+                let mut c = Command::new("cmd.exe");
+                c.arg("/C").arg(bin);
+                c
             }
             ShimKind::PowerShell => {
-                let mut cmd = Command::new("powershell.exe");
-                cmd.arg("-NoProfile").arg("-File").arg(bin);
-                cmd
+                let mut c = Command::new("powershell.exe");
+                c.arg("-NoProfile").arg("-File").arg(bin);
+                c
             }
             ShimKind::Direct => Command::new(bin),
-        }
+        };
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd
     }
     #[cfg(not(windows))]
     {
@@ -157,8 +171,14 @@ fn shell_lookup() -> Option<PathBuf> {
     #[cfg(windows)]
     {
         // `where` prints every match on its own line, picks up PATHEXT
-        // (so `where claude` finds `claude.cmd`).
-        let out = Command::new("where").arg("claude").output().ok()?;
+        // (so `where claude` finds `claude.cmd`). CREATE_NO_WINDOW so
+        // the user doesn't see a console flash on every app launch.
+        use std::os::windows::process::CommandExt;
+        let out = Command::new("where")
+            .arg("claude")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .ok()?;
         if !out.status.success() {
             return None;
         }
