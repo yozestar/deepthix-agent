@@ -22,6 +22,7 @@ import {
   chatKill,
   chatLoadHistory,
   chatResumeOtherSession,
+  chatSendToolResult,
   chatSendUserText,
   chatSendUserWithAttachments,
   chatSetSessionId,
@@ -1699,6 +1700,7 @@ export function ChatPane({
             running={
               m.kind === 'tool_use' && m.tool !== '(result)' && runningTools.has(m.toolUseId)
             }
+            termId={termId}
           />
         ))}
         {showPendingPlaceholder && <PendingPlaceholder />}
@@ -2705,7 +2707,15 @@ function ResumePickerPopup({
   );
 }
 
-function MessageBubbleImpl({ m, running }: { m: Message; running?: boolean }): React.JSX.Element {
+function MessageBubbleImpl({
+  m,
+  running,
+  termId,
+}: {
+  m: Message;
+  running?: boolean;
+  termId: string | null;
+}): React.JSX.Element {
   switch (m.kind) {
     case 'user':
       return (
@@ -2730,7 +2740,7 @@ function MessageBubbleImpl({ m, running }: { m: Message; running?: boolean }): R
         />
       );
     case 'tool_use':
-      return <ToolBubble m={m} running={Boolean(running)} />;
+      return <ToolBubble m={m} running={Boolean(running)} termId={termId} />;
     case 'system':
       return (
         <div
@@ -3125,18 +3135,22 @@ const ToolBubble = memo(ToolBubbleImpl);
 function ToolBubbleImpl({
   m,
   running,
+  termId,
 }: {
   m: Extract<Message, { kind: 'tool_use' }>;
   running: boolean;
+  termId: string | null;
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const isResult = m.tool === '(result)';
+  const isAskUser = m.tool === 'AskUserQuestion';
   const style = useMemo(() => summarizeTool(m.tool, m.input), [m.tool, m.input]);
 
   // Auto-expand result bubbles since the result content IS the
   // information the user wants. Tool calls stay collapsed because
-  // the summary is usually enough.
-  const showDetail = expanded || isResult;
+  // the summary is usually enough. AskUserQuestion auto-expands too
+  // because the prompt UI lives inside the detail panel.
+  const showDetail = expanded || isResult || (isAskUser && !m.result);
 
   const inputPreview = useMemo(() => {
     if (m.input == null) return '';
@@ -3279,7 +3293,221 @@ function ToolBubbleImpl({
               : m.result.text}
           </div>
         )}
+        {isAskUser && !m.result && (
+          <AskUserPrompt
+            input={m.input}
+            toolUseId={m.toolUseId}
+            termId={termId}
+            inputPreviewShown={Boolean(inputPreview && expanded)}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+/** Inline prompt for the AskUserQuestion tool. Without this the tool
+ *  just hangs and claude eventually self-cancels with "Demande
+ *  annulée". Parses the tool input defensively (the SDK schema has
+ *  varied: sometimes {question, options}, sometimes {questions: [...]},
+ *  sometimes plain text) and renders a button per option + a free-text
+ *  fallback. On submit, fires chat_send_tool_result with the user's
+ *  choice; the assistant's next turn picks up from there. */
+function AskUserPrompt({
+  input,
+  toolUseId,
+  termId,
+  inputPreviewShown,
+}: {
+  input: unknown;
+  toolUseId: string;
+  termId: string | null;
+  inputPreviewShown: boolean;
+}): React.JSX.Element {
+  const [submitted, setSubmitted] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [customText, setCustomText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  // Parse defensively. The SDK has shipped a few input shapes for
+  // AskUserQuestion across versions:
+  //   { question: "...", options: ["yes", "no"] }
+  //   { question: "...", options: [{label, description}] }
+  //   { questions: [{question, options}] }   // multi-question variant
+  //   { prompt: "..." }                       // older alias
+  //   "raw string"                            // fallback
+  const { question, options } = useMemo(() => {
+    const def = { question: 'The assistant is waiting for your input.', options: [] as string[] };
+    if (input == null) return def;
+    if (typeof input === 'string') return { question: input, options: [] };
+    if (typeof input !== 'object') return def;
+    const obj = input as Record<string, unknown>;
+    // multi-question form: collapse to the first question for now
+    const questionsArr = Array.isArray(obj.questions) ? obj.questions : null;
+    if (questionsArr && questionsArr.length > 0 && typeof questionsArr[0] === 'object') {
+      const q0 = questionsArr[0] as Record<string, unknown>;
+      const qText =
+        (q0.question as string) ||
+        (q0.header as string) ||
+        (q0.prompt as string) ||
+        def.question;
+      const opts = Array.isArray(q0.options)
+        ? q0.options.map((o) => {
+            if (typeof o === 'string') return o;
+            if (o && typeof o === 'object') {
+              const oo = o as Record<string, unknown>;
+              return (oo.label as string) || (oo.value as string) || JSON.stringify(o);
+            }
+            return String(o);
+          })
+        : [];
+      return { question: qText, options: opts };
+    }
+    const qText =
+      (obj.question as string) || (obj.prompt as string) || (obj.header as string) || def.question;
+    const opts = Array.isArray(obj.options)
+      ? obj.options.map((o) => {
+          if (typeof o === 'string') return o;
+          if (o && typeof o === 'object') {
+            const oo = o as Record<string, unknown>;
+            return (oo.label as string) || (oo.value as string) || JSON.stringify(o);
+          }
+          return String(o);
+        })
+      : [];
+    return { question: qText, options: opts };
+  }, [input]);
+
+  const send = useCallback(
+    async (answer: string): Promise<void> => {
+      if (!termId) {
+        setError('Session not bound — cannot reply.');
+        return;
+      }
+      if (submitting || submitted) return;
+      setSubmitting(true);
+      setError(null);
+      try {
+        await chatSendToolResult(termId, toolUseId, answer);
+        setSubmitted(answer);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[Deepthix][AskUserPrompt] send failed', e);
+        setError(msg);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [termId, toolUseId, submitting, submitted],
+  );
+
+  if (submitted) {
+    return (
+      <div
+        style={{
+          marginTop: inputPreviewShown ? 8 : 0,
+          padding: '6px 10px',
+          background: 'var(--color-bg)',
+          border: '1px solid var(--color-border)',
+          fontSize: 11,
+          opacity: 0.85,
+        }}
+      >
+        ✓ Réponse envoyée: <strong>{submitted}</strong>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: inputPreviewShown ? 8 : 0,
+        padding: '8px 10px',
+        background: 'var(--color-bg)',
+        border: '1px solid var(--color-border)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <div style={{ fontSize: 12, lineHeight: 1.4, color: 'var(--color-text)' }}>{question}</div>
+      {options.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {options.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              className="dt-btn"
+              disabled={submitting}
+              onClick={() => void send(opt)}
+              style={{ fontSize: 11, padding: '4px 10px' }}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* Always offer Yes/No fallback when no options were supplied — this
+          matches the screenshot the user saw where the assistant only
+          knew it was supposed to "ask" but no schema had been provided. */}
+      {options.length === 0 && (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            type="button"
+            className="dt-btn"
+            disabled={submitting}
+            onClick={() => void send('Yes')}
+            style={{ fontSize: 11, padding: '4px 10px' }}
+          >
+            Yes
+          </button>
+          <button
+            type="button"
+            className="dt-btn"
+            disabled={submitting}
+            onClick={() => void send('No')}
+            style={{ fontSize: 11, padding: '4px 10px' }}
+          >
+            No
+          </button>
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          type="text"
+          value={customText}
+          onChange={(e) => setCustomText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && customText.trim()) {
+              e.preventDefault();
+              void send(customText.trim());
+            }
+          }}
+          placeholder="Autre — réponse libre, ⏎ pour envoyer"
+          disabled={submitting}
+          style={{
+            flex: 1,
+            background: 'var(--color-bg-dark)',
+            color: 'var(--color-text)',
+            border: '1px solid var(--color-border)',
+            padding: '4px 8px',
+            fontSize: 11,
+            fontFamily: 'var(--font-pixel)',
+          }}
+        />
+        <button
+          type="button"
+          className="dt-btn"
+          disabled={submitting || !customText.trim()}
+          onClick={() => void send(customText.trim())}
+          style={{ fontSize: 11, padding: '4px 10px' }}
+        >
+          Envoyer
+        </button>
+      </div>
+      {error && (
+        <div style={{ fontSize: 11, color: 'var(--color-danger)' }}>Erreur: {error}</div>
+      )}
     </div>
   );
 }

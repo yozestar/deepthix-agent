@@ -221,6 +221,228 @@ pub fn set_skill_enabled(path: String, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Read the raw SKILL.md content (full file, frontmatter + body).
+/// Used by the SkillsPane viewer modal to render the markdown.
+#[tauri::command]
+pub fn read_skill_file(path: String) -> Result<String, String> {
+    let p = PathBuf::from(&path);
+    if !p.is_file() {
+        return Err(format!("not a file: {path}"));
+    }
+    // Hard cap so a malformed huge file can't OOM the webview.
+    let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
+    if meta.len() > 1_048_576 {
+        return Err(format!("SKILL.md too large ({} bytes)", meta.len()));
+    }
+    std::fs::read_to_string(&p).map_err(|e| e.to_string())
+}
+
+/// Install a skill from raw text content (used by the marketplace
+/// flow: webview fetches the SKILL.md from a public URL, then sends
+/// us the bytes + the desired install location). Writes to
+/// `<scope-root>/.claude/skills/<name>/SKILL.md`. Refuses to clobber
+/// an existing skill unless `overwrite` is true.
+#[tauri::command]
+pub fn install_skill_from_text(
+    name: String,
+    content: String,
+    scope: String,
+    project_path: Option<String>,
+    overwrite: Option<bool>,
+) -> Result<String, String> {
+    let safe = sanitize_skill_name(&name)?;
+    let root = scope_root(&scope, project_path.as_deref())?;
+    let target_dir = root.join(&safe);
+    let target_md = target_dir.join("SKILL.md");
+    if target_md.exists() && !overwrite.unwrap_or(false) {
+        return Err(format!(
+            "skill `{safe}` already exists at {} — pass overwrite=true to replace it",
+            target_md.display(),
+        ));
+    }
+    std::fs::create_dir_all(&target_dir).map_err(|e| format!("mkdir {}: {e}", target_dir.display()))?;
+    let tmp = target_md.with_extension("md.tmp");
+    std::fs::write(&tmp, content.as_bytes()).map_err(|e| format!("write tmp: {e}"))?;
+    std::fs::rename(&tmp, &target_md).map_err(|e| format!("rename: {e}"))?;
+    tracing::info!(
+        target: "deepthix::commands",
+        skill = %safe, scope, path = %target_md.display(),
+        "install_skill_from_text",
+    );
+    Ok(target_md.to_string_lossy().into_owned())
+}
+
+/// Install a skill from a local file or directory the user dropped on
+/// the SkillsPane. Two shapes accepted:
+///
+///  1. A directory containing SKILL.md → copy the whole directory tree
+///     into `<scope-root>/.claude/skills/<dir-name>/`.
+///  2. A single .md file → wrap it as
+///     `<scope-root>/.claude/skills/<base-name>/SKILL.md`.
+///
+/// Anything else returns an error so we don't litter the skills dir
+/// with random files. `overwrite` semantics match `install_skill_from_text`.
+#[tauri::command]
+pub fn install_skill_from_path(
+    source_path: String,
+    scope: String,
+    project_path: Option<String>,
+    overwrite: Option<bool>,
+) -> Result<String, String> {
+    let src = PathBuf::from(&source_path);
+    if !src.exists() {
+        return Err(format!("source does not exist: {source_path}"));
+    }
+    let root = scope_root(&scope, project_path.as_deref())?;
+    let overwrite = overwrite.unwrap_or(false);
+
+    if src.is_dir() {
+        if !src.join("SKILL.md").is_file() {
+            return Err(format!(
+                "directory does not contain a SKILL.md: {source_path}"
+            ));
+        }
+        let raw_name = src
+            .file_name()
+            .ok_or_else(|| format!("can't get directory name from {source_path}"))?
+            .to_string_lossy()
+            .into_owned();
+        let safe = sanitize_skill_name(&raw_name)?;
+        let target_dir = root.join(&safe);
+        if target_dir.exists() && !overwrite {
+            return Err(format!(
+                "skill `{safe}` already exists at {} — pass overwrite=true to replace it",
+                target_dir.display(),
+            ));
+        }
+        if target_dir.exists() {
+            std::fs::remove_dir_all(&target_dir).map_err(|e| format!("rm existing: {e}"))?;
+        }
+        std::fs::create_dir_all(&target_dir).map_err(|e| format!("mkdir: {e}"))?;
+        copy_dir_recursive(&src, &target_dir)?;
+        tracing::info!(
+            target: "deepthix::commands",
+            skill = %safe, scope, src = %src.display(), dst = %target_dir.display(),
+            "install_skill_from_path (dir)",
+        );
+        return Ok(target_dir.join("SKILL.md").to_string_lossy().into_owned());
+    }
+
+    if src.is_file() {
+        let ext = src
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase());
+        if ext.as_deref() != Some("md") {
+            return Err(format!(
+                "single-file install only accepts .md (got {})",
+                ext.unwrap_or_else(|| "no-extension".into()),
+            ));
+        }
+        let raw_name = src
+            .file_stem()
+            .ok_or_else(|| format!("can't get filename stem from {source_path}"))?
+            .to_string_lossy()
+            .into_owned();
+        let safe = sanitize_skill_name(&raw_name)?;
+        let content = std::fs::read_to_string(&src).map_err(|e| format!("read: {e}"))?;
+        return install_skill_from_text(safe, content, scope, project_path, Some(overwrite));
+    }
+
+    Err(format!("unsupported source: {source_path}"))
+}
+
+/// Delete a skill (the whole directory containing the SKILL.md).
+/// Refuses plugin paths since those should be removed via the plugin
+/// manager. Used by the SkillsPane "delete" affordance.
+#[tauri::command]
+pub fn delete_skill(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !p.is_file() || p.file_name().and_then(|s| s.to_str()) != Some("SKILL.md") {
+        return Err(format!("not a SKILL.md: {path}"));
+    }
+    let dir = p
+        .parent()
+        .ok_or_else(|| format!("can't resolve parent of {path}"))?;
+    // Refuse to delete plugin-managed skills.
+    let dir_str = dir.to_string_lossy();
+    if dir_str.contains("/.claude/plugins/") || dir_str.contains("\\.claude\\plugins\\") {
+        return Err(format!(
+            "refusing to delete plugin-managed skill at {} — use the plugin manager",
+            dir.display()
+        ));
+    }
+    std::fs::remove_dir_all(dir).map_err(|e| format!("rm: {e}"))?;
+    tracing::info!(target: "deepthix::commands", %path, "delete_skill");
+    Ok(())
+}
+
+/// Resolve the root directory for a given scope. "global" → ~/.claude/skills,
+/// "project" → <project_path>/.claude/skills (project_path required).
+fn scope_root(scope: &str, project_path: Option<&str>) -> Result<PathBuf, String> {
+    match scope {
+        "global" => {
+            let home = dirs::home_dir().ok_or_else(|| "no HOME".to_string())?;
+            Ok(home.join(".claude").join("skills"))
+        }
+        "project" => {
+            let p = project_path
+                .ok_or_else(|| "project scope requires a project_path".to_string())?;
+            Ok(PathBuf::from(p).join(".claude").join("skills"))
+        }
+        other => Err(format!("unknown scope: {other} (expected `global` or `project`)")),
+    }
+}
+
+/// Sanitize a skill name to a directory-safe slug. Skill names are
+/// user-supplied, so we trim, lowercase, replace whitespace with
+/// hyphens, and reject anything containing path separators or shell
+/// metacharacters. This is a defensive layer — without it, a marketplace
+/// entry named "../../etc/passwd" could escape the skills dir.
+fn sanitize_skill_name(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("empty skill name".to_string());
+    }
+    if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
+        return Err(format!("skill name contains path separator: {raw}"));
+    }
+    let slug: String = trimmed
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else if c.is_whitespace() {
+                '-'
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if slug.is_empty() {
+        return Err(format!("skill name reduced to empty after sanitize: {raw}"));
+    }
+    Ok(slug)
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    let entries = std::fs::read_dir(src).map_err(|e| format!("readdir {}: {e}", src.display()))?;
+    for entry in entries.flatten() {
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        let ft = entry.file_type().map_err(|e| format!("filetype: {e}"))?;
+        if ft.is_dir() {
+            std::fs::create_dir_all(&to).map_err(|e| format!("mkdir {}: {e}", to.display()))?;
+            copy_dir_recursive(&from, &to)?;
+        } else if ft.is_file() {
+            std::fs::copy(&from, &to).map_err(|e| format!("copy {}: {e}", from.display()))?;
+        }
+        // Symlinks are skipped intentionally — copying them as-is would
+        // create dangling links if the user moves the source later.
+    }
+    Ok(())
+}
+
 /// Insert / update / remove the `disable-model-invocation` line in the
 /// frontmatter, preserving everything else byte-for-byte. Creates a
 /// frontmatter block if none exists (rare but possible for

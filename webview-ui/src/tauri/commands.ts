@@ -357,6 +357,41 @@ export async function setSkillEnabled(path: string, enabled: boolean): Promise<v
   return await invoke<void>('set_skill_enabled', { path, enabled });
 }
 
+/** Read raw SKILL.md content for the viewer modal. */
+export async function readSkillFile(path: string): Promise<string> {
+  log('readSkillFile', { path });
+  return await invoke<string>('read_skill_file', { path });
+}
+
+/** Install a skill from raw markdown text (used by marketplace fetch). */
+export async function installSkillFromText(args: {
+  name: string;
+  content: string;
+  scope: 'global' | 'project';
+  projectPath: string | null;
+  overwrite?: boolean;
+}): Promise<string> {
+  log('installSkillFromText', { name: args.name, scope: args.scope });
+  return await invoke<string>('install_skill_from_text', args);
+}
+
+/** Install a skill from a local file or directory (used by drag-drop). */
+export async function installSkillFromPath(args: {
+  sourcePath: string;
+  scope: 'global' | 'project';
+  projectPath: string | null;
+  overwrite?: boolean;
+}): Promise<string> {
+  log('installSkillFromPath', { source: args.sourcePath, scope: args.scope });
+  return await invoke<string>('install_skill_from_path', args);
+}
+
+/** Delete a skill (removes the whole containing directory). */
+export async function deleteSkill(path: string): Promise<void> {
+  log('deleteSkill', { path });
+  return await invoke<void>('delete_skill', { path });
+}
+
 export interface TranscribeResult {
   text: string;
   elapsed_ms: number;
@@ -459,6 +494,17 @@ export async function chatSendUserWithAttachments(
 export async function chatKill(termId: string): Promise<void> {
   log('chat_kill', { termId });
   return await invoke<void>('chat_kill', { termId });
+}
+
+/** Reply to a tool_use the assistant emitted (typically AskUserQuestion).
+ *  Without this, claude hangs on the tool call until it self-cancels. */
+export async function chatSendToolResult(
+  termId: string,
+  toolUseId: string,
+  content: string,
+): Promise<void> {
+  log('chat_send_tool_result', { termId, toolUseId, chars: content.length });
+  return await invoke<void>('chat_send_tool_result', { termId, toolUseId, content });
 }
 
 /** Send SIGINT to the underlying claude process so it stops the

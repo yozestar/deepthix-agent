@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/deepthix/deepthix-agent/main/docs/skills-marketplace.schema.json",
+  "version": 1,
+  "updated_at": "2026-05-05",
+  "skills": [
+    {
+      "id": "commit-crafter",
+      "name": "commit-crafter",
+      "description": "Write commit messages that explain WHY, not just WHAT.",
+      "author": "deepthix",
+      "url": "https://raw.githubusercontent.com/deepthix/deepthix-agent/main/docs/marketplace-skills/commit-crafter/SKILL.md"
+    }
+  ]
+}

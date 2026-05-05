@@ -557,6 +557,54 @@ pub fn chat_send_user_text(
     Ok(())
 }
 
+/// Reply to a tool_use the assistant emitted (typically AskUserQuestion
+/// — claude pauses the turn until it gets a tool_result back). Format
+/// matches the SDK contract: a user message whose `content` is an array
+/// containing a single tool_result block keyed by tool_use_id.
+///
+/// Without this command, AskUserQuestion just hangs (no UI prompt
+/// before v0.3.9, no client reply ever) and claude eventually emits a
+/// "Demande annulée" auto-cancellation.
+#[tauri::command]
+pub fn chat_send_tool_result(
+    state: State<'_, ChatManager>,
+    term_id: String,
+    tool_use_id: String,
+    content: String,
+) -> Result<(), String> {
+    tracing::debug!(
+        target: "deepthix::chat",
+        %term_id, %tool_use_id, chars = content.chars().count(),
+        "chat_send_tool_result",
+    );
+    let json = serde_json::json!({
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": content,
+                }
+            ]
+        }
+    });
+    let mut line = serde_json::to_string(&json).map_err(|e| format!("serialize: {e}"))?;
+    line.push('\n');
+    let map = state.inner.lock().unwrap();
+    let entry = map
+        .get(&term_id)
+        .ok_or_else(|| format!("no chat session {term_id}"))?;
+    entry.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+    let mut writer = entry.stdin.lock().unwrap();
+    writer
+        .write_all(line.as_bytes())
+        .map_err(|e| format!("write stdin: {e}"))?;
+    writer.flush().map_err(|e| format!("flush stdin: {e}"))?;
+    Ok(())
+}
+
 /// Like `chat_send_user_text` but also attaches files. Image files are
 /// read, base64-encoded, and shipped as proper image content blocks so
 /// claude actually sees them (sending the bare path as text — what
