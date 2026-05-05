@@ -134,11 +134,22 @@ fn scan_skills_dir(root: &Path, scope: SkillScope, plugin: Option<String>, out: 
 }
 
 fn scan_plugins(root: &Path, out: &mut Vec<SkillInfo>) {
-    // Plugin layout: ~/.claude/plugins/<plugin-name>/skills/<skill-name>/SKILL.md
-    // Variant we've also seen: ~/.claude/plugins/cache/<owner>/<plugin>/<version>/skills/...
-    // Walk up to 5 levels deep looking for `skills` subdirs.
-    fn walk(dir: &Path, depth: u8, plugin_name: Option<String>, out: &mut Vec<SkillInfo>) {
-        if depth > 5 {
+    // Plugin layouts seen in the wild:
+    //   ~/.claude/plugins/<plugin>/skills/<skill>/SKILL.md
+    //   ~/.claude/plugins/cache/<owner>/<plugin>/<version>/skills/<skill>/SKILL.md
+    //   ~/.claude/plugins/cache/temp_git_<hash>/skills/<skill>/SKILL.md
+    //   ~/.claude/plugins/marketplaces/<owner>/external_plugins/<plugin>/skills/<skill>/SKILL.md
+    //
+    // Walk to find every `skills` subdir, then derive the plugin name
+    // for each by walking UP from the skills dir until we hit a name
+    // that is neither a version (5.1.0, v1.2) nor a hash (12+ hex
+    // chars) nor "unknown" nor `temp_git_*`. Reading package.json's
+    // `name` field is preferred when present and not version-like —
+    // this is what merges superpowers/5.0.7 + superpowers/5.1.0 +
+    // temp_git_<hash> (which all have package.json with name=superpowers)
+    // into one logical plugin so the dedupe pass collapses them.
+    fn walk(dir: &Path, depth: u8, out: &mut Vec<SkillInfo>) {
+        if depth > 6 {
             return;
         }
         let entries = match std::fs::read_dir(dir) {
@@ -152,26 +163,97 @@ fn scan_plugins(root: &Path, out: &mut Vec<SkillInfo>) {
             }
             let name = entry.file_name().to_string_lossy().into_owned();
             if name == "skills" {
-                let inferred = plugin_name.clone().unwrap_or_else(|| {
-                    p.parent()
-                        .and_then(|q| q.file_name())
-                        .map(|f| f.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "plugin".to_string())
-                });
-                scan_skills_dir(&p, SkillScope::Plugin, Some(inferred), out);
+                let plugin = infer_plugin_name(&p);
+                scan_skills_dir(&p, SkillScope::Plugin, Some(plugin), out);
                 continue;
             }
-            // Heuristic: if this dir contains a `plugin.json` or `package.json`,
-            // remember its name as the plugin name when we descend.
-            let next_plugin = if p.join("plugin.json").exists() || p.join("package.json").exists() {
-                Some(name.clone())
-            } else {
-                plugin_name.clone()
-            };
-            walk(&p, depth + 1, next_plugin, out);
+            walk(&p, depth + 1, out);
         }
     }
-    walk(root, 0, None, out);
+    walk(root, 0, out);
+}
+
+fn looks_like_version(name: &str) -> bool {
+    if name.is_empty() {
+        return true;
+    }
+    if name == "unknown" || name.starts_with("temp_git_") {
+        return true;
+    }
+    // semver-ish: starts with optional v then digit.digit
+    let bytes = name.as_bytes();
+    let mut i = 0;
+    if bytes.first() == Some(&b'v') || bytes.first() == Some(&b'V') {
+        i = 1;
+    }
+    let mut saw_digit_dot_digit = false;
+    if i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i < bytes.len() && bytes[i] == b'.' {
+            i += 1;
+            if i < bytes.len() && bytes[i].is_ascii_digit() {
+                saw_digit_dot_digit = true;
+            }
+        }
+    }
+    if saw_digit_dot_digit {
+        return true;
+    }
+    // hex hash: 8+ chars all hex digits
+    if name.len() >= 8 && name.chars().all(|c| c.is_ascii_hexdigit()) {
+        return true;
+    }
+    false
+}
+
+fn read_pkg_name(d: &Path) -> Option<String> {
+    let pkg = d.join("package.json");
+    let text = std::fs::read_to_string(&pkg).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let n = v.get("name")?.as_str()?;
+    if n.is_empty() {
+        return None;
+    }
+    // Strip @scope/ prefix if any.
+    Some(n.rsplit('/').next().unwrap_or(n).to_string())
+}
+
+fn infer_plugin_name(skills_dir: &Path) -> String {
+    // Pass 1: walk up looking for a package.json whose `name` is not
+    // version-like. Catches superpowers/5.1.0/package.json (name=superpowers)
+    // and temp_git_<hash>/package.json (name=superpowers).
+    let mut cur = skills_dir.parent();
+    for _ in 0..5 {
+        let Some(d) = cur else { break };
+        if let Some(name) = read_pkg_name(d) {
+            if !looks_like_version(&name) {
+                return name;
+            }
+        }
+        cur = d.parent();
+    }
+    // Pass 2: walk up using directory names, skipping anything that
+    // looks like a version/hash. Catches frontend-design/<commit>/skills/
+    // where the version dirs have no package.json but the parent dir
+    // name IS the plugin name.
+    let mut cur = skills_dir.parent();
+    for _ in 0..5 {
+        let Some(d) = cur else { break };
+        if let Some(name) = d.file_name().and_then(|f| f.to_str()) {
+            if !name.is_empty() && !looks_like_version(name) {
+                return name.to_string();
+            }
+        }
+        cur = d.parent();
+    }
+    skills_dir
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|f| f.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "plugin".to_string())
 }
 
 #[tauri::command]
