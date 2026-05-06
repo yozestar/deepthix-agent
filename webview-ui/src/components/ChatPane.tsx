@@ -122,6 +122,13 @@ function makeContext(): ParseContext {
 }
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+
+// Initial number of messages rendered in the chat surface. "Show N
+// older" at the top of the view bumps it by MESSAGES_VIEW_BATCH each
+// click. Long sessions used to render 500+ markdown bubbles up-front,
+// which made the page lag on every keystroke.
+const MESSAGES_VIEW_DEFAULT = 100;
+const MESSAGES_VIEW_BATCH = 100;
 function isImagePathLocal(p: string): boolean {
   const dot = p.lastIndexOf('.');
   return dot >= 0 && IMAGE_EXTS.has(p.slice(dot + 1).toLowerCase());
@@ -551,6 +558,12 @@ export function ChatPane({
   // /resume → opens a picker listing resumable sessions for cwd.
   const [showResumePicker, setShowResumePicker] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
+  // Cap the rendered window at MESSAGES_VIEW_DEFAULT to keep the React
+  // tree light when a session has hundreds of turns. The user can click
+  // "Show N older" at the top to expand by another batch. Loading the
+  // full transcript was making the chat surface laggy on big sessions
+  // (heavy markdown re-renders + scroll thrashing).
+  const [viewLimit, setViewLimit] = useState<number>(MESSAGES_VIEW_DEFAULT);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1741,10 +1754,32 @@ export function ChatPane({
             Type a message and hit ⏎ to start.
           </div>
         )}
-        {messages.map((m, i) => {
+        {messages.length > viewLimit && (
+          <button
+            type="button"
+            onClick={() => setViewLimit((n) => n + MESSAGES_VIEW_BATCH)}
+            style={{
+              alignSelf: 'center',
+              padding: '6px 14px',
+              margin: '4px 0 8px',
+              background: 'var(--color-bg-dark)',
+              color: 'var(--color-text)',
+              border: '2px solid var(--color-border)',
+              fontFamily: 'var(--font-pixel)',
+              fontSize: 11,
+              cursor: 'pointer',
+              opacity: 0.85,
+            }}
+            title={`${messages.length - viewLimit} older message${messages.length - viewLimit === 1 ? '' : 's'} hidden — click to load ${Math.min(MESSAGES_VIEW_BATCH, messages.length - viewLimit)} more`}
+          >
+            ↑ Show {Math.min(MESSAGES_VIEW_BATCH, messages.length - viewLimit)} older messages ({messages.length - viewLimit} hidden)
+          </button>
+        )}
+        {messages.slice(-viewLimit).map((m, i, arr) => {
           // Insert a WhatsApp-style date separator whenever the date
-          // jumps from one message to the next (and on the very first).
-          const prev = messages[i - 1];
+          // jumps from one message to the next (and on the very first
+          // visible message).
+          const prev = arr[i - 1];
           const showSep =
             !prev ||
             new Date(prev.ts).toDateString() !== new Date(m.ts).toDateString();
