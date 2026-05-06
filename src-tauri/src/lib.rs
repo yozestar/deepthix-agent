@@ -166,12 +166,13 @@ pub fn run() {
             crate::commands::schedules::start_scheduler(app.handle().clone());
             // Background reaper: every 60s, kill chat sessions that have
             // been idle (no user input AND no claude output) for longer
-            // than IDLE_TIMEOUT_MS. The user reported load avg 100+ from
+            // than the timeout. The user reported load avg 100+ from
             // 11 stale claude children accumulating in one app instance
-            // — this is the safety net.
+            // — this is the safety net. Override default 30 min via
+            // DEEPTHIX_IDLE_TIMEOUT_MS env var; <=0 disables.
             crate::commands::chat::start_idle_reaper(
                 app.handle().clone(),
-                crate::commands::chat::IDLE_TIMEOUT_MS,
+                crate::commands::chat::idle_timeout_ms(),
             );
             // Make sure every claude session knows about Deepthix's env
             // hooks (workflows, dashboard, project_id) by appending the

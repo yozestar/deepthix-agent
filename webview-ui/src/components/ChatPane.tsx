@@ -772,6 +772,10 @@ export function ChatPane({
         setBusy(false);
         return;
       }
+      const summary =
+        evt.subtype === 'idle'
+          ? `💤 session paused after ${Math.round((evt.idle_ms ?? 0) / 60000)} min idle — send a message to resume`
+          : `claude exited (code ${evt.code ?? '?'})`;
       setMessages((prev) => [
         ...prev,
         {
@@ -779,7 +783,7 @@ export function ChatPane({
           uid: uid(),
           ts: Date.now(),
           subtype: 'exit',
-          summary: `claude exited (code ${evt.code ?? '?'})`,
+          summary,
         },
       ]);
       setBusy(false);

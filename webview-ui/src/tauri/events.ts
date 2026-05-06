@@ -93,6 +93,12 @@ export interface ChatExitEvent {
   term_id: string;
   type: 'exit';
   code: number | null;
+  // 'idle' when the background reaper killed the session after
+  // DEEPTHIX_IDLE_TIMEOUT_MS of inactivity; absent for normal exits.
+  subtype?: 'idle';
+  // Milliseconds since last traffic at the moment the reaper fired.
+  // Only present when subtype === 'idle'.
+  idle_ms?: number;
 }
 
 export async function onChatExit(

@@ -43,8 +43,28 @@ use tauri::{AppHandle, Emitter, Manager, State};
 // is removed from ChatManager and a chat_exit event with subtype="idle"
 // is emitted so the UI can show a friendly "session paused, click to
 // resume" instead of a generic crash.
-pub const IDLE_TIMEOUT_MS: i64 = 30 * 60 * 1000;
+pub const DEFAULT_IDLE_TIMEOUT_MS: i64 = 30 * 60 * 1000;
 pub const IDLE_REAPER_TICK_SECS: u64 = 60;
+
+// Reads DEEPTHIX_IDLE_TIMEOUT_MS at boot. Accepts any i64; values <= 0
+// disable the reaper entirely (sessions live until app exit). Falls
+// back to DEFAULT_IDLE_TIMEOUT_MS if unset or unparseable.
+pub fn idle_timeout_ms() -> i64 {
+    match std::env::var("DEEPTHIX_IDLE_TIMEOUT_MS") {
+        Ok(s) => match s.trim().parse::<i64>() {
+            Ok(v) => v,
+            Err(_) => {
+                tracing::warn!(
+                    target: "deepthix::chat",
+                    raw = %s,
+                    "DEEPTHIX_IDLE_TIMEOUT_MS not parseable as i64 — using default",
+                );
+                DEFAULT_IDLE_TIMEOUT_MS
+            }
+        },
+        Err(_) => DEFAULT_IDLE_TIMEOUT_MS,
+    }
+}
 
 fn now_ms() -> i64 {
     SystemTime::now()
