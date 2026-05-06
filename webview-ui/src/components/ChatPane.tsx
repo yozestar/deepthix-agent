@@ -13,7 +13,7 @@
 // reads a `{"type":"user","message":{...}}` line on stdin and produces
 // the matching response.
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -1741,16 +1741,26 @@ export function ChatPane({
             Type a message and hit ⏎ to start.
           </div>
         )}
-        {messages.map((m) => (
-          <MessageBubble
-            key={m.uid}
-            m={m}
-            running={
-              m.kind === 'tool_use' && m.tool !== '(result)' && runningTools.has(m.toolUseId)
-            }
-            termId={termId}
-          />
-        ))}
+        {messages.map((m, i) => {
+          // Insert a WhatsApp-style date separator whenever the date
+          // jumps from one message to the next (and on the very first).
+          const prev = messages[i - 1];
+          const showSep =
+            !prev ||
+            new Date(prev.ts).toDateString() !== new Date(m.ts).toDateString();
+          return (
+            <React.Fragment key={m.uid}>
+              {showSep && <DateSeparator ts={m.ts} />}
+              <MessageBubble
+                m={m}
+                running={
+                  m.kind === 'tool_use' && m.tool !== '(result)' && runningTools.has(m.toolUseId)
+                }
+                termId={termId}
+              />
+            </React.Fragment>
+          );
+        })}
         {showPendingPlaceholder && <PendingPlaceholder />}
       </div>
 
@@ -2774,6 +2784,7 @@ function MessageBubbleImpl({
           label="you"
           body={m.text}
           markdown={false}
+          ts={m.ts}
         />
       );
     case 'assistant_text':
@@ -2786,6 +2797,7 @@ function MessageBubbleImpl({
             label="claude"
             body={m.text}
             markdown={true}
+            ts={m.ts}
           />
           <QuickReplies text={m.text} termId={termId} />
         </>
@@ -3011,6 +3023,7 @@ function BubbleImpl({
   label,
   body,
   markdown,
+  ts,
 }: {
   align: 'left' | 'right';
   bg: string;
@@ -3020,6 +3033,9 @@ function BubbleImpl({
   /** When true, render `body` as Markdown (assistant messages). User
    *  messages stay as plain text — they're already what the user typed. */
   markdown: boolean;
+  /** UNIX-epoch ms when this message was created. Rendered as a small
+   *  WhatsApp-style timestamp in the bubble's header, next to the label. */
+  ts?: number;
 }): React.JSX.Element {
   return (
     <div
@@ -3034,18 +3050,29 @@ function BubbleImpl({
         padding: '8px 10px',
         fontSize: '13px',
         lineHeight: 1.45,
-        // pre-wrap is the right default for plain text bubbles; the
-        // markdown bubble below has its own block formatting and will
-        // override per-element.
         whiteSpace: markdown ? 'normal' : 'pre-wrap',
         wordBreak: 'break-word',
       }}
     >
-      <div style={{ fontSize: '10px', opacity: 0.6, marginBottom: 4 }}>{label}</div>
+      <div
+        style={{
+          fontSize: '10px',
+          opacity: 0.6,
+          marginBottom: 4,
+          display: 'flex',
+          gap: 8,
+          alignItems: 'baseline',
+          justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
+        }}
+      >
+        <span>{label}</span>
+        {typeof ts === 'number' && (
+          <span title={new Date(ts).toLocaleString()} style={{ opacity: 0.7 }}>
+            {formatTime(ts)}
+          </span>
+        )}
+      </div>
       {markdown ? (
-        // Empty body = the streaming bubble was just opened, no
-        // tokens yet. Show a thin caret so the user knows something
-        // is coming.
         body.length === 0 ? (
           <span style={{ opacity: 0.4 }}>▌</span>
         ) : (
@@ -3054,6 +3081,50 @@ function BubbleImpl({
       ) : (
         body
       )}
+    </div>
+  );
+}
+
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function formatDateLabel(ts: number): string {
+  const d = new Date(ts);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const sameDay = (a: Date, b: Date): boolean =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  if (sameDay(d, today)) return "Aujourd'hui";
+  if (sameDay(d, yesterday)) return 'Hier';
+  // Older — show "DD MMMM YYYY" in the user's locale.
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** Visual day-break inserted between messages from different days, so a
+ *  long conversation across multiple days reads like WhatsApp. */
+function DateSeparator({ ts }: { ts: number }): React.JSX.Element {
+  return (
+    <div
+      style={{
+        alignSelf: 'center',
+        fontSize: 10,
+        opacity: 0.55,
+        background: 'var(--color-bg-dark)',
+        border: '1px solid var(--color-border)',
+        padding: '2px 10px',
+        margin: '6px 0',
+        letterSpacing: '0.04em',
+        fontFamily: 'var(--font-pixel)',
+      }}
+    >
+      {formatDateLabel(ts)}
     </div>
   );
 }
