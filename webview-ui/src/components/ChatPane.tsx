@@ -3515,13 +3515,21 @@ function ToolBubbleImpl({
   // because the prompt UI lives inside the detail panel.
   const showDetail = expanded || isResult || (isAskUser && !m.result);
 
+  // Cap the JSON preview hard. Agent / Task tool inputs can be 50k+
+  // chars (a full subagent prompt). Rendering that into a <pre> with
+  // pre-wrap + break-word made WebKit lay out every char even when the
+  // bubble was collapsed (CSS overflow:hidden hides, doesn't skip
+  // layout) — five parallel subagents froze the chat surface.
   const inputPreview = useMemo(() => {
     if (m.input == null) return '';
+    let s: string;
     try {
-      return JSON.stringify(m.input, null, 2);
+      s = JSON.stringify(m.input, null, 2);
     } catch {
-      return String(m.input);
+      s = String(m.input);
     }
+    if (s.length > 4000) s = s.slice(0, 4000) + '\n…(truncated, ' + s.length + ' chars)';
+    return s;
   }, [m.input]);
 
   return (
@@ -3614,7 +3622,12 @@ function ToolBubbleImpl({
           padding: showDetail ? '0 10px 8px' : '0 10px',
         }}
       >
-        {!isResult && inputPreview && (
+        {/* Only mount the <pre> when the bubble is actually expanded.
+            CSS overflow:hidden on the parent does NOT skip layout, so
+            keeping a 4000-char <pre> in the DOM for 50 collapsed tool
+            bubbles still made WebKit lay out 200k chars on every
+            scroll. Conditionally rendering brings that to zero. */}
+        {!isResult && inputPreview && showDetail && (
           <pre
             style={{
               margin: 0,
