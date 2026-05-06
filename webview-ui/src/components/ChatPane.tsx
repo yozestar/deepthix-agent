@@ -287,7 +287,8 @@ type ParseAction =
   | { kind: 'set_session'; sessionId: string }
   | { kind: 'set_model'; model: string }
   | { kind: 'set_slash_commands'; commands: string[] }
-  | { kind: 'turn_end'; ok: boolean; durationMs: number; costUsd: number };
+  | { kind: 'turn_end'; ok: boolean; durationMs: number; costUsd: number }
+  | { kind: 'live_usage'; outputTokens: number };
 
 type ParseResult = ParseAction[];
 
@@ -415,6 +416,17 @@ function parseLine(line: string, ctx: ParseContext): ParseResult {
         case 'message_stop': {
           ctx.activeMessageId = null;
           return [];
+        }
+        case 'message_delta': {
+          // Anthropic emits `message_delta` events that carry running
+          // usage updates as the assistant streams. We use them to drive
+          // a live "12s · 1.2k tok" counter in the header so the user
+          // can tell claude is actually working (vs hung).
+          const usage = ev.usage as Record<string, unknown> | undefined;
+          if (!usage) return [];
+          const out = usage.output_tokens as number | undefined;
+          if (typeof out !== 'number') return [];
+          return [{ kind: 'live_usage', outputTokens: out }];
         }
         default:
           return [];
@@ -567,6 +579,23 @@ export function ChatPane({
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Live token counter while claude is streaming a turn — updated
+  // every `message_delta` event so the user can see claude is actually
+  // working (vs hung mid-tool-call). Gets cleared when result envelope
+  // fires (lastTurn takes over).
+  const [liveUsage, setLiveUsage] = useState<
+    { startedAt: number; outputTokens: number; nowMs: number } | null
+  >(null);
+  // Tick the displayed elapsed seconds even when no message_delta is
+  // arriving (e.g. claude is in a long tool call) — without this the
+  // counter would freeze and look just as concerning as no counter.
+  useEffect(() => {
+    if (!liveUsage) return;
+    const id = setInterval(() => {
+      setLiveUsage((prev) => (prev ? { ...prev, nowMs: Date.now() } : prev));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [liveUsage?.startedAt]);
   /** Slash commands learned from the system/init event. Used to drive
    *  the autocomplete popup when the user types `/` at the start of
    *  the input. */
@@ -711,6 +740,15 @@ export function ChatPane({
               costUsd: a.costUsd,
             });
             setBusy(false);
+            setLiveUsage(null);
+            break;
+          }
+          case 'live_usage': {
+            setLiveUsage((prev) => ({
+              startedAt: prev?.startedAt ?? Date.now(),
+              outputTokens: a.outputTokens,
+              nowMs: Date.now(),
+            }));
             break;
           }
           case 'set_slash_commands': {
@@ -803,6 +841,7 @@ export function ChatPane({
         },
       ]);
       setBusy(false);
+      setLiveUsage(null);
     })
       .then((fn) => {
         if (cancelled) {
@@ -1349,6 +1388,7 @@ export function ChatPane({
       return;
     }
     setBusy(true);
+    setLiveUsage({ startedAt: Date.now(), outputTokens: 0, nowMs: Date.now() });
     forceScrollNextRef.current = true;
     // Light the working dot immediately — without this it stays idle
     // until claude's first event arrives (~1-2s of "is anything even
@@ -1630,7 +1670,15 @@ export function ChatPane({
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {busy ? (
-            <ThinkingIndicator />
+            <>
+              <ThinkingIndicator />
+              {liveUsage && (
+                <span style={{ opacity: 0.75, fontSize: 11 }}>
+                  {Math.max(0, Math.round((liveUsage.nowMs - liveUsage.startedAt) / 1000))}s
+                  {liveUsage.outputTokens > 0 && ` · ${formatTokenCount(liveUsage.outputTokens)} tok`}
+                </span>
+              )}
+            </>
           ) : lastTurn ? (
             <span
               style={{
@@ -3125,6 +3173,13 @@ function formatTime(ts: number): string {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
+}
+
+function formatTokenCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 100_000) return `${(n / 1000).toFixed(1)}k`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
 function formatDateLabel(ts: number): string {
