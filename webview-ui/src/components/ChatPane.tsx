@@ -2943,10 +2943,22 @@ function extractTrailingOptions(text: string): string[] {
 
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   // Walk backwards: skip trailing blank lines, then collect contiguous
-  // markdown list items. Stop as soon as we hit a non-list, non-blank line.
+  // option-like lines. Stop as soon as we hit something that doesn't
+  // look like an option. We accept three formats:
+  //   1. Markdown list:     "- Yes" / "* Yes" / "1. Yes" / "1) Yes"
+  //   2. Indented plain:    "  Yes"  (2+ leading spaces, no marker)
+  //   3. Bare short line:   "Yes"    (only when ALL lines in the
+  //                         trailing block are bare and short — guards
+  //                         against accidentally matching the body of
+  //                         a multi-paragraph reply)
+  // For each line we additionally require the content to NOT end in
+  // sentence punctuation (`.` `!`) — option labels read as fragments,
+  // not sentences. That filter is what saves us from grabbing the last
+  // few sentences of a paragraph and offering them as buttons.
   const items: string[] = [];
   let i = lines.length - 1;
   while (i >= 0 && lines[i].trim() === '') i--;
+  let allBare = true;
   while (i >= 0) {
     const line = lines[i];
     const trimmed = line.trim();
@@ -2954,20 +2966,40 @@ function extractTrailingOptions(text: string): string[] {
       i--;
       continue;
     }
-    const m = trimmed.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/);
-    if (!m) break;
-    let item = m[1].trim();
-    // Strip surrounding markdown emphasis / code spans
-    item = item.replace(/^\*\*(.+)\*\*$/, '$1').replace(/^`(.+)`$/, '$1');
-    if (item.length === 0 || item.length > 80) {
-      // suspicious — abort entirely rather than offer a half-list
-      return [];
+    // First: markdown list marker
+    let item: string | null = null;
+    const md = trimmed.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/);
+    if (md) {
+      item = md[1].trim();
+    } else {
+      // Indented (2+ spaces) plain line, OR a bare short line — accept
+      // either as long as it doesn't read like a sentence.
+      const isIndented = /^\s{2,}\S/.test(line);
+      const lastChar = trimmed.slice(-1);
+      const looksLikeSentence = lastChar === '.' || lastChar === '!';
+      const isShort = trimmed.length <= 80;
+      if ((isIndented || isShort) && !looksLikeSentence) {
+        item = trimmed;
+        if (!isIndented) {
+          // Track that we accepted a bare line — we'll bail if the
+          // whole trailing block isn't bare-short consistent.
+        }
+      }
     }
+    if (item == null) break;
+    item = item.replace(/^\*\*(.+)\*\*$/, '$1').replace(/^`(.+)`$/, '$1');
+    if (item.length === 0 || item.length > 80) return [];
+    if (md) allBare = false;
     items.unshift(item);
     i--;
-    if (items.length > 6) return []; // too many → probably not a prompt
+    if (items.length > 6) return [];
   }
+  // Need at least 1 candidate, capped at 6.
   if (items.length < 1 || items.length > 6) return [];
+  // Single bare item with no markdown structure is too risky (could be
+  // the closing line of any reply). Require either ≥2 items, or a
+  // markdown marker, or both.
+  if (items.length === 1 && allBare) return [];
   return items;
 }
 
