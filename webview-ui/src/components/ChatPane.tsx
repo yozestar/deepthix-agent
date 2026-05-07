@@ -554,7 +554,7 @@ function parseLine(line: string, ctx: ParseContext): ParseResult {
 
 // ─── Component ──────────────────────────────────────────────────────────
 
-export function ChatPane({
+function ChatPaneImpl({
   cwd,
   resumeSessionId,
   skipPermissions,
@@ -1999,6 +1999,34 @@ export function ChatPane({
     </div>
   );
 }
+
+/**
+ * Custom equality: skip re-render when only `onSessionReady` changed.
+ *
+ * BottomPanel renders one ChatPane per terminal across EVERY project (so
+ * that a session's in-memory state survives project switches). Without
+ * this memo, every parent re-render — and every project switch makes the
+ * App tree re-render — would re-execute every ChatPane's body. With many
+ * sessions × thousands of messages each, that adds noticeable lag (3-5 s
+ * was the user-reported symptom on Windows / WebView2).
+ *
+ * The `onSessionReady` prop is recreated on every parent render (inline
+ * arrow `({termId, sessionId}) => terminals.setSessionId(...)`). ChatPane
+ * captures it in a ref internally, so a new reference is harmless — it
+ * just shouldn't trigger a re-render. All other props are per-terminal
+ * and stable.
+ */
+function chatPanePropsEqual(prev: Props, next: Props): boolean {
+  return (
+    prev.cwd === next.cwd &&
+    prev.resumeSessionId === next.resumeSessionId &&
+    prev.skipPermissions === next.skipPermissions &&
+    prev.bindTermId === next.bindTermId &&
+    prev.agentId === next.agentId
+  );
+}
+
+export const ChatPane = memo(ChatPaneImpl, chatPanePropsEqual);
 
 // ─── Input + slash command autocomplete ─────────────────────────────────
 

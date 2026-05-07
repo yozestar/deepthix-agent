@@ -53,10 +53,24 @@ export function useProjects(): UseProjectsResult {
   // Sync active id from the Tauri-side event (covers cases where switch is
   // initiated from elsewhere — for Phase 1 only via switchProject below, but
   // future phases may switch from menus, hotkeys, etc.).
+  //
+  // Lightweight perf marker — Performance.now() before the React state
+  // update, requestAnimationFrame after to capture the time until the
+  // browser actually paints the new layout. Visible in dev tools as
+  // [Deepthix][perf] project_switch <ms>. Helps narrow down whether a
+  // user-reported lag lives in Tauri (very fast here, slow elsewhere) or
+  // in the React/paint pipeline (high number here).
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     void onProjectSwitched((id) => {
+      const t0 = performance.now();
       setActiveProjectId(id);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const ms = Math.round(performance.now() - t0);
+          console.info('[Deepthix][perf] project_switch', { id, ms });
+        });
+      });
     }).then((fn) => {
       unlisten = fn;
     });
