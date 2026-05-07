@@ -324,6 +324,13 @@ export function CoachPane({ sessions }: Props): React.JSX.Element {
       if (evt.term_id !== coachTermIdRef.current) return;
       setBusy(false);
       setCoachTermId(null);
+      // Idle reap: not an error — runAnalysis() lazy-spawns the coach
+      // again on the next 10-min tick. Stay silent so the user does not
+      // see a scary "exited (code ?)" line every reaper cycle.
+      if (evt.subtype === 'idle') {
+        console.info('[Deepthix][CoachPane] coach reaped on idle — will respawn next tick');
+        return;
+      }
       setMessages((prev) => [
         ...prev,
         {
