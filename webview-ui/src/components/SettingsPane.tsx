@@ -547,7 +547,19 @@ type UpdateStatus =
   | { kind: 'checking' }
   | { kind: 'up_to_date'; checkedAt: number }
   | { kind: 'available'; update: Update }
+  | { kind: 'not_configured' } // signing keys not set on the repo → empty platforms
   | { kind: 'error'; message: string };
+
+/** The plugin-updater error fired when latest.json's `platforms` object
+ *  contains nothing for the current OS+arch. We hit this on every release
+ *  shipped without `TAURI_SIGNING_PRIVATE_KEY` configured on the repo —
+ *  the aggregator emits `platforms: {}` and the updater (correctly)
+ *  refuses to proceed. Surface this as "not configured" rather than a
+ *  scary red ERROR pill — the app itself is fine, only auto-update is
+ *  off until the maintainer sets up signing. */
+function isMissingPlatformsError(msg: string): boolean {
+  return /none of the fallback platforms/i.test(msg) || /platforms.*were found/i.test(msg);
+}
 
 function UpdatesSection(): React.JSX.Element {
   const [version, setVersion] = useState<string>('…');
@@ -575,7 +587,11 @@ function UpdatesSection(): React.JSX.Element {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn('[Deepthix][SettingsPane] update check failed', e);
-      setStatus({ kind: 'error', message: msg });
+      if (isMissingPlatformsError(msg)) {
+        setStatus({ kind: 'not_configured' });
+      } else {
+        setStatus({ kind: 'error', message: msg });
+      }
     }
   }, []);
 
@@ -591,6 +607,9 @@ function UpdatesSection(): React.JSX.Element {
       break;
     case 'up_to_date':
       statusPill = <Pill bg="#16a34a" text="UP TO DATE" />;
+      break;
+    case 'not_configured':
+      statusPill = <Pill bg="#6b7280" text="AUTO-UPDATE NOT SET UP" />;
       break;
     case 'available':
       statusPill = <Pill bg="#f59e0b" text={`UPDATE → v${status.update.version}`} />;
@@ -620,6 +639,11 @@ function UpdatesSection(): React.JSX.Element {
       {status.kind === 'error' && (
         <div style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.5 }}>
           {status.message}
+        </div>
+      )}
+      {status.kind === 'not_configured' && (
+        <div style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.5 }}>
+          The repo's release pipeline ships unsigned artifacts (no `TAURI_SIGNING_PRIVATE_KEY` secret yet), so the in-app updater can't verify downloads. The app itself is fine — manual install from the GitHub release page works as before.
         </div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>

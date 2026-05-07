@@ -66,6 +66,14 @@ export function UpdaterBanner(): React.JSX.Element | null {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn('[Deepthix][Updater] check failed', e);
+      // "None of the fallback platforms ... were found" fires every time
+      // the repo ships unsigned artifacts (signing key not configured).
+      // Silent here — the Settings → UPDATES section explains it; we
+      // don't paint a scary banner across the top of the app.
+      if (/none of the fallback platforms/i.test(msg) || /platforms.*were found/i.test(msg)) {
+        setPhase({ kind: 'idle' });
+        return;
+      }
       if (manual) setPhase({ kind: 'error', message: msg });
       else setPhase({ kind: 'idle' });
     }
