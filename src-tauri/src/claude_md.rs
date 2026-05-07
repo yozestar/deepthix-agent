@@ -206,6 +206,31 @@ How to use:
 When you're about to ask the user a clarifying question, check the
 variables file first — they may have already pinned the answer.
 
+### Sub-tasks: use `deepthix__run_subtask`, NOT `Task` / `Agent`
+
+The built-in `Task` and `Agent` tools are broken in Deepthix Agent's
+chat-mode (claude-code's `--print --input-format stream-json`):
+the sub-agent dispatches but its `tool_result` is never delivered
+back, so you wait forever and the parent keeps re-trying. Issues
+#24594 / #29618 upstream.
+
+Instead, call the MCP tool **`mcp__deepthix__run_subtask`**. It spawns
+`claude --print -p "<prompt>"` (batch mode, which works) and returns
+the sub-claude's final reply. Same purpose as `Task`, no bug.
+
+Use it for: heavy multi-file refactors, simulations, deep research,
+anything where you want a fresh-context worker. **Don't** use it for
+trivial things you can do directly — each call is a full claude
+process (~200 MB RAM, full token budget against the rate limit).
+
+Hard limits on the MCP tool:
+- Max 3 concurrent sub-tasks per host. Wait for one to finish before
+  launching another.
+- Output is capped at 50 000 chars in the return value (the rest is
+  in the deepthix-mcp logs).
+- Sub-task has no memory of this conversation — write the prompt
+  self-contained.
+
 ### Asking the user a question
 
 **Do NOT call the `AskUserQuestion` tool in Deepthix Agent.** The

@@ -18,6 +18,8 @@
 
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -378,6 +380,174 @@ fn tool_notify_user(args: &Value) -> Result<Value, String> {
     Ok(json!({ "ok": true, "title": title, "kind": kind }))
 }
 
+// Concurrent-subtask cap. Each sub-claude is a full claude-code process
+// (~200 MB resident, full token budget). Beyond 3 the user's machine
+// thrashes — and so does their wallet, since every subtask burns its
+// own request budget against the shared rate limit. Process-local
+// counter is enough; the deepthix-mcp sidecar runs once per claude
+// session, and within that session claude's tool calls are serialized.
+const MAX_CONCURRENT_SUBTASKS: usize = 3;
+static SUBTASK_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// Spawn `claude --print -p "<prompt>"` in batch mode (NOT stream-json),
+/// wait for it to finish, return the assistant's final text. Replaces
+/// the broken `Task` / `Agent` built-in tool when the parent claude is
+/// running under Deepthix Agent's stream-json bridge.
+fn tool_run_subtask(args: &Value) -> Result<Value, String> {
+    let prompt = args
+        .get("prompt")
+        .and_then(|v| v.as_str())
+        .ok_or("missing prompt")?
+        .trim()
+        .to_string();
+    if prompt.is_empty() {
+        return Err("prompt cannot be empty".into());
+    }
+    if prompt.len() > 200_000 {
+        return Err(format!(
+            "prompt too large ({} chars > 200000)",
+            prompt.len()
+        ));
+    }
+    let description = args
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("subtask")
+        .trim()
+        .to_string();
+    let cwd_arg = args
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let model = args
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // Bump in-flight counter and gate. If we're already at the cap,
+    // refuse — better to fail fast than to fill swap.
+    let prev = SUBTASK_COUNT.fetch_add(1, Ordering::SeqCst);
+    if prev >= MAX_CONCURRENT_SUBTASKS {
+        SUBTASK_COUNT.fetch_sub(1, Ordering::SeqCst);
+        return Err(format!(
+            "Too many concurrent sub-tasks ({}/{}). Wait for one to finish before launching another.",
+            prev, MAX_CONCURRENT_SUBTASKS,
+        ));
+    }
+    // Decrement on every return path via this guard.
+    struct CounterGuard;
+    impl Drop for CounterGuard {
+        fn drop(&mut self) {
+            SUBTASK_COUNT.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    let _guard = CounterGuard;
+
+    let claude_bin = which_claude_bin()?;
+    let cwd = cwd_arg
+        .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| ".".into());
+
+    let mut cmd = Command::new(&claude_bin);
+    cmd.current_dir(&cwd)
+        .arg("--print")
+        // -p PROMPT is the official batch mode for one-shot tasks.
+        .arg("-p")
+        .arg(&prompt)
+        // Skip permissions in the sub — the parent already has the user's
+        // consent (Deepthix UI's skipPermissions toggle).
+        .arg("--dangerously-skip-permissions")
+        // Plain text output (default) — we just want the final reply.
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(m) = model.as_ref() {
+        cmd.arg("--model").arg(m);
+    }
+
+    let started_at = std::time::Instant::now();
+    let log_label = if description.len() > 60 {
+        format!("{}…", &description[..60])
+    } else {
+        description.clone()
+    };
+    eprintln!("[deepthix-mcp] subtask START — \"{log_label}\" cwd={cwd}");
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("spawn claude --print -p: {e}"))?;
+    let elapsed_ms = started_at.elapsed().as_millis();
+    let exit_code = output.status.code().unwrap_or(-1);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!(
+            "[deepthix-mcp] subtask FAILED — \"{log_label}\" exit={exit_code} elapsed={elapsed_ms}ms"
+        );
+        return Err(format!(
+            "sub-task exited {exit_code}: {}",
+            stderr.lines().take(20).collect::<Vec<_>>().join("\n")
+        ));
+    }
+
+    let mut stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let raw_len = stdout.len();
+    // Cap the returned text — claude tool_result has practical limits
+    // and 100k+ chars in a single block makes the parent context blow.
+    const MAX_OUT: usize = 50_000;
+    let truncated = stdout.len() > MAX_OUT;
+    if truncated {
+        stdout.truncate(MAX_OUT);
+        stdout.push_str("\n\n…(truncated, full output in deepthix-mcp logs)");
+    }
+    eprintln!(
+        "[deepthix-mcp] subtask DONE — \"{log_label}\" elapsed={elapsed_ms}ms chars={raw_len}{}",
+        if truncated { " (truncated)" } else { "" }
+    );
+
+    Ok(json!({
+        "ok": true,
+        "description": description,
+        "elapsed_ms": elapsed_ms,
+        "chars": raw_len,
+        "truncated": truncated,
+        "output": stdout,
+    }))
+}
+
+/// Find the `claude` CLI on PATH or in the canonical install paths
+/// (mirrors src-tauri/src/claude_bin.rs but kept inline here so the
+/// sidecar binary doesn't depend on the main lib crate).
+fn which_claude_bin() -> Result<PathBuf, String> {
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let p = dir.join("claude");
+            if p.is_file() {
+                return Ok(p);
+            }
+        }
+    }
+    let candidates: Vec<PathBuf> = {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let mut v = vec![
+            PathBuf::from("/opt/homebrew/bin/claude"),
+            PathBuf::from("/usr/local/bin/claude"),
+            PathBuf::from("/usr/bin/claude"),
+        ];
+        if !home.is_empty() {
+            let hp = PathBuf::from(home);
+            v.push(hp.join(".local/bin/claude"));
+            v.push(hp.join(".npm-global/bin/claude"));
+            v.push(hp.join(".bun/bin/claude"));
+        }
+        v
+    };
+    candidates
+        .into_iter()
+        .find(|p| p.is_file())
+        .ok_or_else(|| "claude CLI not found in PATH or fallback paths".to_string())
+}
+
 // ─── Tools list (advertised via tools/list) ──────────────────────────────
 
 fn tools_definition() -> Value {
@@ -426,6 +596,20 @@ fn tools_definition() -> Value {
             }
         },
         {
+            "name": "run_subtask",
+            "description": "Run a sub-task in an isolated claude process and return its final output. **Use this INSTEAD of the built-in `Task` / `Agent` tool when you're inside a Deepthix Agent session** — the built-in subagent dispatch is broken in claude-code's --print --input-format stream-json mode (see issues #24594/#29618), the tool_result never comes back. This MCP tool spawns `claude --print -p` in batch mode (which works) and waits for completion. Output is the assistant's full reply (text + summary, no streaming). Use cases: heavy refactors, multi-file analyses, long research where you don't need intermediate steps. Limits: max 3 concurrent sub-tasks per host; sub-task can take up to 30 minutes; output is capped at ~50k chars (the rest is logged but truncated in the return value).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "prompt": { "type": "string", "description": "The full sub-task prompt. Self-contained — the sub-claude has no memory of the parent conversation." },
+                    "description": { "type": "string", "description": "Short label for the sub-task (5-10 words). Surfaced in Deepthix's UI + logs so the user can tell what's running." },
+                    "cwd": { "type": "string", "description": "Working directory the sub-claude is spawned in. Defaults to the parent session's cwd." },
+                    "model": { "type": "string", "description": "Optional model override (e.g. `sonnet`, `opus`). Defaults to inherit parent." }
+                },
+                "required": ["prompt", "description"]
+            }
+        },
+        {
             "name": "notify_user",
             "description": "Push a notification to the user inside the Deepthix app (in-app toast + macOS notification banner). Use sparingly for events the user actually cares about — build done, tests failed, long-running task complete, ambiguous decision needs input. The user is watching multiple sessions; a notification interrupts whatever they're looking at, so each one should be worth that interruption.",
             "inputSchema": {
@@ -456,6 +640,7 @@ fn handle_tools_call(params: &Value) -> Result<Value, String> {
         "read_session_transcript" => tool_read_transcript(&args),
         "read_session_notes" => tool_read_notes(&args),
         "notify_user" => tool_notify_user(&args),
+        "run_subtask" => tool_run_subtask(&args),
         other => return Err(format!("unknown tool: {other}")),
     };
     match result {

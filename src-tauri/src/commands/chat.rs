@@ -43,6 +43,12 @@ use tauri::{AppHandle, Emitter, Manager, State};
 // resume" instead of a generic crash.
 pub const IDLE_TIMEOUT_MS: i64 = 30 * 60 * 1000;
 pub const IDLE_REAPER_TICK_SECS: u64 = 60;
+/// Refuse new spawns once this many chat sessions are alive in
+/// ChatManager. Each claude process holds 200-250 MB resident; one
+/// user accumulated 9 stale sessions ≈ 1.95 GB before macOS started
+/// thrashing. Six is a generous ceiling — most workflows need 1-3
+/// active conversations at a time.
+pub const MAX_ACTIVE_SESSIONS: usize = 6;
 
 fn now_ms() -> i64 {
     SystemTime::now()
@@ -129,11 +135,19 @@ struct ChatChild {
     effort: Option<String>,
     /// Wall-clock millis (UNIX epoch) of the last traffic on this
     /// session — bumped by the reader threads on every line claude emits
-    /// AND by the chat_send_* commands on every user input. The idle
-    /// reaper checks this to kill sessions inactive for IDLE_TIMEOUT_MS.
-    /// Atomic so the reader threads can bump without taking the
-    /// ChatManager mutex.
+    /// AND by the chat_send_* commands on every user input. Used by
+    /// the live UI activity indicator, NOT by the idle reaper (see
+    /// `last_user_input_ms` for why). Atomic so the reader threads can
+    /// bump without taking the ChatManager mutex.
     last_activity_ms: Arc<AtomicI64>,
+    /// Wall-clock millis of the last user-initiated input on this
+    /// session (chat_send_user_text, chat_send_user_with_attachments,
+    /// chat_send_tool_result, ChatManager::send_user_text from the
+    /// scheduler). NEVER bumped by the reader threads. The idle
+    /// reaper uses this to decide which sessions to kill — claude's
+    /// own background chatter (replay on --resume, rate_limit_event,
+    /// keepalives) doesn't keep an unused session alive.
+    last_user_input_ms: Arc<AtomicI64>,
 }
 
 /// Tauri-managed state. Same pattern as TerminalManager.
@@ -170,19 +184,33 @@ impl ChatManager {
         tracing::info!(target: "deepthix::chat", %count, "all chat children killed");
     }
 
-    /// Kill every chat session whose last_activity is older than
-    /// `timeout_ms`. Returns the number killed. Each kill emits a
-    /// chat_exit event with subtype="idle" so the UI can paint a
-    /// friendly "session paused — click to resume" instead of
-    /// rendering a generic crash bubble.
+    /// Kill every chat session whose **user input** is older than
+    /// `timeout_ms`. Returns the number killed.
+    ///
+    /// Why `last_user_input_ms` and not `last_activity_ms`: the v0.4.x
+    /// reaper bumped activity on every line claude wrote to stdout. A
+    /// `--resume`-d session replays the entire transcript on startup
+    /// (hundreds of stream-json lines in 5–30 seconds), which kept
+    /// pushing `last_activity` forward. Worse, claude periodically emits
+    /// rate_limit_event and system pings even when "idle", so a session
+    /// where the user had walked away 10h ago still looked active to the
+    /// reaper. One user accumulated 9 stale claudes (1.95 GB RAM) this
+    /// way and had to reboot.
+    ///
+    /// Switching to "last user input" means: if YOU haven't typed in 30
+    /// minutes, the session gets paused. If you're in the middle of a
+    /// long tool call you can send "continue" to bump activity, or just
+    /// let it timeout — the next message auto-resumes via --resume.
     pub fn reap_idle(&self, app: &AppHandle, timeout_ms: i64) -> usize {
         let now = now_ms();
         let mut map = self.inner.lock().unwrap();
+        let total = map.len();
         let to_kill: Vec<String> = map
             .iter()
             .filter_map(|(term_id, entry)| {
-                let last = entry.last_activity_ms.load(Ordering::Relaxed);
-                if now.saturating_sub(last) > timeout_ms {
+                let last = entry.last_user_input_ms.load(Ordering::Relaxed);
+                let idle = now.saturating_sub(last);
+                if idle > timeout_ms {
                     Some(term_id.clone())
                 } else {
                     None
@@ -190,15 +218,22 @@ impl ChatManager {
             })
             .collect();
         let n = to_kill.len();
+        if total > 0 {
+            tracing::debug!(
+                target: "deepthix::chat",
+                total, will_kill = n,
+                "idle reaper tick",
+            );
+        }
         for term_id in to_kill {
             if let Some(mut entry) = map.remove(&term_id) {
-                let last = entry.last_activity_ms.load(Ordering::Relaxed);
+                let last = entry.last_user_input_ms.load(Ordering::Relaxed);
                 let idle_ms = now.saturating_sub(last);
                 let _ = entry.child.kill();
                 tracing::info!(
                     target: "deepthix::chat",
                     %term_id, %idle_ms,
-                    "reaped idle session",
+                    "reaped idle session (no user input in window)",
                 );
                 let evt = serde_json::json!({
                     "term_id": term_id,
@@ -222,10 +257,13 @@ impl ChatManager {
         let entry = map
             .get(term_id)
             .ok_or_else(|| std::io::Error::other(format!("no chat session {term_id}")))?;
-        // Also bump activity here so scheduled jobs reset the idle
-        // timer — otherwise a long-running scheduled session would get
-        // killed while waiting for its next interval to fire.
-        entry.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+        // Bump both timestamps: activity for the live indicator,
+        // user_input for the idle reaper. A scheduled job firing
+        // through this path counts as user input — without that
+        // bump the reaper would kill long-running scheduled sessions.
+        let now = now_ms();
+        entry.last_activity_ms.store(now, Ordering::Relaxed);
+        entry.last_user_input_ms.store(now, Ordering::Relaxed);
         let json = serde_json::json!({
             "type": "user",
             "message": { "role": "user", "content": text }
@@ -264,12 +302,33 @@ pub fn chat_spawn(
     state: State<'_, ChatManager>,
     args: ChatSpawnArgs,
 ) -> Result<ChatSpawnResult, String> {
+    // Refuse the spawn if we're at the active-sessions ceiling. This
+    // is the last line of defence after the idle reaper — without it
+    // the user can pile up 15+ stale claude processes (each 200 MB
+    // resident) until macOS swaps the whole machine.
+    {
+        let map = state.inner.lock().unwrap();
+        if map.len() >= MAX_ACTIVE_SESSIONS {
+            return Err(format!(
+                "Too many active sessions ({}/{}). Close one before opening another — each claude process holds ~200 MB of RAM.",
+                map.len(),
+                MAX_ACTIVE_SESSIONS,
+            ));
+        }
+    }
     let term_id = format!("chat-{}", uuid::Uuid::new_v4().simple());
     tracing::info!(
         target: "deepthix::chat",
         %term_id, cwd = ?args.cwd, resume = ?args.resume_session_id, skip = args.skip_permissions,
         "chat_spawn",
     );
+
+    // Re-write the on-disk overlay-settings + MCP-config files to point
+    // at the CURRENTLY running app's binary path. Otherwise an old
+    // claude-mcp-config.json from a previous install lingers and
+    // tells claude to spawn deepthix-mcp from a path that no longer
+    // exists — silent MCP startup failure.
+    let _ = crate::commands::usage_snapshot::ensure_installed();
 
     // Resolve the claude binary the same way pty.rs does — prefer the
     // user's installed CLI on PATH, fall back to /opt/homebrew/bin.
@@ -301,6 +360,18 @@ pub fn chat_spawn(
     }
     if let Some(e) = args.effort.as_ref() {
         cmd.arg("--effort").arg(e);
+    }
+
+    // Inject the deepthix-mcp sidecar so claude has access to our
+    // custom tools — most importantly `deepthix__run_subtask` which
+    // replaces the broken built-in Task/Agent dispatch in stream-json
+    // mode (claude-code #24594/#29618). ensure_installed() above just
+    // refreshed the path; passing it here makes claude actually load
+    // the server.
+    if let Ok(mcp) = crate::commands::usage_snapshot::mcp_config_path() {
+        if mcp.exists() {
+            cmd.arg("--mcp-config").arg(mcp.to_string_lossy().as_ref());
+        }
     }
 
     // Same env-var injection pty.rs does for the legacy spawn:
@@ -371,6 +442,7 @@ pub fn chat_spawn(
     // we know the child exited — emit a synthetic "exit" event so the
     // webview can stop waiting.
     let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
+    let last_user_input_ms = Arc::new(AtomicI64::new(now_ms()));
     spawn_reader(
         app.clone(),
         term_id.clone(),
@@ -396,6 +468,7 @@ pub fn chat_spawn(
         skip_permissions: args.skip_permissions,
         effort: args.effort.clone(),
         last_activity_ms,
+        last_user_input_ms,
     };
     state.inner.lock().unwrap().insert(term_id.clone(), entry);
 
@@ -548,7 +621,9 @@ pub fn chat_send_user_text(
     let entry = map
         .get(&term_id)
         .ok_or_else(|| format!("no chat session {term_id}"))?;
-    entry.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+    let now = now_ms();
+    entry.last_activity_ms.store(now, Ordering::Relaxed);
+    entry.last_user_input_ms.store(now, Ordering::Relaxed);
     let mut writer = entry.stdin.lock().unwrap();
     writer
         .write_all(line.as_bytes())
@@ -596,7 +671,9 @@ pub fn chat_send_tool_result(
     let entry = map
         .get(&term_id)
         .ok_or_else(|| format!("no chat session {term_id}"))?;
-    entry.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+    let now = now_ms();
+    entry.last_activity_ms.store(now, Ordering::Relaxed);
+    entry.last_user_input_ms.store(now, Ordering::Relaxed);
     let mut writer = entry.stdin.lock().unwrap();
     writer
         .write_all(line.as_bytes())
@@ -705,7 +782,9 @@ pub fn chat_send_user_with_attachments(
     let entry = map
         .get(&term_id)
         .ok_or_else(|| format!("no chat session {term_id}"))?;
-    entry.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+    let now = now_ms();
+    entry.last_activity_ms.store(now, Ordering::Relaxed);
+    entry.last_user_input_ms.store(now, Ordering::Relaxed);
     let mut writer = entry.stdin.lock().unwrap();
     writer
         .write_all(line.as_bytes())
@@ -879,6 +958,7 @@ pub fn chat_interrupt_and_resume(
         .ok_or_else(|| "claude stderr missing".to_string())?;
 
     let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
+    let last_user_input_ms = Arc::new(AtomicI64::new(now_ms()));
     spawn_reader(
         app.clone(),
         term_id.clone(),
@@ -904,6 +984,7 @@ pub fn chat_interrupt_and_resume(
         skip_permissions,
         effort: prev_effort,
         last_activity_ms,
+        last_user_input_ms,
     };
     state.inner.lock().unwrap().insert(term_id, entry);
     Ok(())
@@ -1030,6 +1111,7 @@ pub fn chat_switch_model(
         .ok_or_else(|| "claude stderr missing".to_string())?;
 
     let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
+    let last_user_input_ms = Arc::new(AtomicI64::new(now_ms()));
     spawn_reader(
         app.clone(),
         term_id.clone(),
@@ -1055,6 +1137,7 @@ pub fn chat_switch_model(
         skip_permissions,
         effort: next_effort,
         last_activity_ms,
+        last_user_input_ms,
     };
     state.inner.lock().unwrap().insert(term_id, entry);
     Ok(())
@@ -1486,6 +1569,7 @@ pub fn chat_resume_other_session(
         .ok_or_else(|| "claude stderr missing".to_string())?;
 
     let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
+    let last_user_input_ms = Arc::new(AtomicI64::new(now_ms()));
     spawn_reader(
         app.clone(),
         term_id.clone(),
@@ -1511,6 +1595,7 @@ pub fn chat_resume_other_session(
         skip_permissions,
         effort: prev_effort,
         last_activity_ms,
+        last_user_input_ms,
     };
     state.inner.lock().unwrap().insert(term_id, entry);
     Ok(())
