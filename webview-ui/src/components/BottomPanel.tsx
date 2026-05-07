@@ -28,7 +28,11 @@ import { StatusDot } from './StatusDot';
 import { TerminalTab } from './TerminalTab';
 
 const MIN_HEIGHT = 160;
-const DEFAULT_HEIGHT = 320;
+// Bumped from 320 → 480: 320 left the chat too small relative to the
+// coach pane on top, and users had to drag the splitter up on every
+// project switch. 480 gives the chat ~half the viewport on a 1080p
+// screen out of the box. Persisted height in localStorage still wins.
+const DEFAULT_HEIGHT = 480;
 const STORAGE_KEY = 'deepthix.bottomPanelHeight';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -152,12 +156,16 @@ export function SessionsPane({
         overflow: 'hidden',
       }}
     >
-      {/* Resize handle — thin idle, accent on hover so it's discoverable. */}
+      {/* Resize handle — wider + visible grip pips so users discover
+          they can drag the boundary between coach and chat. The
+          previous 5px bar was too thin for users to notice; many
+          assumed the split was fixed and the coach was eating their
+          chat space. */}
       <div
         onMouseDown={onMouseDown}
-        title="Drag to resize terminal area"
+        title="Glisser pour redimensionner la zone de chat (le coach en haut, le chat en bas)"
         style={{
-          height: '5px',
+          height: '10px',
           cursor: 'ns-resize',
           background: 'var(--color-border)',
           flexShrink: 0,
@@ -171,20 +179,23 @@ export function SessionsPane({
           (e.currentTarget as HTMLDivElement).style.background = 'var(--color-border)';
         }}
       >
-        {/* center grip pip — gives the user a visual cue that it's draggable */}
-        <span
+        {/* Three short grip lines — much more visible affordance than
+            the previous single hairline. Centered horizontally. */}
+        <div
           style={{
             position: 'absolute',
             left: '50%',
             top: '50%',
             transform: 'translate(-50%, -50%)',
-            width: 28,
-            height: 1,
-            background: 'var(--color-bg)',
-            opacity: 0.6,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
             pointerEvents: 'none',
           }}
-        />
+        >
+          <span style={{ width: 32, height: 2, background: 'var(--color-bg)', opacity: 0.7 }} />
+          <span style={{ width: 32, height: 2, background: 'var(--color-bg)', opacity: 0.7 }} />
+        </div>
       </div>
 
       {/* Per-session sub-tab strip */}
