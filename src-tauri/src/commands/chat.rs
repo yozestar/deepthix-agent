@@ -303,16 +303,17 @@ pub fn chat_spawn(
     args: ChatSpawnArgs,
 ) -> Result<ChatSpawnResult, String> {
     // Refuse the spawn if we're at the active-sessions ceiling. This
-    // is the last line of defence after the idle reaper — without it
-    // the user can pile up 15+ stale claude processes (each 200 MB
-    // resident) until macOS swaps the whole machine.
+    // is the last line of defence after the idle reaper. The cap is
+    // read live from GlobalConfig.max_active_sessions (Settings →
+    // SESSIONS), so a user can raise/lower it without restarting.
+    let cap = crate::commands::config::active_session_cap();
     {
         let map = state.inner.lock().unwrap();
-        if map.len() >= MAX_ACTIVE_SESSIONS {
+        if map.len() >= cap {
             return Err(format!(
-                "Too many active sessions ({}/{}). Close one before opening another — each claude process holds ~200 MB of RAM.",
+                "Too many active sessions ({}/{}). Close one before opening another — each claude process holds ~200 MB of RAM. Adjust the cap in Settings → SESSIONS if you want more.",
                 map.len(),
-                MAX_ACTIVE_SESSIONS,
+                cap,
             ));
         }
     }

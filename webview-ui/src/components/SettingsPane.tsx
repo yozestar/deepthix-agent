@@ -22,7 +22,15 @@ import {
   TERMINAL_LINE_HEIGHT_STEP,
 } from '../constants';
 import type { BoxStyleId, UseGlobalConfigResult } from '../hooks/useGlobalConfig';
-import { BOX_STYLE_IDS } from '../hooks/useGlobalConfig';
+import {
+  BOX_STYLE_IDS,
+  MAX_ACTIVE_SESSIONS_DEFAULT,
+  MAX_ACTIVE_SESSIONS_MAX,
+  MAX_ACTIVE_SESSIONS_MIN,
+  MAX_MESSAGES_PER_SESSION_DEFAULT,
+  MAX_MESSAGES_PER_SESSION_MAX,
+  MAX_MESSAGES_PER_SESSION_MIN,
+} from '../hooks/useGlobalConfig';
 import { THEMES } from '../themes';
 
 interface BoxStyleMeta {
@@ -296,6 +304,15 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
           </div>
         )}
       </Section>
+
+      {/* SESSIONS section — caps that protect the host from runaway
+          memory use. Tweakable live; the backend re-reads on every
+          chat_spawn and the chat-pane caps in real time. */}
+      <SessionsSection
+        maxActiveSessions={config.maxActiveSessions}
+        maxMessagesPerSession={config.maxMessagesPerSession}
+        onChange={update}
+      />
 
       {/* UPDATES section — shows current version + update status, with a
           manual Check button. The UpdaterBanner at the top of the window
@@ -659,6 +676,91 @@ function AboutSection(): React.JSX.Element {
     </Section>
   );
 }
+
+function SessionsSection({
+  maxActiveSessions,
+  maxMessagesPerSession,
+  onChange,
+}: {
+  maxActiveSessions: number;
+  maxMessagesPerSession: number;
+  onChange: (partial: { maxActiveSessions?: number; maxMessagesPerSession?: number }) => void;
+}): React.JSX.Element {
+  return (
+    <Section
+      title="SESSIONS"
+      subtitle="Protect the host from runaway memory. Each claude session holds 200-250 MB; long conversations bloat the React tree."
+    >
+      <NumberRow
+        label="Max active sessions"
+        hint={`Hard cap on concurrent chat sessions Deepthix will spawn. ${MAX_ACTIVE_SESSIONS_MIN}-${MAX_ACTIVE_SESSIONS_MAX}, default ${MAX_ACTIVE_SESSIONS_DEFAULT}.`}
+        value={maxActiveSessions}
+        min={MAX_ACTIVE_SESSIONS_MIN}
+        max={MAX_ACTIVE_SESSIONS_MAX}
+        step={1}
+        onChange={(n) => onChange({ maxActiveSessions: n })}
+      />
+      <NumberRow
+        label="Max messages per session (live cap)"
+        hint={`Trailing messages kept in memory per session. Older drop in real time so typing stays fluid. ${MAX_MESSAGES_PER_SESSION_MIN}-${MAX_MESSAGES_PER_SESSION_MAX}, default ${MAX_MESSAGES_PER_SESSION_DEFAULT}.`}
+        value={maxMessagesPerSession}
+        min={MAX_MESSAGES_PER_SESSION_MIN}
+        max={MAX_MESSAGES_PER_SESSION_MAX}
+        step={50}
+        onChange={(n) => onChange({ maxMessagesPerSession: n })}
+      />
+    </Section>
+  );
+}
+
+function NumberRow({
+  label,
+  hint,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (n: number) => void;
+}): React.JSX.Element {
+  const clamp = (n: number): number => Math.max(min, Math.min(max, Math.round(n)));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13 }}>{label}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button type="button" onClick={() => onChange(clamp(value - step))} style={bumpStyle}>
+            −
+          </button>
+          <span style={{ fontSize: 13, minWidth: 36, textAlign: 'center' }}>{value}</span>
+          <button type="button" onClick={() => onChange(clamp(value + step))} style={bumpStyle}>
+            +
+          </button>
+        </div>
+      </div>
+      <span style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>{hint}</span>
+    </div>
+  );
+}
+
+const bumpStyle: React.CSSProperties = {
+  width: 28,
+  height: 28,
+  padding: 0,
+  background: 'transparent',
+  color: 'inherit',
+  border: '2px solid var(--color-border)',
+  fontFamily: 'var(--font-pixel)',
+  fontSize: 14,
+  cursor: 'pointer',
+};
 
 function Pill({ bg, text }: { bg: string; text: string }): React.JSX.Element {
   return (

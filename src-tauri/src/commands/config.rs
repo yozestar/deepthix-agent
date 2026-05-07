@@ -35,6 +35,29 @@ pub struct GlobalConfig {
     /// chrome without touching component code.
     #[serde(default)]
     pub box_style: Option<String>,
+    /// Hard cap on concurrent chat sessions Deepthix will spawn. Each
+    /// claude process holds 200-250 MB resident, so a low cap protects
+    /// the host from accidental pile-up. None → MAX_ACTIVE_SESSIONS
+    /// constant (6). Clamped to [2, 20] on read.
+    #[serde(default)]
+    pub max_active_sessions: Option<u32>,
+    /// How many trailing messages each session keeps in webview state.
+    /// Older messages are dropped from the React tree to keep typing
+    /// fluid even on long --resume'd sessions. None → 100. Clamped to
+    /// [50, 500] on read.
+    #[serde(default)]
+    pub max_messages_per_session: Option<u32>,
+}
+
+/// Read the user's active-session cap (clamped to a sane range), or
+/// the default if unset / file missing. Used by chat_spawn so a cap
+/// change in Settings takes effect immediately without restart.
+pub fn active_session_cap() -> usize {
+    let raw = read_global_config()
+        .ok()
+        .and_then(|c| c.max_active_sessions)
+        .unwrap_or(crate::commands::chat::MAX_ACTIVE_SESSIONS as u32);
+    raw.clamp(2, 20) as usize
 }
 
 #[tauri::command]
@@ -87,6 +110,9 @@ mod tests {
             terminal_font_family: Some("Menlo, monospace".into()),
             terminal_line_height: Some(1.2),
             theme_id: Some("dracula".into()),
+            box_style: None,
+            max_active_sessions: None,
+            max_messages_per_session: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         assert!(json.contains("terminal_font_size"));

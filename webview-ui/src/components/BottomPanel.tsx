@@ -315,6 +315,7 @@ export function SessionsPane({
                 skipPermissions={t.skipPermissions}
                 bindTermId={t.id}
                 agentId={t.agentId}
+                maxMessages={globalConfig.maxMessagesPerSession}
                 onSessionReady={({ termId, sessionId }) => {
                   if (sessionId) terminals.setSessionId(termId, sessionId);
                 }}

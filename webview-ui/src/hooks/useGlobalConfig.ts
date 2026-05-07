@@ -68,6 +68,14 @@ export interface GlobalConfig {
   themeId: string;
   /** Box / surface style: pixel | glass | flat | soft | neon. */
   boxStyle: BoxStyleId;
+  /** Hard cap on concurrent claude sessions Deepthix will spawn. Each
+   *  claude process holds 200-250 MB resident, so this protects the
+   *  host from accidental pile-up. Default 6, range 2-20. */
+  maxActiveSessions: number;
+  /** How many trailing messages each session keeps in React state.
+   *  Older messages are dropped from the tree to keep typing fluid on
+   *  long --resume'd sessions. Default 100, range 50-500. */
+  maxMessagesPerSession: number;
 }
 
 export const BOX_STYLE_IDS = ['pixel', 'glass', 'flat', 'soft', 'neon'] as const;
@@ -78,13 +86,27 @@ function applyBoxStyle(style: BoxStyleId): void {
   document.documentElement.setAttribute('data-box-style', style);
 }
 
+export const MAX_ACTIVE_SESSIONS_DEFAULT = 6;
+export const MAX_ACTIVE_SESSIONS_MIN = 2;
+export const MAX_ACTIVE_SESSIONS_MAX = 20;
+export const MAX_MESSAGES_PER_SESSION_DEFAULT = 100;
+export const MAX_MESSAGES_PER_SESSION_MIN = 50;
+export const MAX_MESSAGES_PER_SESSION_MAX = 500;
+
 export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   terminalFontSize: TERMINAL_DEFAULT_FONT_SIZE,
   terminalFontFamily: TERMINAL_DEFAULT_FONT_FAMILY,
   terminalLineHeight: TERMINAL_DEFAULT_LINE_HEIGHT,
   themeId: DEFAULT_THEME_ID,
   boxStyle: DEFAULT_BOX_STYLE,
+  maxActiveSessions: MAX_ACTIVE_SESSIONS_DEFAULT,
+  maxMessagesPerSession: MAX_MESSAGES_PER_SESSION_DEFAULT,
 };
+
+const clampSessions = (n: number): number =>
+  Math.max(MAX_ACTIVE_SESSIONS_MIN, Math.min(MAX_ACTIVE_SESSIONS_MAX, Math.round(n)));
+const clampMessages = (n: number): number =>
+  Math.max(MAX_MESSAGES_PER_SESSION_MIN, Math.min(MAX_MESSAGES_PER_SESSION_MAX, Math.round(n)));
 
 export interface UseGlobalConfigResult {
   config: GlobalConfig;
@@ -120,6 +142,14 @@ function payloadToConfig(payload: GlobalConfigPayload | null | undefined): Globa
       (BOX_STYLE_IDS as readonly string[]).includes(payload.box_style)
         ? (payload.box_style as BoxStyleId)
         : DEFAULT_GLOBAL_CONFIG.boxStyle,
+    maxActiveSessions:
+      typeof payload?.max_active_sessions === 'number'
+        ? clampSessions(payload.max_active_sessions)
+        : DEFAULT_GLOBAL_CONFIG.maxActiveSessions,
+    maxMessagesPerSession:
+      typeof payload?.max_messages_per_session === 'number'
+        ? clampMessages(payload.max_messages_per_session)
+        : DEFAULT_GLOBAL_CONFIG.maxMessagesPerSession,
   };
 }
 
@@ -131,6 +161,8 @@ function configToPayload(config: GlobalConfig): GlobalConfigPayload {
     terminal_line_height: config.terminalLineHeight,
     theme_id: config.themeId,
     box_style: config.boxStyle,
+    max_active_sessions: config.maxActiveSessions,
+    max_messages_per_session: config.maxMessagesPerSession,
   };
 }
 

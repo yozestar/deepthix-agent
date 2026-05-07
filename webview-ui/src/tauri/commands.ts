@@ -878,6 +878,10 @@ export interface GlobalConfigPayload {
   terminal_line_height?: number | null;
   theme_id?: string | null;
   box_style?: string | null;
+  /** Hard cap on concurrent claude chat sessions (range 2..20, default 6). */
+  max_active_sessions?: number | null;
+  /** Trailing messages kept in webview state per session (50..500, default 100). */
+  max_messages_per_session?: number | null;
 }
 
 export async function readGlobalConfig(): Promise<GlobalConfigPayload> {

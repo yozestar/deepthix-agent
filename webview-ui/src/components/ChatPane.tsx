@@ -56,6 +56,10 @@ interface Props {
   /** Fires once spawn resolves (so the parent can persist the new
    *  session_id once we learn it from the system/init line). */
   onSessionReady?: (info: { termId: string; sessionId: string | null }) => void;
+  /** Hard cap on messages kept in React state for this session. Older
+   *  messages are dropped from the tree whenever a new one arrives.
+   *  Defaults to 100 if not provided. */
+  maxMessages?: number;
 }
 
 // ─── Message model ──────────────────────────────────────────────────────
@@ -123,12 +127,6 @@ function makeContext(): ParseContext {
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
 
-// Initial number of messages rendered in the chat surface. "Show N
-// older" at the top of the view bumps it by MESSAGES_VIEW_BATCH each
-// click. Long sessions used to render 500+ markdown bubbles up-front,
-// which made the page lag on every keystroke.
-const MESSAGES_VIEW_DEFAULT = 100;
-const MESSAGES_VIEW_BATCH = 100;
 function isImagePathLocal(p: string): boolean {
   const dot = p.lastIndexOf('.');
   return dot >= 0 && IMAGE_EXTS.has(p.slice(dot + 1).toLowerCase());
@@ -561,6 +559,7 @@ export function ChatPane({
   bindTermId,
   agentId,
   onSessionReady,
+  maxMessages,
 }: Props): React.JSX.Element {
   const [termId, setTermId] = useState<string | null>(bindTermId ?? null);
   const [sessionId, setSessionId] = useState<string | null>(resumeSessionId ?? null);
@@ -569,13 +568,24 @@ export function ChatPane({
   const [showModelPicker, setShowModelPicker] = useState(false);
   // /resume → opens a picker listing resumable sessions for cwd.
   const [showResumePicker, setShowResumePicker] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  // Cap the rendered window at MESSAGES_VIEW_DEFAULT to keep the React
-  // tree light when a session has hundreds of turns. The user can click
-  // "Show N older" at the top to expand by another batch. Loading the
-  // full transcript was making the chat surface laggy on big sessions
-  // (heavy markdown re-renders + scroll thrashing).
-  const [viewLimit, setViewLimit] = useState<number>(MESSAGES_VIEW_DEFAULT);
+  // Effective state cap. Keep recent N messages in the React tree —
+  // older ones are dropped on every append so a long --resume'd
+  // conversation doesn't degrade typing latency. Configurable via
+  // Settings → SESSIONS (passed in from BottomPanel).
+  const messagesCap = Math.max(50, Math.min(500, maxMessages ?? 100));
+  const [messages, setMessagesRaw] = useState<Message[]>([]);
+  // setMessagesCapped enforces `messagesCap` — every append/prepend/
+  // replace path goes through this so the cap is real-time, not just
+  // a render-time slice. ALWAYS keep the most recent `cap` messages.
+  const setMessages = useCallback<React.Dispatch<React.SetStateAction<Message[]>>>(
+    (action) => {
+      setMessagesRaw((prev) => {
+        const next = typeof action === 'function' ? action(prev) : action;
+        return next.length > messagesCap ? next.slice(next.length - messagesCap) : next;
+      });
+    },
+    [messagesCap],
+  );
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1802,28 +1812,7 @@ export function ChatPane({
             Type a message and hit ⏎ to start.
           </div>
         )}
-        {messages.length > viewLimit && (
-          <button
-            type="button"
-            onClick={() => setViewLimit((n) => n + MESSAGES_VIEW_BATCH)}
-            style={{
-              alignSelf: 'center',
-              padding: '6px 14px',
-              margin: '4px 0 8px',
-              background: 'var(--color-bg-dark)',
-              color: 'var(--color-text)',
-              border: '2px solid var(--color-border)',
-              fontFamily: 'var(--font-pixel)',
-              fontSize: 11,
-              cursor: 'pointer',
-              opacity: 0.85,
-            }}
-            title={`${messages.length - viewLimit} older message${messages.length - viewLimit === 1 ? '' : 's'} hidden — click to load ${Math.min(MESSAGES_VIEW_BATCH, messages.length - viewLimit)} more`}
-          >
-            ↑ Show {Math.min(MESSAGES_VIEW_BATCH, messages.length - viewLimit)} older messages ({messages.length - viewLimit} hidden)
-          </button>
-        )}
-        {messages.slice(-viewLimit).map((m, i, arr) => {
+        {messages.map((m, i, arr) => {
           // Insert a WhatsApp-style date separator whenever the date
           // jumps from one message to the next (and on the very first
           // visible message).
