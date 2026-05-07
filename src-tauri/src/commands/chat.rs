@@ -37,13 +37,17 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-// Default: kill claude sessions that have had zero traffic (no user
-// input, no claude output) for 30 minutes. The user explicitly asked
-// for "kill direct" semantics — when a session is reaped, its term_id
-// is removed from ChatManager and a chat_exit event with subtype="idle"
-// is emitted so the UI can show a friendly "session paused, click to
-// resume" instead of a generic crash.
-pub const DEFAULT_IDLE_TIMEOUT_MS: i64 = 30 * 60 * 1000;
+// Default: idle reaper is OFF. Earlier versions reaped at 30 min, but
+// that interacted badly with the FE's auto-respawn-on-idle path: a
+// session quietly waiting for the user's next message would be killed,
+// the FE would respawn it, and the cycle would repeat indefinitely
+// (visible flicker of "session paused / session reprise"). Sessions
+// now live until the user closes the tab or the app exits; the
+// kill_all_blocking exit hook still prevents claude orphans.
+//
+// Power users can opt back into reaping by setting
+// DEEPTHIX_IDLE_TIMEOUT_MS to a positive value (in ms).
+pub const DEFAULT_IDLE_TIMEOUT_MS: i64 = 0;
 pub const IDLE_REAPER_TICK_SECS: u64 = 60;
 
 // Reads DEEPTHIX_IDLE_TIMEOUT_MS at boot. Accepts any i64; values <= 0
@@ -51,6 +55,7 @@ pub const IDLE_REAPER_TICK_SECS: u64 = 60;
 // back to DEFAULT_IDLE_TIMEOUT_MS if unset or unparseable.
 pub fn idle_timeout_ms() -> i64 {
     match std::env::var("DEEPTHIX_IDLE_TIMEOUT_MS") {
+        Ok(s) if s.trim().is_empty() => DEFAULT_IDLE_TIMEOUT_MS,
         Ok(s) => match s.trim().parse::<i64>() {
             Ok(v) => v,
             Err(_) => {
@@ -198,6 +203,13 @@ impl ChatManager {
     /// friendly "session paused — click to resume" instead of
     /// rendering a generic crash bubble.
     pub fn reap_idle(&self, app: &AppHandle, timeout_ms: i64) -> usize {
+        // Defensive: when the reaper is disabled (timeout_ms <= 0) the
+        // background thread never spawns, but any direct caller (tests,
+        // future commands) must also no-op. A stale `> timeout_ms` check
+        // with timeout_ms == 0 would kill every session on the first ms.
+        if timeout_ms <= 0 {
+            return 0;
+        }
         let now = now_ms();
         let mut map = self.inner.lock().unwrap();
         let to_kill: Vec<String> = map
@@ -475,7 +487,21 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
 /// Background thread: every IDLE_REAPER_TICK_SECS, kill any chat session
 /// whose last_activity_ms is older than IDLE_TIMEOUT_MS. Spawned once at
 /// app startup. Runs until the process exits.
+///
+/// `timeout_ms <= 0` disables the reaper — the function returns without
+/// spawning the thread. This honors the contract documented on
+/// `idle_timeout_ms()` and prevents the previous infinite kill loop that
+/// triggered when a stale `DEEPTHIX_IDLE_TIMEOUT_MS=0` was set.
 pub fn start_idle_reaper(app: AppHandle, timeout_ms: i64) {
+    if timeout_ms <= 0 {
+        tracing::info!(
+            target: "deepthix::chat",
+            timeout_ms,
+            "idle reaper disabled (timeout_ms <= 0)",
+        );
+        let _ = app; // keep AppHandle parameter for symmetry with the enabled branch
+        return;
+    }
     thread::spawn(move || {
         tracing::info!(
             target: "deepthix::chat",

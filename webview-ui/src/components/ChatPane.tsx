@@ -571,6 +571,35 @@ export function ChatPane({
   useEffect(() => {
     termIdRef.current = termId;
   }, [termId]);
+  // Refs kept in sync with component state/props so the chat_exit handler
+  // (which closes over them) always sees the LATEST value when an idle
+  // reap fires — even if the closure was set up when sessionId was still
+  // null and the set_session action filled it in later.
+  const sessionIdRef = useRef<string | null>(resumeSessionId ?? null);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+  const cwdRef = useRef<string>(cwd);
+  useEffect(() => {
+    cwdRef.current = cwd;
+  }, [cwd]);
+  const skipPermissionsRef = useRef<boolean>(skipPermissions ?? false);
+  useEffect(() => {
+    skipPermissionsRef.current = skipPermissions ?? false;
+  }, [skipPermissions]);
+  const currentModelRef = useRef<string | null>(null);
+  useEffect(() => {
+    currentModelRef.current = currentModel;
+  }, [currentModel]);
+  // Auto-respawn loop guard. When the Rust reaper is misconfigured
+  // (DEEPTHIX_IDLE_TIMEOUT_MS=0 used to make it kill every 60s) the FE
+  // would respawn → reap → respawn forever, painting an endless flicker
+  // of "session paused / session reprise" bubbles. We track the last
+  // auto-respawn timestamp; if a new idle exit fires within the
+  // cooldown window, we stop auto-respawning and show a real error so
+  // the user can recover instead of staring at the loop.
+  const lastAutoRespawnMsRef = useRef<number>(0);
+  const AUTO_RESPAWN_LOOP_WINDOW_MS = 2 * 60 * 1000;
 
   // Hydrate the message log from claude's own JSONL transcript on
   // mount when we're resuming a session. We don't depend on this for
@@ -772,10 +801,97 @@ export function ChatPane({
         setBusy(false);
         return;
       }
-      const summary =
-        evt.subtype === 'idle'
-          ? `💤 session paused after ${Math.round((evt.idle_ms ?? 0) / 60000)} min idle — send a message to resume`
-          : `claude exited (code ${evt.code ?? '?'})`;
+      if (evt.subtype === 'idle') {
+        idleRef.current = true;
+        // Loop guard: if the previous auto-respawn happened less than
+        // AUTO_RESPAWN_LOOP_WINDOW_MS ago, the reaper is killing the
+        // session faster than the user can use it — respawning again
+        // would just paint another flicker line. Surface a real error
+        // and stop. The user can either fix DEEPTHIX_IDLE_TIMEOUT_MS or
+        // click +Session to start a fresh tab.
+        const sinceLastRespawn = Date.now() - lastAutoRespawnMsRef.current;
+        if (
+          lastAutoRespawnMsRef.current > 0 &&
+          sinceLastRespawn < AUTO_RESPAWN_LOOP_WINDOW_MS
+        ) {
+          console.warn('[Deepthix][ChatPane] auto-respawn loop detected — stopping', {
+            sinceLastRespawnMs: sinceLastRespawn,
+          });
+          setMessages((prev) => [
+            ...prev,
+            {
+              kind: 'system',
+              uid: uid(),
+              ts: Date.now(),
+              subtype: 'exit',
+              summary:
+                "⚠ la session est tuée plus vite que vous ne pouvez l'utiliser " +
+                '(reaper trop agressif) — vérifiez DEEPTHIX_IDLE_TIMEOUT_MS, ' +
+                "puis fermez/rouvrez l'app",
+            },
+          ]);
+          setBusy(false);
+          return;
+        }
+        lastAutoRespawnMsRef.current = Date.now();
+        const idleMin = Math.round((evt.idle_ms ?? 0) / 60000);
+        setMessages((prev) => [
+          ...prev,
+          {
+            kind: 'system',
+            uid: uid(),
+            ts: Date.now(),
+            subtype: 'exit',
+            summary: `💤 session paused after ${idleMin} min idle — reprenant…`,
+          },
+        ]);
+        setBusy(false);
+        console.info('[Deepthix][ChatPane] idle reap → auto-respawn', {
+          oldTermId: evt.term_id,
+          sessionId: sessionIdRef.current,
+          cwd: cwdRef.current,
+        });
+        void chatSpawn({
+          cwd: cwdRef.current,
+          resume_session_id: sessionIdRef.current,
+          skip_permissions: skipPermissionsRef.current,
+          model: currentModelRef.current,
+        })
+          .then((res) => {
+            console.info('[Deepthix][ChatPane] auto-respawn ok', {
+              newTermId: res.term_id,
+              newSessionId: res.session_id,
+            });
+            setTermId(res.term_id);
+            if (res.session_id) setSessionId(res.session_id);
+            onSessionReadyRef.current?.({ termId: res.term_id, sessionId: res.session_id });
+            idleRef.current = false;
+            setMessages((prev) => [
+              ...prev,
+              {
+                kind: 'system',
+                uid: uid(),
+                ts: Date.now(),
+                subtype: 'exit',
+                summary: '✓ session reprise — vous pouvez continuer',
+              },
+            ]);
+          })
+          .catch((e) => {
+            console.error('[Deepthix][ChatPane] auto-respawn failed', e);
+            setMessages((prev) => [
+              ...prev,
+              {
+                kind: 'system',
+                uid: uid(),
+                ts: Date.now(),
+                subtype: 'exit',
+                summary: `⚠ auto-respawn a échoué (${e instanceof Error ? e.message : String(e)}) — fermez et rouvrez l'app`,
+              },
+            ]);
+          });
+        return;
+      }
       setMessages((prev) => [
         ...prev,
         {
@@ -783,7 +899,7 @@ export function ChatPane({
           uid: uid(),
           ts: Date.now(),
           subtype: 'exit',
-          summary,
+          summary: `claude exited (code ${evt.code ?? '?'})`,
         },
       ]);
       setBusy(false);
@@ -837,6 +953,12 @@ export function ChatPane({
   // succession (rapid Ctrl+C / button mash) which would queue redundant
   // chat_interrupt_and_resume calls.
   const interruptingRef = useRef(false);
+  // Set true by the chat_exit handler when subtype === 'idle' (the
+  // background reaper killed the session). Read by send() to know it
+  // must respawn claude (with --resume sessionId) before writing the
+  // user's text — otherwise chat_send_user_text errors with "no chat
+  // session" because the term_id was removed from ChatManager.
+  const idleRef = useRef(false);
   // Stable ref so we can drop onSessionReady from effect deps. The
   // parent (BottomPanel) passes an inline arrow, which gets a new
   // reference on every parent render — when this ref was a dep, the
@@ -1312,12 +1434,38 @@ export function ChatPane({
       { kind: 'user', uid: uid(), ts: Date.now(), text: bubbleText },
     ]);
     setPendingAttachments([]);
+    // If the background reaper killed claude after idle, the term_id is
+    // gone from ChatManager — chat_send_user_text would error with "no
+    // chat session". Respawn first (with --resume sessionId so the new
+    // claude inherits the conversation), then send to the new term_id.
+    let activeTermId = termId;
+    if (idleRef.current) {
+      try {
+        const res = await chatSpawn({
+          cwd,
+          resume_session_id: sessionId,
+          skip_permissions: skipPermissions ?? false,
+          model: currentModel,
+        });
+        activeTermId = res.term_id;
+        setTermId(res.term_id);
+        if (res.session_id) setSessionId(res.session_id);
+        onSessionReadyRef.current?.({ termId: res.term_id, sessionId: res.session_id });
+        idleRef.current = false;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[Deepthix][ChatPane] respawn-on-resume failed', e);
+        setError(msg);
+        setBusy(false);
+        return;
+      }
+    }
     try {
       if (attachments.length === 0) {
-        await chatSendUserText(termId, text);
+        await chatSendUserText(activeTermId, text);
       } else {
         await chatSendUserWithAttachments(
-          termId,
+          activeTermId,
           text,
           attachments.map((a) => a.path),
         );
@@ -1330,7 +1478,17 @@ export function ChatPane({
       // On failure, restore attachments so the user can retry.
       setPendingAttachments(attachments);
     }
-  }, [input, termId, handleSlashCommand, pendingAttachments, agentId]);
+  }, [
+    input,
+    termId,
+    handleSlashCommand,
+    pendingAttachments,
+    agentId,
+    cwd,
+    sessionId,
+    skipPermissions,
+    currentModel,
+  ]);
 
   /** Stop the current turn — wired to both the Stop button and Ctrl+C
    *  (the same interrupt convention claude code's TUI uses). Optimistic
@@ -1707,6 +1865,16 @@ export function ChatPane({
             termId={termId}
           />
         ))}
+        {/* "dernier message à HH:MM · il y a Xmin" badge under the last
+         *  bubble when claude is no longer streaming. Lets the user
+         *  glance and know whether the agent is still working or has
+         *  been idle for a while — especially useful with the idle
+         *  reaper around. Only shown when the chat is settled (not
+         *  busy AND no pending placeholder) so it doesn't flicker
+         *  in/out during streaming. */}
+        {!busy && !showPendingPlaceholder && messages.length > 0 && (
+          <LastMessageStamp ts={messages[messages.length - 1].ts} />
+        )}
         {showPendingPlaceholder && <PendingPlaceholder />}
       </div>
 
@@ -2515,6 +2683,47 @@ function ThinkingIndicator(): React.JSX.Element {
 // existing bubbles untouched while typing — fixes the "ultra slow"
 // composer perf user reported.
 const MessageBubble = memo(MessageBubbleImpl);
+
+/** Small footer rendered under the last message bubble when the chat
+ *  is settled. Format: "dernier message à HH:MM · il y a 5 min".
+ *  The relative-time half ticks every 30s so the user can tell at a
+ *  glance how stale the conversation is — important context now that
+ *  the idle reaper can silently kill a session in the background. */
+function LastMessageStamp({ ts }: { ts: number }): React.JSX.Element {
+  // Force a re-render every 30s so the "il y a Xmin" stays fresh
+  // without anything else changing in the parent.
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => force((n) => n + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const time = new Date(ts).toLocaleTimeString('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return (
+    <div
+      style={{
+        opacity: 0.5,
+        fontSize: 11,
+        padding: '4px 12px 8px',
+        textAlign: 'right',
+        fontFamily: 'var(--font-pixel)',
+      }}
+    >
+      dernier message à {time} · {formatAgo(Date.now() - ts)}
+    </div>
+  );
+}
+
+function formatAgo(ms: number): string {
+  if (ms < 60_000) return "à l'instant";
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return `il y a ${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `il y a ${h} h` : `il y a ${h} h ${m.toString().padStart(2, '0')}`;
+}
 function ResumePickerPopup({
   cwd,
   currentSessionId,
