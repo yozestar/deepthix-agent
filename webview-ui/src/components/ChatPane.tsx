@@ -2120,6 +2120,7 @@ function ChatInput({
   spawning,
   busy,
   onInterrupt,
+  onLargePaste,
 }: {
   input: string;
   setInput: (v: string) => void;
