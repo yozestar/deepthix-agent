@@ -3876,7 +3876,10 @@ function ToolBubbleImpl({
       <div
         className="dt-tool-detail"
         style={{
-          maxHeight: showDetail ? 480 : 0,
+          // AskUserQuestion can grow tall when Claude bundles several
+          // questions — let it size to its content instead of clipping
+          // at 480.
+          maxHeight: showDetail ? (isAskUser ? 9999 : 480) : 0,
           opacity: showDetail ? 1 : 0,
           padding: showDetail ? '0 10px 8px' : '0 10px',
         }}
@@ -3885,8 +3888,10 @@ function ToolBubbleImpl({
             CSS overflow:hidden on the parent does NOT skip layout, so
             keeping a 4000-char <pre> in the DOM for 50 collapsed tool
             bubbles still made WebKit lay out 200k chars on every
-            scroll. Conditionally rendering brings that to zero. */}
-        {!isResult && inputPreview && showDetail && (
+            scroll. Conditionally rendering brings that to zero.
+            Also skip for AskUser bubbles since the questions are
+            rendered separately below. */}
+        {!isResult && !isAskUser && inputPreview && showDetail && (
           <pre
             style={{
               margin: 0,
@@ -3909,7 +3914,7 @@ function ToolBubbleImpl({
         {m.result && (
           <div
             style={{
-              marginTop: !isResult && inputPreview ? 6 : 0,
+              marginTop: !isResult && !isAskUser && inputPreview ? 6 : 0,
               padding: '6px 8px',
               background: m.result.isError ? 'var(--color-danger)' : 'var(--color-bg)',
               color: m.result.isError ? 'var(--color-bg-dark)' : 'var(--color-text)',
@@ -3929,126 +3934,209 @@ function ToolBubbleImpl({
           </div>
         )}
         {isAskUser && !m.result && (
-          <AskUserPrompt
-            input={m.input}
-            toolUseId={m.toolUseId}
-            termId={termId}
-            inputPreviewShown={Boolean(inputPreview && expanded)}
-          />
+          <AskUserPrompt input={m.input} toolUseId={m.toolUseId} termId={termId} />
         )}
       </div>
     </div>
   );
 }
 
+// AskUserQuestion input has shipped in a few shapes across Claude Code
+// versions. We normalize all of them to ParsedQuestion[]:
+//   { questions: [{question, header?, options: [{label, description?, preview?}], multiSelect}] }
+//   { question, options: string[] | {label, description}[] }   // older single-question
+//   { prompt }                                                  // older alias
+//   "raw string"                                                // last-ditch
+type ParsedOption = { label: string; description?: string; preview?: string };
+type ParsedQuestion = {
+  question: string;
+  header?: string;
+  options: ParsedOption[];
+  multiSelect: boolean;
+};
+
+function defaultAskUserQuestion(): ParsedQuestion {
+  return { question: "L'assistant attend une réponse.", options: [], multiSelect: false };
+}
+
+function parseAskUserOption(raw: unknown): ParsedOption | null {
+  if (typeof raw === 'string') return { label: raw };
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const label =
+    (typeof o.label === 'string' && o.label) ||
+    (typeof o.value === 'string' && o.value) ||
+    '';
+  if (!label) return null;
+  return {
+    label,
+    description: typeof o.description === 'string' ? o.description : undefined,
+    preview: typeof o.preview === 'string' ? o.preview : undefined,
+  };
+}
+
+function parseAskUserOne(raw: unknown): ParsedQuestion | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const question =
+    (typeof o.question === 'string' && o.question) ||
+    (typeof o.prompt === 'string' && o.prompt) ||
+    (typeof o.header === 'string' && o.header) ||
+    '';
+  if (!question) return null;
+  const header =
+    typeof o.header === 'string' && o.header && o.header !== question ? o.header : undefined;
+  const multiSelect = o.multiSelect === true;
+  const options = Array.isArray(o.options)
+    ? (o.options.map(parseAskUserOption).filter((x) => x !== null) as ParsedOption[])
+    : [];
+  return { question, header, options, multiSelect };
+}
+
+function parseAskUserInput(input: unknown): ParsedQuestion[] {
+  if (input == null) return [defaultAskUserQuestion()];
+  if (typeof input === 'string') {
+    return [{ question: input, options: [], multiSelect: false }];
+  }
+  if (typeof input !== 'object') return [defaultAskUserQuestion()];
+  const o = input as Record<string, unknown>;
+  if (Array.isArray(o.questions)) {
+    const parsed = o.questions
+      .map(parseAskUserOne)
+      .filter((q): q is ParsedQuestion => q !== null);
+    return parsed.length > 0 ? parsed : [defaultAskUserQuestion()];
+  }
+  const single = parseAskUserOne(o);
+  return single ? [single] : [defaultAskUserQuestion()];
+}
+
 /** Inline prompt for the AskUserQuestion tool. Without this the tool
- *  just hangs and claude eventually self-cancels with "Demande
- *  annulée". Parses the tool input defensively (the SDK schema has
- *  varied: sometimes {question, options}, sometimes {questions: [...]},
- *  sometimes plain text) and renders a button per option + a free-text
- *  fallback. On submit, fires chat_send_tool_result with the user's
- *  choice; the assistant's next turn picks up from there. */
+ *  just hangs and claude eventually self-cancels with "Demande annulée".
+ *  Renders all questions Claude bundled in the call, lets the user
+ *  pick (or type) per question, and submits one combined tool_result
+ *  mimicking what the Claude Code TUI emits so Claude parses it natively. */
 function AskUserPrompt({
   input,
   toolUseId,
   termId,
-  inputPreviewShown,
 }: {
   input: unknown;
   toolUseId: string;
   termId: string | null;
-  inputPreviewShown: boolean;
 }): React.JSX.Element {
-  const [submitted, setSubmitted] = useState<string | null>(null);
+  const questions = useMemo(() => parseAskUserInput(input), [input]);
+
+  // selections[i] is an array. For multiSelect=false we keep length<=1
+  // and treat selections[i][0] as the chosen label — unified renderer.
+  const [selections, setSelections] = useState<Record<number, string[]>>({});
+  const [customs, setCustoms] = useState<Record<number, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [customText, setCustomText] = useState('');
+  const [submitted, setSubmitted] = useState<{ question: string; answer: string }[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Parse defensively. The SDK has shipped a few input shapes for
-  // AskUserQuestion across versions:
-  //   { question: "...", options: ["yes", "no"] }
-  //   { question: "...", options: [{label, description}] }
-  //   { questions: [{question, options}] }   // multi-question variant
-  //   { prompt: "..." }                       // older alias
-  //   "raw string"                            // fallback
-  const { question, options } = useMemo(() => {
-    const def = { question: 'The assistant is waiting for your input.', options: [] as string[] };
-    if (input == null) return def;
-    if (typeof input === 'string') return { question: input, options: [] };
-    if (typeof input !== 'object') return def;
-    const obj = input as Record<string, unknown>;
-    // multi-question form: collapse to the first question for now
-    const questionsArr = Array.isArray(obj.questions) ? obj.questions : null;
-    if (questionsArr && questionsArr.length > 0 && typeof questionsArr[0] === 'object') {
-      const q0 = questionsArr[0] as Record<string, unknown>;
-      const qText =
-        (q0.question as string) ||
-        (q0.header as string) ||
-        (q0.prompt as string) ||
-        def.question;
-      const opts = Array.isArray(q0.options)
-        ? q0.options.map((o) => {
-            if (typeof o === 'string') return o;
-            if (o && typeof o === 'object') {
-              const oo = o as Record<string, unknown>;
-              return (oo.label as string) || (oo.value as string) || JSON.stringify(o);
-            }
-            return String(o);
-          })
-        : [];
-      return { question: qText, options: opts };
-    }
-    const qText =
-      (obj.question as string) || (obj.prompt as string) || (obj.header as string) || def.question;
-    const opts = Array.isArray(obj.options)
-      ? obj.options.map((o) => {
-          if (typeof o === 'string') return o;
-          if (o && typeof o === 'object') {
-            const oo = o as Record<string, unknown>;
-            return (oo.label as string) || (oo.value as string) || JSON.stringify(o);
-          }
-          return String(o);
-        })
-      : [];
-    return { question: qText, options: opts };
-  }, [input]);
-
-  const send = useCallback(
-    async (answer: string): Promise<void> => {
-      if (!termId) {
-        setError('Session not bound — cannot reply.');
-        return;
+  const getAnswer = useCallback(
+    (i: number, q: ParsedQuestion): string | null => {
+      const sel = selections[i] || [];
+      const custom = (customs[i] || '').trim();
+      if (sel.length === 0 && !custom) return null;
+      if (q.multiSelect) {
+        const labels = sel.join(', ');
+        if (custom) return labels ? `${labels} (custom: ${custom})` : `(custom: ${custom})`;
+        return labels;
       }
+      // Single-select: free-text overrides option pick (user typed → meant
+      // a freeform answer). For multi-select they coexist (above).
+      if (custom) return custom;
+      return sel[0] || null;
+    },
+    [selections, customs],
+  );
+
+  const answeredCount = questions.reduce(
+    (n, q, i) => n + (getAnswer(i, q) !== null ? 1 : 0),
+    0,
+  );
+  const allAnswered = answeredCount === questions.length;
+
+  const handleToggle = useCallback(
+    (i: number, opt: string, multi: boolean): void => {
       if (submitting || submitted) return;
-      setSubmitting(true);
-      setError(null);
-      try {
-        await chatSendToolResult(termId, toolUseId, answer);
-        setSubmitted(answer);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error('[Deepthix][AskUserPrompt] send failed', e);
-        setError(msg);
-      } finally {
-        setSubmitting(false);
+      // Picking a structured option clears the per-question free-text —
+      // the user picked a canned answer, not a custom one.
+      setCustoms((prev) => ({ ...prev, [i]: '' }));
+      setSelections((prev) => {
+        const cur = prev[i] || [];
+        if (multi) {
+          const next = cur.includes(opt) ? cur.filter((x) => x !== opt) : [...cur, opt];
+          return { ...prev, [i]: next };
+        }
+        return { ...prev, [i]: cur[0] === opt ? [] : [opt] };
+      });
+    },
+    [submitting, submitted],
+  );
+
+  const handleCustom = useCallback(
+    (i: number, text: string, multi: boolean): void => {
+      if (submitting || submitted) return;
+      setCustoms((prev) => ({ ...prev, [i]: text }));
+      // Single-select: typing a free answer means abandoning the option pick.
+      // Multi-select: keep both; we'll combine them at submit time.
+      if (!multi && text) {
+        setSelections((prev) => ({ ...prev, [i]: [] }));
       }
     },
-    [termId, toolUseId, submitting, submitted],
+    [submitting, submitted],
   );
+
+  const handleSubmit = useCallback(async (): Promise<void> => {
+    if (!termId) {
+      setError('Session non liée — impossible de répondre.');
+      return;
+    }
+    if (submitting || submitted || !allAnswered) return;
+    setSubmitting(true);
+    setError(null);
+    const pairs: { question: string; answer: string }[] = [];
+    questions.forEach((q, i) => {
+      const a = getAnswer(i, q);
+      if (a !== null) pairs.push({ question: q.question, answer: a });
+    });
+    const body = pairs.map((p) => `"${p.question}"="${p.answer}"`).join(', ');
+    const payload = `User has answered your questions: ${body}. You can now continue with the user's answers in mind.`;
+    try {
+      await chatSendToolResult(termId, toolUseId, payload);
+      setSubmitted(pairs);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Deepthix][AskUserPrompt] send failed', e);
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [allAnswered, getAnswer, questions, submitted, submitting, termId, toolUseId]);
 
   if (submitted) {
     return (
       <div
         style={{
-          marginTop: inputPreviewShown ? 8 : 0,
           padding: '6px 10px',
           background: 'var(--color-bg)',
           border: '1px solid var(--color-border)',
           fontSize: 11,
+          fontFamily: 'var(--font-pixel)',
           opacity: 0.85,
         }}
       >
-        ✓ Réponse envoyée: <strong>{submitted}</strong>
+        <div style={{ marginBottom: 4 }}>✓ Réponses envoyées</div>
+        {submitted.map((p, i) => (
+          <div key={i} style={{ marginTop: 2 }}>
+            <span style={{ opacity: 0.7 }}>
+              {p.question.length > 60 ? `${p.question.slice(0, 60)}…` : p.question}
+            </span>{' '}
+            → <strong>{p.answer}</strong>
+          </div>
+        ))}
       </div>
     );
   }
@@ -4056,93 +4144,162 @@ function AskUserPrompt({
   return (
     <div
       style={{
-        marginTop: inputPreviewShown ? 8 : 0,
         padding: '8px 10px',
         background: 'var(--color-bg)',
         border: '1px solid var(--color-border)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
+        gap: 12,
+        fontFamily: 'var(--font-pixel)',
       }}
     >
-      <div style={{ fontSize: 12, lineHeight: 1.4, color: 'var(--color-text)' }}>{question}</div>
-      {options.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {options.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              className="dt-btn"
-              disabled={submitting}
-              onClick={() => void send(opt)}
-              style={{ fontSize: 11, padding: '4px 10px' }}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      )}
-      {/* Always offer Yes/No fallback when no options were supplied — this
-          matches the screenshot the user saw where the assistant only
-          knew it was supposed to "ask" but no schema had been provided. */}
-      {options.length === 0 && (
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            type="button"
-            className="dt-btn"
-            disabled={submitting}
-            onClick={() => void send('Yes')}
-            style={{ fontSize: 11, padding: '4px 10px' }}
-          >
-            Yes
-          </button>
-          <button
-            type="button"
-            className="dt-btn"
-            disabled={submitting}
-            onClick={() => void send('No')}
-            style={{ fontSize: 11, padding: '4px 10px' }}
-          >
-            No
-          </button>
-        </div>
-      )}
-      <div style={{ display: 'flex', gap: 6 }}>
-        <input
-          type="text"
-          value={customText}
-          onChange={(e) => setCustomText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && customText.trim()) {
-              e.preventDefault();
-              void send(customText.trim());
-            }
-          }}
-          placeholder="Autre — réponse libre, ⏎ pour envoyer"
+      {questions.map((q, qi) => (
+        <QuestionBlock
+          key={qi}
+          question={q}
+          selection={selections[qi] || []}
+          customText={customs[qi] || ''}
           disabled={submitting}
-          style={{
-            flex: 1,
-            background: 'var(--color-bg-dark)',
-            color: 'var(--color-text)',
-            border: '1px solid var(--color-border)',
-            padding: '4px 8px',
-            fontSize: 11,
-            fontFamily: 'var(--font-pixel)',
-          }}
+          onToggle={(opt) => handleToggle(qi, opt, q.multiSelect)}
+          onCustom={(t) => handleCustom(qi, t, q.multiSelect)}
         />
+      ))}
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          paddingTop: 6,
+          borderTop: '1px solid var(--color-border)',
+        }}
+      >
+        <div style={{ fontSize: 11, opacity: 0.75, flex: 1 }}>
+          {answeredCount}/{questions.length}{' '}
+          {questions.length === 1 ? 'question répondue' : 'questions répondues'}
+        </div>
         <button
           type="button"
           className="dt-btn"
-          disabled={submitting || !customText.trim()}
-          onClick={() => void send(customText.trim())}
-          style={{ fontSize: 11, padding: '4px 10px' }}
+          disabled={submitting || !allAnswered}
+          onClick={() => void handleSubmit()}
+          style={{ fontSize: 11, padding: '6px 12px' }}
         >
-          Envoyer
+          {questions.length === 1 ? 'Envoyer' : 'Envoyer toutes les réponses'}
         </button>
       </div>
       {error && (
         <div style={{ fontSize: 11, color: 'var(--color-danger)' }}>Erreur: {error}</div>
       )}
+    </div>
+  );
+}
+
+function QuestionBlock({
+  question,
+  selection,
+  customText,
+  disabled,
+  onToggle,
+  onCustom,
+}: {
+  question: ParsedQuestion;
+  selection: string[];
+  customText: string;
+  disabled: boolean;
+  onToggle: (opt: string) => void;
+  onCustom: (text: string) => void;
+}): React.JSX.Element {
+  // Yes/No fallback when Claude didn't ship any options at all.
+  const effectiveOptions: ParsedOption[] =
+    question.options.length > 0 ? question.options : [{ label: 'Yes' }, { label: 'No' }];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {question.header && (
+        <div
+          style={{
+            alignSelf: 'flex-start',
+            fontSize: 10,
+            padding: '2px 6px',
+            background: 'var(--color-accent)',
+            color: 'var(--color-bg-dark)',
+            fontFamily: 'Menlo, Consolas, monospace',
+            fontWeight: 'bold',
+            letterSpacing: '0.5px',
+          }}
+        >
+          {question.header}
+        </div>
+      )}
+      <div
+        style={{
+          fontSize: 12,
+          lineHeight: 1.4,
+          color: 'var(--color-text)',
+          fontFamily: 'var(--font-pixel)',
+        }}
+      >
+        {question.question}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {effectiveOptions.map((opt) => {
+          const active = selection.includes(opt.label);
+          return (
+            <button
+              key={opt.label}
+              type="button"
+              disabled={disabled}
+              onClick={() => onToggle(opt.label)}
+              style={{
+                all: 'unset',
+                cursor: disabled ? 'default' : 'pointer',
+                padding: '6px 10px',
+                background: active ? 'var(--color-accent)' : 'var(--color-bg-dark)',
+                color: active ? 'var(--color-bg-dark)' : 'var(--color-text)',
+                border: '1px solid var(--color-border)',
+                fontFamily: 'var(--font-pixel)',
+                fontSize: 11,
+                lineHeight: 1.3,
+                opacity: disabled ? 0.6 : 1,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+              }}
+            >
+              <div style={{ fontWeight: 'bold' }}>{opt.label}</div>
+              {opt.description && (
+                <div
+                  style={{
+                    fontSize: 10,
+                    opacity: active ? 0.85 : 0.65,
+                    fontWeight: 'normal',
+                  }}
+                >
+                  {opt.description}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <input
+        type="text"
+        value={customText}
+        onChange={(e) => onCustom(e.target.value)}
+        placeholder="Autre (réponse libre)…"
+        disabled={disabled}
+        style={{
+          background: 'var(--color-bg-dark)',
+          color: 'var(--color-text)',
+          border: '1px solid var(--color-border)',
+          padding: '4px 8px',
+          fontSize: 11,
+          fontFamily: 'var(--font-pixel)',
+        }}
+      />
     </div>
   );
 }
