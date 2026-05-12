@@ -65,20 +65,36 @@ export function TerminalDropTarget({
     activeProjectIdRef.current = activeProjectId;
   }, [activeProjectId]);
 
-  /** Same picker as VoiceRecorder — prefer the globally-active term IF
-   *  it's a claude session in the current project, else first claude
-   *  session in the project. */
+  /** Pick the best drop target. Order of preference:
+   *    1. Globally-active term, if it's a claude session in this project
+   *    2. First claude session in this project
+   *    3. Any claude session anywhere (fallback so dropping after the
+   *       project's session got idle-reaped still lands somewhere
+   *       instead of showing "no claude session — open one first")
+   */
   const resolveTarget = useCallback((): TermSummary | null => {
     const projectId = activeProjectIdRef.current;
     const all = terminalsRef.current;
-    if (!projectId) return null;
-    const inProject = all.filter(
-      (t) => t.projectId === projectId && t.kind === 'claude',
-    );
-    if (inProject.length === 0) return null;
-    const active = inProject.find((t) => t.id === activeTermIdRef.current);
-    return active ?? inProject[0];
+    const inProject = projectId
+      ? all.filter((t) => t.projectId === projectId && t.kind === 'claude')
+      : [];
+    if (inProject.length > 0) {
+      const active = inProject.find((t) => t.id === activeTermIdRef.current);
+      return active ?? inProject[0];
+    }
+    // Fallback: any claude session — better than dropping the file.
+    const anyClaude = all.find((t) => t.kind === 'claude');
+    return anyClaude ?? null;
   }, []);
+
+  /** Image vs other-file split. Used to route to add-attachments (image
+   *  preview thumbnail) vs append-input (path inserted into composer
+   *  so the user can edit before sending — what they asked for). */
+  const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'bmp', 'svg']);
+  const isImagePath = (p: string): boolean => {
+    const dot = p.lastIndexOf('.');
+    return dot >= 0 && IMAGE_EXTS.has(p.slice(dot + 1).toLowerCase());
+  };
 
   // Auto-dismiss the error overlay after 4s, matching VoiceRecorder.
   useEffect(() => {
@@ -152,15 +168,34 @@ export function TerminalDropTarget({
                 firstStable: stable[0],
               });
               if (target.kind === 'claude') {
-                // Chat sessions: STAGE the file as a pending attachment
-                // in ChatPane. The user can preview, remove individuals,
-                // type a message alongside, and send everything together
-                // when they hit Send. ChatPane listens for this event.
-                window.dispatchEvent(
-                  new CustomEvent('deepthix:chat:add-attachments', {
-                    detail: { termId: target.id, paths: stable },
-                  }),
-                );
+                // Chat sessions: split images vs other files.
+                //  - Images → stage as preview thumbnails (ChatPane
+                //    listens for `deepthix:chat:add-attachments`).
+                //  - Non-images → inject the QUOTED PATH into the
+                //    composer textarea via `deepthix:chat:append-input`.
+                //    That way claude sees `cat "/path/to/foo.csv"` style
+                //    references and can `Read` them, and the user can
+                //    add context around the path before sending.
+                const images = stable.filter(isImagePath);
+                const others = stable.filter((p) => !isImagePath(p));
+                if (images.length > 0) {
+                  window.dispatchEvent(
+                    new CustomEvent('deepthix:chat:add-attachments', {
+                      detail: { termId: target.id, paths: images },
+                    }),
+                  );
+                }
+                if (others.length > 0) {
+                  // Quote each path so a space in the filename doesn't
+                  // wreck claude's tool calls. Separator = space (single
+                  // line) — user can wrap with newlines manually.
+                  const text = others.map(quoteForShell).join(' ') + ' ';
+                  window.dispatchEvent(
+                    new CustomEvent('deepthix:chat:append-input', {
+                      detail: { termId: target.id, text },
+                    }),
+                  );
+                }
               } else {
                 // Old PTY path — claude TUI / shell terminals know what
                 // to do with a quoted path string.

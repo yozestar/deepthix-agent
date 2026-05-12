@@ -79,6 +79,7 @@ pub fn run() {
             commands::fs::file_size,
             commands::fs::read_file_bytes_base64,
             commands::fs::stash_dropped_file,
+            commands::fs::stash_paste_as_attachment,
             commands::open_files::save_open_files,
             commands::open_files::load_open_files,
             commands::layout::save_layout,

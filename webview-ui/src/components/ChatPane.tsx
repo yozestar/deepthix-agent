@@ -36,6 +36,7 @@ import {
   readFileBytesBase64,
   type ResumableSession,
   rewindSession,
+  stashPasteAsAttachment,
 } from '../tauri/commands';
 import { onChatEvent, onChatExit } from '../tauri/events';
 
@@ -1853,6 +1854,28 @@ export function ChatPane({
         spawning={!termId}
         busy={busy}
         onInterrupt={interruptTurn}
+        onLargePaste={async (content) => {
+          // Stash the pasted text as ~/.deepthix/dropped/paste_*.txt
+          // and stage it like a dragged file. ChatPane already listens
+          // for deepthix:chat:add-attachments so we re-use that
+          // pipeline.
+          try {
+            const path = await stashPasteAsAttachment(content);
+            const tid = termIdRef.current;
+            if (!tid) {
+              console.warn('[Deepthix][ChatPane] large paste with no termId — staging anyway');
+            }
+            window.dispatchEvent(
+              new CustomEvent('deepthix:chat:add-attachments', {
+                detail: { termId: tid ?? '', paths: [path] },
+              }),
+            );
+            return true;
+          } catch (e) {
+            console.error('[Deepthix][ChatPane] stashPasteAsAttachment failed', e);
+            return false;
+          }
+        }}
       />
     </div>
   );
@@ -2113,6 +2136,12 @@ function ChatInput({
   busy: boolean;
   /** Called when the user clicks Stop while claude is mid-turn. */
   onInterrupt: () => void;
+  /** Fires when the user pastes a chunk of text larger than the inline
+   *  threshold (default 5000 chars). The parent stashes the text as a
+   *  .txt attachment via the Tauri command and stages it like a
+   *  dragged file. Returning `true` here cancels the default paste so
+   *  the wall of text doesn't also land in the textarea. */
+  onLargePaste: (content: string) => Promise<boolean>;
 }): React.JSX.Element {
   const [selectedIdx, setSelectedIdx] = useState(0);
 
@@ -2294,6 +2323,17 @@ function ChatInput({
       >
         <textarea
           value={input}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData('text');
+            // Above ~5000 chars (≈80 lines of code) the textarea
+            // becomes painful to scroll/edit AND claude sees a wall of
+            // text it has to re-tokenize on every turn. Hand it off
+            // to the attachment pipeline instead.
+            if (text.length > 5000) {
+              e.preventDefault();
+              void onLargePaste(text);
+            }
+          }}
           onChange={(e) => {
             setInput(e.target.value);
             // Any manual edit aborts history navigation — the user is

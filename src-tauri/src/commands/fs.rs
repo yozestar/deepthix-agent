@@ -190,6 +190,39 @@ pub fn stash_dropped_file(src: PathBuf) -> Result<PathBuf, String> {
     Ok(dst)
 }
 
+/// Write a chunk of pasted text to `~/.deepthix/dropped/paste_<uuid>.txt`
+/// and return the resulting path so the webview can attach it like any
+/// dragged file. Used when the user pastes more than a few thousand
+/// characters into the chat composer — keeping that wall of text out
+/// of the prompt body lets claude `Read` the file instead of choking
+/// on a giant inline blob.
+#[tauri::command]
+pub fn stash_paste_as_attachment(content: String) -> Result<PathBuf, String> {
+    tracing::debug!(
+        target: "deepthix::commands",
+        chars = content.len(),
+        "stash_paste_as_attachment",
+    );
+    if content.is_empty() {
+        return Err("paste content is empty".into());
+    }
+    let home = dirs::home_dir().ok_or_else(|| "no home dir".to_string())?;
+    let dst_dir = home.join(".deepthix").join("dropped");
+    std::fs::create_dir_all(&dst_dir)
+        .map_err(|e| format!("create dropped dir: {e}"))?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let short = id.split('-').next().unwrap_or(&id);
+    // Stamp the filename so the user can recognize it later in the dir.
+    let ts = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+    let dst = dst_dir.join(format!("paste_{ts}_{short}.txt"));
+    std::fs::write(&dst, content.as_bytes()).map_err(|e| {
+        tracing::warn!(target: "deepthix::commands", ?dst, error = %e, "stash_paste write failed");
+        format!("write: {e}")
+    })?;
+    tracing::info!(target: "deepthix::commands", ?dst, chars = content.len(), "stash_paste_as_attachment ok");
+    Ok(dst)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -831,6 +831,15 @@ export async function stashDroppedFile(src: string): Promise<string> {
   return await invoke<string>('stash_dropped_file', { src });
 }
 
+/** Write a chunk of pasted text to ~/.deepthix/dropped/paste_*.txt and
+ *  return the path so the chat composer can attach it like any dragged
+ *  file. Used when the user pastes a wall of text (logs, code, etc) —
+ *  keeping it out of the prompt body lets claude Read() it rather than
+ *  choke on a giant inline blob. */
+export async function stashPasteAsAttachment(content: string): Promise<string> {
+  return await invoke<string>('stash_paste_as_attachment', { content });
+}
+
 export async function ptyWrite(id: string, data: string): Promise<void> {
   return await invoke<void>('pty_write', { id, data });
 }
