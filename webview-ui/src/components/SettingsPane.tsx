@@ -21,7 +21,7 @@ import {
   TERMINAL_LINE_HEIGHT_MIN,
   TERMINAL_LINE_HEIGHT_STEP,
 } from '../constants';
-import type { BoxStyleId, UseGlobalConfigResult } from '../hooks/useGlobalConfig';
+import type { BoxStyleId, UiFontId, UseGlobalConfigResult } from '../hooks/useGlobalConfig';
 import {
   BOX_STYLE_IDS,
   MAX_ACTIVE_SESSIONS_DEFAULT,
@@ -44,6 +44,27 @@ const BOX_STYLE_META: BoxStyleMeta[] = [
   { id: 'flat', label: 'Flat', blurb: 'Hairline border, no shadow.' },
   { id: 'soft', label: 'Soft', blurb: 'Rounded corners + soft drop shadow.' },
   { id: 'neon', label: 'Neon', blurb: 'Accent-glow border on dark body.' },
+];
+
+interface UiFontMeta {
+  id: UiFontId;
+  label: string;
+  previewFamily: string;
+  blurb: string;
+}
+const UI_FONTS: UiFontMeta[] = [
+  {
+    id: 'pixel',
+    label: 'Pixel',
+    previewFamily: "'FS Pixel Sans', sans-serif",
+    blurb: 'Le look original, charme pixel-art.',
+  },
+  {
+    id: 'inter',
+    label: 'Inter',
+    previewFamily: "'Inter', sans-serif",
+    blurb: 'Lisible, anti-aliasée — recommandée pour les longues sessions de lecture.',
+  },
 ];
 
 interface Props {
@@ -239,6 +260,73 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
                     <span key={k} style={{ flex: 1, background: t.colors[k], border: `1px solid ${t.colors['color-border']}` }} />
                   ))}
                 </div>
+              </button>
+            );
+          })}
+        </div>
+      </Section>
+
+      {/* UI FONT section — drives --font-pixel globally. Separate from
+          the terminal font (which lives in the TERMINAL section above
+          and only affects xterm). */}
+      <Section
+        title="UI FONT"
+        subtitle="Police de l'interface — bascule pour les longues sessions de lecture."
+      >
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+            gap: '10px',
+          }}
+        >
+          {UI_FONTS.map((f) => {
+            const active = f.id === config.uiFont;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => update({ uiFont: f.id })}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  padding: '12px',
+                  background: 'var(--color-bg-dark)',
+                  border: `2px solid ${active ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                  boxShadow: active
+                    ? '4px 4px 0 var(--color-accent)'
+                    : 'var(--shadow-pixel)',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-pixel)',
+                  color: 'var(--color-text)',
+                  textAlign: 'left',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    fontSize: '13px',
+                  }}
+                >
+                  <span>{f.label}</span>
+                  {active && <span style={{ fontSize: '11px', opacity: 0.7 }}>●</span>}
+                </div>
+                <span
+                  style={{
+                    fontFamily: f.previewFamily,
+                    fontSize: '16px',
+                    letterSpacing: 0,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  The quick brown fox 0123
+                </span>
+                <span style={{ fontSize: '10px', opacity: 0.6, lineHeight: 1.4 }}>
+                  {f.blurb}
+                </span>
               </button>
             );
           })}

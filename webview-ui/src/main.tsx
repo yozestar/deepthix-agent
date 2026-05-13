@@ -1,4 +1,10 @@
 import './index.css';
+// Inter — readable sans-serif used when uiFont === 'inter'. Bundled
+// locally (no network) so the app stays offline-capable. Three weights
+// cover regular / medium / semibold needs across the UI.
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

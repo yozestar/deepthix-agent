@@ -179,6 +179,34 @@ export const THEMES: Theme[] = [
     },
   },
   {
+    // Low-contrast dark palette inspired by Ayu Mirage. Designed for
+    // 8h-a-day reading: muted background, desaturated sage/cyan accent
+    // instead of pure violet, warm cream text instead of stark white.
+    // Pairs well with the 'inter' UI font for the most eye-friendly
+    // combo. See feedback_ui_readability if it exists.
+    id: 'lecture-longue',
+    name: 'Lecture longue',
+    colors: {
+      'color-bg': '#1f2430',
+      'color-bg-dark': '#191e2a',
+      'color-bg-session': '#242a37',
+      'color-bg-thumb': '#2d333f',
+      'color-border': '#3e4759',
+      'color-accent': '#73d0c0',
+      'color-accent-bright': '#9cdcd0',
+      'color-session-active': '#dfbd72',
+      'color-text': '#cbccc6',
+      'color-text-muted': 'rgba(203, 204, 198, 0.55)',
+      'color-btn-bg': '#2a2f3c',
+      'color-btn-hover': '#363c4d',
+      'color-active-bg': '#3e4759',
+      'color-danger': '#e07a82',
+      'color-warning': '#e6c073',
+      'color-status-success': '#a3d976',
+      'shadow-pixel': '2px 2px 0px #11141c',
+    },
+  },
+  {
     id: 'solarized-dark',
     name: 'Solarized Dark',
     colors: {

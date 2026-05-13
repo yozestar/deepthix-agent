@@ -904,6 +904,7 @@ export interface GlobalConfigPayload {
   max_active_sessions?: number | null;
   /** Trailing messages kept in webview state per session (50..500, default 100). */
   max_messages_per_session?: number | null;
+  ui_font?: string | null;
 }
 
 export async function readGlobalConfig(): Promise<GlobalConfigPayload> {

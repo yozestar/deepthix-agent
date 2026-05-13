@@ -26,14 +26,23 @@ import {
 } from '../tauri/commands';
 import { applyTheme, DEFAULT_THEME_ID } from '../themes';
 
-/** Push the chosen font family into --font-pixel AND inject a high-priority
- *  global override. Tailwind v4 inlines `@theme` values into the generated
- *  utility classes (e.g. `.font-pixel { font-family: 'FS Pixel Sans', ... }`)
- *  so a plain CSS-variable override doesn't reach those classes. The injected
- *  `* { font-family: ... !important }` rule wins over both. The xterm canvas
- *  renderer is unaffected (it sets fontFamily via JS API). */
-function applyAppFont(family: string): void {
+/** UI fonts available in SETTINGS. "pixel" = the original FS Pixel Sans
+ *  (charm). "inter" = the readable open-source sans-serif most product
+ *  UIs use today — easier for long reading sessions because of its
+ *  anti-aliasing and metrics. Bundled via @fontsource/inter so the
+ *  switch works offline. */
+export const UI_FONT_IDS = ['pixel', 'inter'] as const;
+export type UiFontId = (typeof UI_FONT_IDS)[number];
+const DEFAULT_UI_FONT: UiFontId = 'pixel';
+
+/** Push the chosen UI font into --font-pixel + inject a high-priority
+ *  `*` override that beats Tailwind v4's inlined @theme utility classes.
+ *  xterm draws glyphs on canvas via its own JS API, so this override
+ *  doesn't affect terminal rendering — only the surrounding DOM. */
+function applyUiFont(font: UiFontId): void {
+  const family = font === 'inter' ? "'Inter', sans-serif" : "'FS Pixel Sans', sans-serif";
   document.documentElement.style.setProperty('--font-pixel', family);
+  document.documentElement.setAttribute('data-ui-font', font);
   let style = document.getElementById('deepthix-font-override') as HTMLStyleElement | null;
   if (!style) {
     style = document.createElement('style');
@@ -63,6 +72,8 @@ export interface GlobalConfig {
    *  Older messages are dropped from the tree to keep typing fluid on
    *  long --resume'd sessions. Default 100, range 50-500. */
   maxMessagesPerSession: number;
+  /** UI font: 'pixel' (charm) or 'inter' (lecture longue). */
+  uiFont: UiFontId;
 }
 
 export const BOX_STYLE_IDS = ['pixel', 'glass', 'flat', 'soft', 'neon'] as const;
@@ -88,6 +99,7 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   boxStyle: DEFAULT_BOX_STYLE,
   maxActiveSessions: MAX_ACTIVE_SESSIONS_DEFAULT,
   maxMessagesPerSession: MAX_MESSAGES_PER_SESSION_DEFAULT,
+  uiFont: DEFAULT_UI_FONT,
 };
 
 const clampSessions = (n: number): number =>
@@ -137,6 +149,11 @@ function payloadToConfig(payload: GlobalConfigPayload | null | undefined): Globa
       typeof payload?.max_messages_per_session === 'number'
         ? clampMessages(payload.max_messages_per_session)
         : DEFAULT_GLOBAL_CONFIG.maxMessagesPerSession,
+    uiFont:
+      typeof payload?.ui_font === 'string' &&
+      (UI_FONT_IDS as readonly string[]).includes(payload.ui_font)
+        ? (payload.ui_font as UiFontId)
+        : DEFAULT_GLOBAL_CONFIG.uiFont,
   };
 }
 
@@ -150,6 +167,7 @@ function configToPayload(config: GlobalConfig): GlobalConfigPayload {
     box_style: config.boxStyle,
     max_active_sessions: config.maxActiveSessions,
     max_messages_per_session: config.maxMessagesPerSession,
+    ui_font: config.uiFont,
   };
 }
 
@@ -174,7 +192,7 @@ export function useGlobalConfig(): UseGlobalConfigResult {
         console.info('[Deepthix][useGlobalConfig] loaded', resolved);
         latestRef.current = resolved;
         applyTheme(resolved.themeId);
-        applyAppFont(resolved.terminalFontFamily);
+        applyUiFont(resolved.uiFont);
         applyBoxStyle(resolved.boxStyle);
         setConfig(resolved);
         setLoaded(true);
@@ -214,8 +232,10 @@ export function useGlobalConfig(): UseGlobalConfigResult {
       if (partial.themeId && partial.themeId !== prev.themeId) {
         applyTheme(next.themeId);
       }
-      if (partial.terminalFontFamily && partial.terminalFontFamily !== prev.terminalFontFamily) {
-        applyAppFont(next.terminalFontFamily);
+      // terminalFontFamily no longer touches the DOM — xterm reads it
+      // directly via its canvas API (TerminalTab.tsx).
+      if (partial.uiFont && partial.uiFont !== prev.uiFont) {
+        applyUiFont(next.uiFont);
       }
       if (partial.boxStyle && partial.boxStyle !== prev.boxStyle) {
         applyBoxStyle(next.boxStyle);

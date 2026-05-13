@@ -47,6 +47,13 @@ pub struct GlobalConfig {
     /// [50, 500] on read.
     #[serde(default)]
     pub max_messages_per_session: Option<u32>,
+    /// UI font: "pixel" (default FS Pixel Sans — original look) or
+    /// "inter" (lighter, anti-aliased, easier on the eyes for long
+    /// reading sessions). Drives the data-ui-font attribute on
+    /// document.documentElement; does NOT affect xterm, which has its
+    /// own terminal_font_family.
+    #[serde(default)]
+    pub ui_font: Option<String>,
 }
 
 /// Read the user's active-session cap (clamped to a sane range), or
@@ -58,7 +65,6 @@ pub fn active_session_cap() -> usize {
         .and_then(|c| c.max_active_sessions)
         .unwrap_or(crate::commands::chat::MAX_ACTIVE_SESSIONS as u32);
     raw.clamp(2, 20) as usize
-}
 
 #[tauri::command]
 pub fn read_global_config() -> Result<GlobalConfig, String> {
@@ -113,6 +119,7 @@ mod tests {
             box_style: None,
             max_active_sessions: None,
             max_messages_per_session: None,
+            ui_font: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         assert!(json.contains("terminal_font_size"));
