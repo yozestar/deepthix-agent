@@ -22,7 +22,6 @@ import {
   chatKill,
   chatLoadHistory,
   chatResumeOtherSession,
-  chatSendToolResult,
   chatSendUserText,
   chatSendUserWithAttachments,
   chatForkAtUuid,
@@ -3934,7 +3933,7 @@ function ToolBubbleImpl({
           </div>
         )}
         {isAskUser && !m.result && (
-          <AskUserPrompt input={m.input} toolUseId={m.toolUseId} termId={termId} />
+          <AskUserPrompt input={m.input} termId={termId} />
         )}
       </div>
     </div>
@@ -4013,15 +4012,14 @@ function parseAskUserInput(input: unknown): ParsedQuestion[] {
 /** Inline prompt for the AskUserQuestion tool. Without this the tool
  *  just hangs and claude eventually self-cancels with "Demande annulée".
  *  Renders all questions Claude bundled in the call, lets the user
- *  pick (or type) per question, and submits one combined tool_result
- *  mimicking what the Claude Code TUI emits so Claude parses it natively. */
+ *  pick (or type) per question, and submits the chosen answers as a
+ *  plain user message — see handleSubmit below for why we can't reuse
+ *  the original tool_use_id. */
 function AskUserPrompt({
   input,
-  toolUseId,
   termId,
 }: {
   input: unknown;
-  toolUseId: string;
   termId: string | null;
 }): React.JSX.Element {
   const questions = useMemo(() => parseAskUserInput(input), [input]);
@@ -4102,10 +4100,24 @@ function AskUserPrompt({
       const a = getAnswer(i, q);
       if (a !== null) pairs.push({ question: q.question, answer: a });
     });
-    const body = pairs.map((p) => `"${p.question}"="${p.answer}"`).join(', ');
-    const payload = `User has answered your questions: ${body}. You can now continue with the user's answers in mind.`;
+    // The claude CLI auto-cancels AskUserQuestion in ~12ms with an
+    // is_error "Answer questions?" tool_result (stream-json mode has no
+    // native wait mechanism for this tool). By the time the user
+    // actually picks an option, the tool_use_id is already consumed —
+    // sending a second tool_result with the same id leaves Claude
+    // confused (treats it as orphan). Fix: send the answers as a fresh
+    // user message instead. Claude sees the question's context just
+    // above in the transcript and proceeds normally.
+    const body =
+      pairs.length === 1
+        ? pairs[0].answer
+        : pairs.map((p) => `- "${p.question}" → ${p.answer}`).join('\n');
+    const payload =
+      pairs.length === 1
+        ? `Réponse : ${body}`
+        : `Voici mes réponses :\n${body}`;
     try {
-      await chatSendToolResult(termId, toolUseId, payload);
+      await chatSendUserText(termId, payload);
       setSubmitted(pairs);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -4114,7 +4126,7 @@ function AskUserPrompt({
     } finally {
       setSubmitting(false);
     }
-  }, [allAnswered, getAnswer, questions, submitted, submitting, termId, toolUseId]);
+  }, [allAnswered, getAnswer, questions, submitted, submitting, termId]);
 
   if (submitted) {
     return (
