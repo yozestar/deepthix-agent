@@ -43,19 +43,6 @@ function applyAppFont(family: string): void {
   style.textContent = `* { font-family: ${family} !important; }`;
 }
 
-/** Scale the entire UI (sidebar, tabs, panes — every absolutely-sized px
- *  element) using CSS `zoom` on <html>. 13px terminal font = 1.0 baseline.
- *  WKWebView supports zoom natively; xterm canvas scales sharply because the
- *  webview re-rasterizes at the new zoom level. */
-function applyUiZoom(terminalFontSize: number): void {
-  const BASE = 13;
-  const scale = Math.max(0.6, Math.min(2.5, terminalFontSize / BASE));
-  // Set both `zoom` (Webkit/Chromium) and a CSS variable for any consumer
-  // that wants to read the current scale.
-  (document.documentElement.style as unknown as { zoom: string }).zoom = String(scale);
-  document.documentElement.style.setProperty('--ui-scale', String(scale));
-}
-
 /** Resolved global config — every field is concrete (no `null` / `undefined`). */
 export interface GlobalConfig {
   /** Font size in CSS pixels. Clamped 8..32 by callers. */
@@ -188,7 +175,6 @@ export function useGlobalConfig(): UseGlobalConfigResult {
         latestRef.current = resolved;
         applyTheme(resolved.themeId);
         applyAppFont(resolved.terminalFontFamily);
-        applyUiZoom(resolved.terminalFontSize);
         applyBoxStyle(resolved.boxStyle);
         setConfig(resolved);
         setLoaded(true);
@@ -230,9 +216,6 @@ export function useGlobalConfig(): UseGlobalConfigResult {
       }
       if (partial.terminalFontFamily && partial.terminalFontFamily !== prev.terminalFontFamily) {
         applyAppFont(next.terminalFontFamily);
-      }
-      if (partial.terminalFontSize && partial.terminalFontSize !== prev.terminalFontSize) {
-        applyUiZoom(next.terminalFontSize);
       }
       if (partial.boxStyle && partial.boxStyle !== prev.boxStyle) {
         applyBoxStyle(next.boxStyle);
