@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::SystemTime;
@@ -148,6 +148,13 @@ struct ChatChild {
     /// own background chatter (replay on --resume, rate_limit_event,
     /// keepalives) doesn't keep an unused session alive.
     last_user_input_ms: Arc<AtomicI64>,
+    /// True while claude is mid-turn: set by every chat_send_* command
+    /// when we hand a user message to stdin, cleared by the stdout
+    /// reader when it sees a `"type":"result"` line (claude's per-turn
+    /// terminator). Reaper spares any session where this is true so a
+    /// long-running tool call / sub-agent (>30 min) isn't killed under
+    /// the user's feet while claude is actively working.
+    in_flight: Arc<AtomicBool>,
 }
 
 /// Tauri-managed state. Same pattern as TerminalManager.
@@ -201,6 +208,11 @@ impl ChatManager {
     /// minutes, the session gets paused. If you're in the middle of a
     /// long tool call you can send "continue" to bump activity, or just
     /// let it timeout — the next message auto-resumes via --resume.
+    ///
+    /// v0.5.5: also spares sessions where `in_flight = true` so a
+    /// >30-min turn (deep research, long sub-agent, long-running tool)
+    /// doesn't get killed under the user's feet. The flag is cleared
+    /// by the stdout reader when it sees the per-turn `result` line.
     pub fn reap_idle(&self, app: &AppHandle, timeout_ms: i64) -> usize {
         let now = now_ms();
         let mut map = self.inner.lock().unwrap();
@@ -208,6 +220,13 @@ impl ChatManager {
         let to_kill: Vec<String> = map
             .iter()
             .filter_map(|(term_id, entry)| {
+                // Never reap a session that's mid-turn — claude is still
+                // working (long tool call, sub-agent, background hook).
+                // User reported sessions getting killed at 30 min even
+                // while claude was actively running.
+                if entry.in_flight.load(Ordering::Relaxed) {
+                    return None;
+                }
                 let last = entry.last_user_input_ms.load(Ordering::Relaxed);
                 let idle = now.saturating_sub(last);
                 if idle > timeout_ms {
@@ -264,6 +283,7 @@ impl ChatManager {
         let now = now_ms();
         entry.last_activity_ms.store(now, Ordering::Relaxed);
         entry.last_user_input_ms.store(now, Ordering::Relaxed);
+        entry.in_flight.store(true, Ordering::Relaxed);
         let json = serde_json::json!({
             "type": "user",
             "message": { "role": "user", "content": text }
@@ -444,12 +464,15 @@ pub fn chat_spawn(
     // webview can stop waiting.
     let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
     let last_user_input_ms = Arc::new(AtomicI64::new(now_ms()));
+    let in_flight = Arc::new(AtomicBool::new(false));
     spawn_reader(
         app.clone(),
         term_id.clone(),
         stdout,
         "stdout",
         last_activity_ms.clone(),
+        last_user_input_ms.clone(),
+        in_flight.clone(),
     );
     spawn_reader(
         app.clone(),
@@ -457,6 +480,8 @@ pub fn chat_spawn(
         stderr,
         "stderr",
         last_activity_ms.clone(),
+        last_user_input_ms.clone(),
+        in_flight.clone(),
     );
     spawn_exit_watcher(app.clone(), term_id.clone());
 
@@ -470,6 +495,7 @@ pub fn chat_spawn(
         effort: args.effort.clone(),
         last_activity_ms,
         last_user_input_ms,
+        in_flight,
     };
     state.inner.lock().unwrap().insert(term_id.clone(), entry);
 
@@ -485,6 +511,8 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
     reader: R,
     stream: &'static str,
     last_activity_ms: Arc<AtomicI64>,
+    last_user_input_ms: Arc<AtomicI64>,
+    in_flight: Arc<AtomicBool>,
 ) {
     thread::spawn(move || {
         let buf = BufReader::new(reader);
@@ -497,6 +525,25 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
                     // Bump first so a slow emit doesn't make the
                     // session look stale to the idle reaper.
                     last_activity_ms.store(now_ms(), Ordering::Relaxed);
+                    // Detect turn end on the stdout stream. claude emits
+                    // exactly one `{"type":"result",...}` line per turn
+                    // (success or error). Reset the idle clock and clear
+                    // the in-flight flag so the reaper can pick up an
+                    // abandoned session 30 min after the turn completed.
+                    //
+                    // Substring match instead of full JSON parse —
+                    // 100x cheaper per line and "type":"result" is
+                    // unique to the result envelope.
+                    if stream == "stdout" && line.contains("\"type\":\"result\"") {
+                        let now = now_ms();
+                        last_user_input_ms.store(now, Ordering::Relaxed);
+                        in_flight.store(false, Ordering::Relaxed);
+                        tracing::debug!(
+                            target: "deepthix::chat",
+                            %term_id,
+                            "turn ended, in_flight cleared",
+                        );
+                    }
                     tracing::trace!(
                         target: "deepthix::chat",
                         %term_id, %stream, bytes = line.len(),
@@ -625,6 +672,7 @@ pub fn chat_send_user_text(
     let now = now_ms();
     entry.last_activity_ms.store(now, Ordering::Relaxed);
     entry.last_user_input_ms.store(now, Ordering::Relaxed);
+    entry.in_flight.store(true, Ordering::Relaxed);
     let mut writer = entry.stdin.lock().unwrap();
     writer
         .write_all(line.as_bytes())
@@ -675,6 +723,7 @@ pub fn chat_send_tool_result(
     let now = now_ms();
     entry.last_activity_ms.store(now, Ordering::Relaxed);
     entry.last_user_input_ms.store(now, Ordering::Relaxed);
+    entry.in_flight.store(true, Ordering::Relaxed);
     let mut writer = entry.stdin.lock().unwrap();
     writer
         .write_all(line.as_bytes())
@@ -786,6 +835,7 @@ pub fn chat_send_user_with_attachments(
     let now = now_ms();
     entry.last_activity_ms.store(now, Ordering::Relaxed);
     entry.last_user_input_ms.store(now, Ordering::Relaxed);
+    entry.in_flight.store(true, Ordering::Relaxed);
     let mut writer = entry.stdin.lock().unwrap();
     writer
         .write_all(line.as_bytes())
@@ -960,12 +1010,15 @@ pub fn chat_interrupt_and_resume(
 
     let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
     let last_user_input_ms = Arc::new(AtomicI64::new(now_ms()));
+    let in_flight = Arc::new(AtomicBool::new(false));
     spawn_reader(
         app.clone(),
         term_id.clone(),
         stdout,
         "stdout",
         last_activity_ms.clone(),
+        last_user_input_ms.clone(),
+        in_flight.clone(),
     );
     spawn_reader(
         app.clone(),
@@ -973,6 +1026,8 @@ pub fn chat_interrupt_and_resume(
         stderr,
         "stderr",
         last_activity_ms.clone(),
+        last_user_input_ms.clone(),
+        in_flight.clone(),
     );
     spawn_exit_watcher(app.clone(), term_id.clone());
 
@@ -986,6 +1041,7 @@ pub fn chat_interrupt_and_resume(
         effort: prev_effort,
         last_activity_ms,
         last_user_input_ms,
+        in_flight,
     };
     state.inner.lock().unwrap().insert(term_id, entry);
     Ok(())
@@ -1113,12 +1169,15 @@ pub fn chat_switch_model(
 
     let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
     let last_user_input_ms = Arc::new(AtomicI64::new(now_ms()));
+    let in_flight = Arc::new(AtomicBool::new(false));
     spawn_reader(
         app.clone(),
         term_id.clone(),
         stdout,
         "stdout",
         last_activity_ms.clone(),
+        last_user_input_ms.clone(),
+        in_flight.clone(),
     );
     spawn_reader(
         app.clone(),
@@ -1126,6 +1185,8 @@ pub fn chat_switch_model(
         stderr,
         "stderr",
         last_activity_ms.clone(),
+        last_user_input_ms.clone(),
+        in_flight.clone(),
     );
     spawn_exit_watcher(app.clone(), term_id.clone());
 
@@ -1139,6 +1200,7 @@ pub fn chat_switch_model(
         effort: next_effort,
         last_activity_ms,
         last_user_input_ms,
+        in_flight,
     };
     state.inner.lock().unwrap().insert(term_id, entry);
     Ok(())
@@ -1571,12 +1633,15 @@ pub fn chat_resume_other_session(
 
     let last_activity_ms = Arc::new(AtomicI64::new(now_ms()));
     let last_user_input_ms = Arc::new(AtomicI64::new(now_ms()));
+    let in_flight = Arc::new(AtomicBool::new(false));
     spawn_reader(
         app.clone(),
         term_id.clone(),
         stdout,
         "stdout",
         last_activity_ms.clone(),
+        last_user_input_ms.clone(),
+        in_flight.clone(),
     );
     spawn_reader(
         app.clone(),
@@ -1584,6 +1649,8 @@ pub fn chat_resume_other_session(
         stderr,
         "stderr",
         last_activity_ms.clone(),
+        last_user_input_ms.clone(),
+        in_flight.clone(),
     );
     spawn_exit_watcher(app.clone(), term_id.clone());
 
@@ -1597,6 +1664,7 @@ pub fn chat_resume_other_session(
         effort: prev_effort,
         last_activity_ms,
         last_user_input_ms,
+        in_flight,
     };
     state.inner.lock().unwrap().insert(term_id, entry);
     Ok(())
