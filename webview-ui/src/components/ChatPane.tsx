@@ -25,6 +25,7 @@ import {
   chatSendToolResult,
   chatSendUserText,
   chatSendUserWithAttachments,
+  chatForkAtUuid,
   chatSetSessionId,
   chatSpawn,
   chatSwitchModel,
@@ -1508,6 +1509,42 @@ export function ChatPane({
       });
   }, [termId, currentModel]);
 
+  // Rewind handler — invoked by the "↶ rewind" button on a past user
+  // bubble. Forks the JSONL at that message uuid (non-destructive),
+  // respawns claude on the new session, restores the message into the
+  // composer so the user can edit before re-sending.
+  const handleRewindUser = useCallback(
+    (forkAtUuid: string, text: string): void => {
+      if (!termId || !sessionId) {
+        setError('No active session — cannot rewind.');
+        return;
+      }
+      const ok = window.confirm(
+        'Rewind here?\n\nThis forks a new session at this message (your original transcript is preserved on disk). claude will restart with everything BEFORE this point and your message will be put back in the composer to edit.',
+      );
+      if (!ok) return;
+      void (async (): Promise<void> => {
+        try {
+          const newSessionId = await chatForkAtUuid(cwd, sessionId, forkAtUuid);
+          console.info('[Deepthix][ChatPane] forked session', { from: sessionId, to: newSessionId });
+          await chatResumeOtherSession(termId, newSessionId, currentModel);
+          setSessionId(newSessionId);
+          setInput(text);
+          window.dispatchEvent(
+            new CustomEvent('deepthix:chat:resumed', {
+              detail: { termId, sessionId: newSessionId },
+            }),
+          );
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error('[Deepthix][ChatPane] rewind failed', e);
+          setError(`Rewind failed: ${msg}`);
+        }
+      })();
+    },
+    [termId, sessionId, cwd, currentModel],
+  );
+
   // Ctrl+C global shortcut → stop the turn (same as claude code TUI).
   // Cmd+C is NOT touched (macOS native copy). On any platform, if the
   // user has an active text selection, we don't preventDefault — they
@@ -1830,6 +1867,7 @@ export function ChatPane({
                   m.kind === 'tool_use' && m.tool !== '(result)' && runningTools.has(m.toolUseId)
                 }
                 termId={termId}
+                onRewindUser={handleRewindUser}
               />
             </React.Fragment>
           );
@@ -2882,13 +2920,24 @@ function MessageBubbleImpl({
   m,
   running,
   termId,
+  onRewindUser,
 }: {
   m: Message;
   running?: boolean;
   termId: string | null;
+  /** When set + the bubble's uid looks like a JSONL uuid (history-
+   *  loaded, not a synthetic live `m1` id), wires up the rewind
+   *  button on user bubbles. */
+  onRewindUser?: (uid: string, text: string) => void;
 }): React.JSX.Element {
   switch (m.kind) {
-    case 'user':
+    case 'user': {
+      // Only show rewind on bubbles whose uid is a real uuid (history-
+      // loaded). Live messages just-sent have synthetic m1/m2 uids and
+      // their JSONL uuid isn't known yet — those become forkable after
+      // the next session reload.
+      const isUuid =
+        m.uid.length >= 36 && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(m.uid);
       return (
         <Bubble
           align="right"
@@ -2898,8 +2947,12 @@ function MessageBubbleImpl({
           body={m.text}
           markdown={false}
           ts={m.ts}
+          onRewind={
+            isUuid && onRewindUser ? () => onRewindUser(m.uid, m.text) : undefined
+          }
         />
       );
+    }
     case 'assistant_text':
       return (
         <>
@@ -3137,6 +3190,7 @@ function BubbleImpl({
   body,
   markdown,
   ts,
+  onRewind,
 }: {
   align: 'left' | 'right';
   bg: string;
@@ -3149,6 +3203,10 @@ function BubbleImpl({
   /** UNIX-epoch ms when this message was created. Rendered as a small
    *  WhatsApp-style timestamp in the bubble's header, next to the label. */
   ts?: number;
+  /** When set, renders a "↶" rewind button in the bubble's header.
+   *  User bubbles wire this up to fork the session at this message —
+   *  see ChatPane.handleRewindUser. */
+  onRewind?: () => void;
 }): React.JSX.Element {
   return (
     <div
@@ -3183,6 +3241,27 @@ function BubbleImpl({
           <span title={new Date(ts).toLocaleString()} style={{ opacity: 0.7 }}>
             {formatTime(ts)}
           </span>
+        )}
+        {onRewind && (
+          <button
+            type="button"
+            onClick={onRewind}
+            title="Rewind here — fork a new session from this point (original preserved)"
+            style={{
+              marginLeft: 4,
+              padding: '0 4px',
+              fontFamily: 'var(--font-pixel)',
+              fontSize: '11px',
+              lineHeight: 1.2,
+              background: 'transparent',
+              color: 'inherit',
+              border: '1px solid currentColor',
+              cursor: 'pointer',
+              opacity: 0.6,
+            }}
+          >
+            ↶ rewind
+          </button>
         )}
       </div>
       {markdown ? (

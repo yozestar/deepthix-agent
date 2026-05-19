@@ -723,6 +723,19 @@ export async function rewindSession(
   return await invoke<number>('rewind_session', { projectCwd, sessionId, n });
 }
 
+/** Fork the session at a specific message uuid. Returns a NEW session
+ *  uuid whose JSONL contains everything BEFORE the fork point.
+ *  Non-destructive — the original session is preserved on disk.
+ *  Caller spawns a fresh `chat` with --resume <new_uuid> from it. */
+export async function chatForkAtUuid(
+  projectCwd: string,
+  sessionId: string,
+  forkAtUuid: string,
+): Promise<string> {
+  log('chatForkAtUuid', { sessionId, forkAtUuid });
+  return await invoke<string>('chat_fork_at_uuid', { projectCwd, sessionId, forkAtUuid });
+}
+
 /** Switch the bound term_id to a DIFFERENT session (used by /resume).
  *  Kills the current claude child + respawns with --resume on the
  *  picked session_id. Model and effort are preserved from the prior

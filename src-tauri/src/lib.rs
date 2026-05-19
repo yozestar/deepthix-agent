@@ -140,6 +140,7 @@ pub fn run() {
             commands::chat::read_session_excerpt,
             commands::chat::list_resumable_sessions,
             commands::chat::rewind_session,
+            commands::chat::chat_fork_at_uuid,
             commands::chat::chat_resume_other_session,
             commands::chat::append_to_claude_md,
             commands::chat::read_project_coach_state,

@@ -369,7 +369,16 @@ pub fn chat_spawn(
         // with content_block_delta as the assistant generates, so the
         // ChatPane can paint text incrementally instead of waiting
         // for the whole turn.
-        .arg("--include-partial-messages");
+        .arg("--include-partial-messages")
+        // User explicit ask (2026-05-18): every Deepthix session must
+        // be able to drive the user's already-open Chrome with their
+        // profiles (logged-in sessions, cookies). --chrome enables the
+        // Claude-in-Chrome extension bridge (extension
+        // fcoeoabgfenejglbffodgkkbkcdhcgfn talks to claude via native
+        // messaging at ~/.claude/chrome/chrome-native-host). Works
+        // even in stream-json mode — just exposes the
+        // mcp__claude-in-chrome__* tools to the model.
+        .arg("--chrome");
     if args.skip_permissions {
         cmd.arg("--dangerously-skip-permissions");
     }
@@ -951,6 +960,15 @@ pub fn chat_interrupt_and_resume(
         .arg("stream-json")
         .arg("--verbose")
         .arg("--include-partial-messages")
+        // User explicit ask (2026-05-18): every Deepthix session must
+        // be able to drive the user's already-open Chrome with their
+        // profiles (logged-in sessions, cookies). --chrome enables the
+        // Claude-in-Chrome extension bridge (extension
+        // fcoeoabgfenejglbffodgkkbkcdhcgfn talks to claude via native
+        // messaging at ~/.claude/chrome/chrome-native-host). Works
+        // even in stream-json mode — just exposes the
+        // mcp__claude-in-chrome__* tools to the model.
+        .arg("--chrome")
         .arg("--resume")
         .arg(&session_id);
     if let Some(m) = model.as_ref() {
@@ -1111,6 +1129,15 @@ pub fn chat_switch_model(
         .arg("stream-json")
         .arg("--verbose")
         .arg("--include-partial-messages")
+        // User explicit ask (2026-05-18): every Deepthix session must
+        // be able to drive the user's already-open Chrome with their
+        // profiles (logged-in sessions, cookies). --chrome enables the
+        // Claude-in-Chrome extension bridge (extension
+        // fcoeoabgfenejglbffodgkkbkcdhcgfn talks to claude via native
+        // messaging at ~/.claude/chrome/chrome-native-host). Works
+        // even in stream-json mode — just exposes the
+        // mcp__claude-in-chrome__* tools to the model.
+        .arg("--chrome")
         .arg("--resume")
         .arg(&session_id)
         .arg("--model")
@@ -1574,6 +1601,15 @@ pub fn chat_resume_other_session(
         .arg("stream-json")
         .arg("--verbose")
         .arg("--include-partial-messages")
+        // User explicit ask (2026-05-18): every Deepthix session must
+        // be able to drive the user's already-open Chrome with their
+        // profiles (logged-in sessions, cookies). --chrome enables the
+        // Claude-in-Chrome extension bridge (extension
+        // fcoeoabgfenejglbffodgkkbkcdhcgfn talks to claude via native
+        // messaging at ~/.claude/chrome/chrome-native-host). Works
+        // even in stream-json mode — just exposes the
+        // mcp__claude-in-chrome__* tools to the model.
+        .arg("--chrome")
         .arg("--resume")
         .arg(&session_id);
     if let Some(m) = model.as_ref() {
@@ -1860,6 +1896,73 @@ pub fn rewind_session(
         "rewind_session"
     );
     Ok(new_count)
+}
+
+/// Fork a session at a specific message uuid. Writes a NEW JSONL file
+/// containing every record BEFORE the fork point (the message itself
+/// and everything after is dropped), with `sessionId` rewritten to the
+/// new uuid. Returns the new session uuid so the caller can spawn a
+/// fresh `chat --resume <new>` from it.
+///
+/// Non-destructive: the original transcript is untouched, so the user
+/// can fork multiple times from different points without losing
+/// history. Counterpart to `/rewind N` which is destructive in-place.
+///
+/// The fork target is identified by the per-record `uuid` field in
+/// the JSONL (each user/assistant/attachment record has one). The
+/// frontend exposes this as a "↶ rewind here" button on past user
+/// bubbles — clicking forks, kills the current chat term, and spawns
+/// a new one resuming the forked transcript.
+#[tauri::command]
+pub fn chat_fork_at_uuid(
+    project_cwd: PathBuf,
+    session_id: String,
+    fork_at_uuid: String,
+) -> Result<String, String> {
+    let src = crate::jsonl_watcher::predict_jsonl_path(&project_cwd, &session_id);
+    let body = std::fs::read_to_string(&src).map_err(|e| format!("read jsonl: {e}"))?;
+    let new_uuid = uuid::Uuid::new_v4().to_string();
+    let mut kept: Vec<String> = Vec::new();
+    let mut found = false;
+    for line in body.lines() {
+        let mut v: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => {
+                // Keep unparseable lines verbatim — better than silently
+                // dropping a record we don't understand.
+                kept.push(line.to_string());
+                continue;
+            }
+        };
+        if v.get("uuid").and_then(|u| u.as_str()) == Some(fork_at_uuid.as_str()) {
+            found = true;
+            break;
+        }
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert(
+                "sessionId".to_string(),
+                serde_json::Value::String(new_uuid.clone()),
+            );
+        }
+        kept.push(v.to_string());
+    }
+    if !found {
+        return Err(format!("uuid {fork_at_uuid} not found in transcript"));
+    }
+    let dst = src.with_file_name(format!("{new_uuid}.jsonl"));
+    let mut new_body = kept.join("\n");
+    if !new_body.is_empty() {
+        new_body.push('\n');
+    }
+    std::fs::write(&dst, new_body.as_bytes()).map_err(|e| format!("write jsonl: {e}"))?;
+    tracing::info!(
+        target: "deepthix::chat",
+        %session_id, %new_uuid, %fork_at_uuid,
+        kept_lines = kept.len(),
+        dst = %dst.display(),
+        "chat_fork_at_uuid",
+    );
+    Ok(new_uuid)
 }
 
 #[tauri::command]

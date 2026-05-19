@@ -139,15 +139,29 @@ printf ' '
     // --mcp-config when spawning claude.
     if let Some(mcp_path) = mcp_bin {
         let mcp_str = mcp_path.to_string_lossy().into_owned();
-        let mcp_config = serde_json::json!({
-            "mcpServers": {
-                "deepthix": {
-                    "type": "stdio",
-                    "command": mcp_str,
-                    "args": []
-                }
-            }
-        });
+        let mut servers = serde_json::Map::new();
+        servers.insert(
+            "deepthix".to_string(),
+            serde_json::json!({
+                "type": "stdio",
+                "command": mcp_str,
+                "args": [],
+            }),
+        );
+        // User explicit ask (2026-05-18): every Deepthix-launched
+        // claude session should have Chrome MCP access regardless of
+        // per-project config in ~/.claude.json. We auto-inject the
+        // chrome-devtools MCP server here so the session can drive the
+        // browser out of the box.
+        //
+        // Wrapper path is preferred (the user has Node 22 in a non-
+        // default nvm location, and the wrapper bakes the right PATH).
+        // Fallback uses `npx` directly — works when node is on the
+        // default PATH and skips silently when neither is available.
+        if let Some(chrome) = detect_chrome_devtools_mcp() {
+            servers.insert("chrome-devtools".to_string(), chrome);
+        }
+        let mcp_config = serde_json::json!({ "mcpServers": servers });
         let mcp_config_str = serde_json::to_string_pretty(&mcp_config).unwrap();
         let mcp_config_file = mcp_config_path()?;
         let needs_write = match std::fs::read_to_string(&mcp_config_file) {
@@ -163,6 +177,51 @@ printf ' '
     }
 
     Ok(())
+}
+
+/// Locate the chrome-devtools MCP server the spawned claude should use.
+/// Order of preference:
+///   1. `~/.local/bin/chrome-devtools-mcp-wrapper.sh` — what the user
+///      already uses in their per-project ~/.claude.json. The wrapper
+///      bakes the right Node 22 PATH so it works even when the system
+///      `node` isn't the one chrome-devtools-mcp needs.
+///   2. `npx` on PATH — fallback that runs `npx chrome-devtools-mcp@latest`.
+///      Only works when node is on the default PATH.
+///   3. None — silently skip; the session just won't have Chrome tools.
+fn detect_chrome_devtools_mcp() -> Option<serde_json::Value> {
+    if let Some(home) = dirs::home_dir() {
+        let wrapper = home.join(".local").join("bin").join("chrome-devtools-mcp-wrapper.sh");
+        if wrapper.is_file() {
+            tracing::info!(target: "deepthix::usage_snapshot", ?wrapper, "chrome-devtools MCP via wrapper");
+            return Some(serde_json::json!({
+                "type": "stdio",
+                "command": wrapper.to_string_lossy(),
+                "args": [],
+            }));
+        }
+    }
+    if which("npx").is_some() {
+        tracing::info!(target: "deepthix::usage_snapshot", "chrome-devtools MCP via npx fallback");
+        return Some(serde_json::json!({
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "chrome-devtools-mcp@latest"],
+        }));
+    }
+    tracing::warn!(target: "deepthix::usage_snapshot", "no chrome-devtools MCP — wrapper missing + npx not on PATH");
+    None
+}
+
+/// Minimal PATH lookup — we don't pull `which = "..."` for one call.
+fn which(bin: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(bin);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
