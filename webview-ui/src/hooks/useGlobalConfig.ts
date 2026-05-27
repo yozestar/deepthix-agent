@@ -33,7 +33,10 @@ import { applyTheme, DEFAULT_THEME_ID } from '../themes';
  *  switch works offline. */
 export const UI_FONT_IDS = ['pixel', 'inter'] as const;
 export type UiFontId = (typeof UI_FONT_IDS)[number];
-const DEFAULT_UI_FONT: UiFontId = 'pixel';
+// Default to Inter for new installs — long reading sessions on the
+// pixel font caused eye fatigue. Users who prefer the original look
+// can switch back via Settings → Police d'interface.
+const DEFAULT_UI_FONT: UiFontId = 'inter';
 
 /** Push the chosen UI font into --font-pixel + inject a high-priority
  *  `*` override that beats Tailwind v4's inlined @theme utility classes.
