@@ -65,6 +65,7 @@ pub fn active_session_cap() -> usize {
         .and_then(|c| c.max_active_sessions)
         .unwrap_or(crate::commands::chat::MAX_ACTIVE_SESSIONS as u32);
     raw.clamp(2, 20) as usize
+}
 
 #[tauri::command]
 pub fn read_global_config() -> Result<GlobalConfig, String> {

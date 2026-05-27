@@ -624,35 +624,6 @@ function ChatPaneImpl({
   useEffect(() => {
     termIdRef.current = termId;
   }, [termId]);
-  // Refs kept in sync with component state/props so the chat_exit handler
-  // (which closes over them) always sees the LATEST value when an idle
-  // reap fires — even if the closure was set up when sessionId was still
-  // null and the set_session action filled it in later.
-  const sessionIdRef = useRef<string | null>(resumeSessionId ?? null);
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
-  const cwdRef = useRef<string>(cwd);
-  useEffect(() => {
-    cwdRef.current = cwd;
-  }, [cwd]);
-  const skipPermissionsRef = useRef<boolean>(skipPermissions ?? false);
-  useEffect(() => {
-    skipPermissionsRef.current = skipPermissions ?? false;
-  }, [skipPermissions]);
-  const currentModelRef = useRef<string | null>(null);
-  useEffect(() => {
-    currentModelRef.current = currentModel;
-  }, [currentModel]);
-  // Auto-respawn loop guard. When the Rust reaper is misconfigured
-  // (DEEPTHIX_IDLE_TIMEOUT_MS=0 used to make it kill every 60s) the FE
-  // would respawn → reap → respawn forever, painting an endless flicker
-  // of "session paused / session reprise" bubbles. We track the last
-  // auto-respawn timestamp; if a new idle exit fires within the
-  // cooldown window, we stop auto-respawning and show a real error so
-  // the user can recover instead of staring at the loop.
-  const lastAutoRespawnMsRef = useRef<number>(0);
-  const AUTO_RESPAWN_LOOP_WINDOW_MS = 2 * 60 * 1000;
 
   // Hydrate the message log from claude's own JSONL transcript on
   // mount when we're resuming a session. We don't depend on this for
@@ -937,12 +908,6 @@ function ChatPaneImpl({
   // succession (rapid Ctrl+C / button mash) which would queue redundant
   // chat_interrupt_and_resume calls.
   const interruptingRef = useRef(false);
-  // Set true by the chat_exit handler when subtype === 'idle' (the
-  // background reaper killed the session). Read by send() to know it
-  // must respawn claude (with --resume sessionId) before writing the
-  // user's text — otherwise chat_send_user_text errors with "no chat
-  // session" because the term_id was removed from ChatManager.
-  const idleRef = useRef(false);
   // Stable ref so we can drop onSessionReady from effect deps. The
   // parent (BottomPanel) passes an inline arrow, which gets a new
   // reference on every parent render — when this ref was a dep, the
@@ -1455,32 +1420,6 @@ function ChatPaneImpl({
       { kind: 'user', uid: uid(), ts: Date.now(), text: bubbleText },
     ]);
     setPendingAttachments([]);
-    // If the background reaper killed claude after idle, the term_id is
-    // gone from ChatManager — chat_send_user_text would error with "no
-    // chat session". Respawn first (with --resume sessionId so the new
-    // claude inherits the conversation), then send to the new term_id.
-    let activeTermId = termId;
-    if (idleRef.current) {
-      try {
-        const res = await chatSpawn({
-          cwd,
-          resume_session_id: sessionId,
-          skip_permissions: skipPermissions ?? false,
-          model: currentModel,
-        });
-        activeTermId = res.term_id;
-        setTermId(res.term_id);
-        if (res.session_id) setSessionId(res.session_id);
-        onSessionReadyRef.current?.({ termId: res.term_id, sessionId: res.session_id });
-        idleRef.current = false;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error('[Deepthix][ChatPane] respawn-on-resume failed', e);
-        setError(msg);
-        setBusy(false);
-        return;
-      }
-    }
     try {
       if (attachments.length === 0) {
         await chatSendUserText(activeTermId, text);
