@@ -143,60 +143,26 @@ export function SessionsPane({
   // tamagotchi gets the whole main area.
   if (visible.length === 0) return null;
 
+  // Drag handles + height state intentionally kept (line ~82-140) but
+  // unused now that SessionsPane fills the parent — the old code split
+  // the SESSIONS view between Coach (top) and chat (bottom). Coach was
+  // removed, so the chat takes the full height via flex:1. The state
+  // is harmless dead weight; re-wiring it would just bloat the diff.
+  void height;
+  void onMouseDown;
   return (
     <div
       style={{
-        height: `${height}px`,
+        flex: 1,
+        minHeight: 0,
         background: 'var(--color-bg)',
         display: 'flex',
         flexDirection: 'column',
         fontFamily: 'var(--font-pixel)',
-        flexShrink: 0,
         position: 'relative',
         overflow: 'hidden',
       }}
     >
-      {/* Resize handle — wider + visible grip pips so users discover
-          they can drag the boundary between coach and chat. The
-          previous 5px bar was too thin for users to notice; many
-          assumed the split was fixed and the coach was eating their
-          chat space. */}
-      <div
-        onMouseDown={onMouseDown}
-        title="Glisser pour redimensionner la zone de chat (le coach en haut, le chat en bas)"
-        style={{
-          height: '10px',
-          cursor: 'ns-resize',
-          background: 'var(--color-border)',
-          flexShrink: 0,
-          position: 'relative',
-          transition: 'background 120ms ease',
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLDivElement).style.background = 'var(--color-accent)';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLDivElement).style.background = 'var(--color-border)';
-        }}
-      >
-        {/* Three short grip lines — much more visible affordance than
-            the previous single hairline. Centered horizontally. */}
-        <div
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            pointerEvents: 'none',
-          }}
-        >
-          <span style={{ width: 32, height: 2, background: 'var(--color-bg)', opacity: 0.7 }} />
-          <span style={{ width: 32, height: 2, background: 'var(--color-bg)', opacity: 0.7 }} />
-        </div>
-      </div>
 
       {/* Per-session sub-tab strip */}
       <div
