@@ -366,8 +366,18 @@ pub fn chat_spawn(
     // is the last line of defence after the idle reaper. The cap is
     // read live from GlobalConfig.max_active_sessions (Settings →
     // SESSIONS), so a user can raise/lower it without restarting.
-    let cap = crate::commands::config::active_session_cap();
-    {
+    //
+    // EXCEPTION: when resume_session_id is set, this call is RESTORING
+    // an existing on-disk session (app startup, project switch, etc.),
+    // not creating a new one. The user implicitly already accepted
+    // having that many sessions when they were created — denying the
+    // restore would silently drop projects from the sidebar (the user
+    // sees "no session" and can't even read the past JSONL because
+    // the BottomPanel only mounts ChatPane for sessions that exist in
+    // the live registry). So we let resumes bypass the cap entirely;
+    // the cap only applies to brand-new spawns (+ Session button).
+    if args.resume_session_id.is_none() {
+        let cap = crate::commands::config::active_session_cap();
         let map = state.inner.lock().unwrap();
         if map.len() >= cap {
             return Err(format!(
