@@ -57,6 +57,12 @@ interface Props {
   /** Fires once spawn resolves (so the parent can persist the new
    *  session_id once we learn it from the system/init line). */
   onSessionReady?: (info: { termId: string; sessionId: string | null }) => void;
+  /** Set ONLY when bindTermId is a "ghost:" id (lazy entry from
+   *  useTerminals.resumeProject — no live claude process). ChatPane
+   *  marks the session as exited so the next user send triggers a
+   *  real chat_spawn, then calls this back to swap the parent's
+   *  ghost id for the real chat-<uuid>. Absent for live terminals. */
+  onActivateGhost?: (realTermId: string, sessionId: string | null) => void;
   /** Hard cap on messages kept in React state for this session. Older
    *  messages are dropped from the tree whenever a new one arrives.
    *  Defaults to 100 if not provided. */
@@ -560,8 +566,17 @@ function ChatPaneImpl({
   bindTermId,
   agentId,
   onSessionReady,
+  onActivateGhost,
   maxMessages,
 }: Props): React.JSX.Element {
+  // Lazy-spawn flag: bindTermId === "ghost:<sid>" means the parent
+  // registered this session at startup WITHOUT spawning claude (saves
+  // 200 MB × 20 sessions of dead RAM). We mark the session as exited
+  // so the existing auto-respawn-on-send path runs chat_spawn on the
+  // user's first message. The history hydration useEffect (chat_load_history
+  // — already present below) loads the JSONL transcript on its own,
+  // independent of any live process.
+  const isGhost = !!bindTermId?.startsWith('ghost:');
   const [termId, setTermId] = useState<string | null>(bindTermId ?? null);
   const [sessionId, setSessionId] = useState<string | null>(resumeSessionId ?? null);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
@@ -899,7 +914,9 @@ function ChatPaneImpl({
   // The send() handler reads it to auto-respawn the session via
   // --resume <session_id> on the next user message instead of failing
   // silently with "no chat session <term_id>".
-  const sessionExitedRef = useRef(false);
+  // Seeded `true` for ghost entries so the first send triggers the
+  // same auto-respawn path — lazy spawn for free.
+  const sessionExitedRef = useRef(isGhost);
   // Tracks the safety timer that auto-clears busy if chat_exit never
   // arrives after Stop (rare but possible if claude hangs in a tool
   // call that ignores SIGINT).
@@ -1384,6 +1401,12 @@ function ChatPaneImpl({
         setTermId(res.term_id);
         if (res.session_id) setSessionId(res.session_id);
         onSessionReadyRef.current?.({ termId: res.term_id, sessionId: res.session_id });
+        // Lazy-spawn promotion: if this ChatPane was bound to a
+        // "ghost:" entry (no live process at startup), swap the
+        // parent's TerminalEntry id from ghost:<sid> to the real
+        // chat-<uuid> so subsequent re-mounts / tab clicks don't
+        // re-trigger the auto-respawn path.
+        onActivateGhost?.(res.term_id, res.session_id ?? sessionId);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[Deepthix][ChatPane] auto-respawn failed', e);

@@ -71,6 +71,12 @@ export interface UseTerminalsResult {
    *  persisted with the right id (otherwise the session vanishes on
    *  next launch). */
   setSessionId: (id: string, sessionId: string) => void;
+  /** Promote a lazy "ghost:" entry (registered at startup without
+   *  spawning claude) to a real live terminal. Called by ChatPane when
+   *  the user first sends a message in a ghost session — we swap the
+   *  entry's id from ghost:<sid> to the real chat-<uuid> returned by
+   *  chat_spawn so subsequent re-mounts don't re-spawn. */
+  activateGhost: (ghostId: string, realTermId: string, sessionId: string | null) => void;
 }
 
 function dispatchWebviewMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -305,7 +311,7 @@ export function useTerminals(): UseTerminalsResult {
 
   const resumeProject = useCallback(
     async (projectId: string): Promise<void> => {
-      // Skip if we already have terminals for this project (avoids double-spawn
+      // Skip if we already have terminals for this project (avoids double-load
       // when an effect fires after the user has already opened sessions manually).
       const already = terminalsRef.current.some((t) => t.projectId === projectId);
       if (already) {
@@ -320,18 +326,39 @@ export function useTerminals(): UseTerminalsResult {
         return;
       }
       console.debug('[Deepthix][useTerminals] resumeProject', { projectId, count: saved.length });
+      // LAZY: don't spawn claude at all on startup. Register a "ghost"
+      // TerminalEntry per saved session — the chat tab + history are
+      // both available without burning RAM on a claude process the user
+      // may never touch this session. claude only spawns when the user
+      // actually sends a message (ChatPane sees the ghost: prefix,
+      // flips sessionExitedRef so send() takes the auto-respawn path,
+      // and the first send triggers a real chat_spawn).
       for (const s of saved) {
-        // claude resumes from the existing JSONL transcript when given the same
-        // --session-id; if the JSONL is gone, claude starts a fresh session
-        // under that id (still useful — keeps the same identifier).
-        await open(projectId, s.cwd, 'claude', s.label, {
+        const ghostId = `ghost:${s.session_id}`;
+        if (terminalsRef.current.some((t) => t.id === ghostId)) continue;
+        const agentId = nextAgentIdRef.current++;
+        const entry: TerminalEntry = {
+          id: ghostId,
+          label: s.label,
+          cwd: s.cwd,
+          kind: 'claude',
+          agentId,
+          sessionId: s.session_id,
+          projectId,
           skipPermissions: s.skip_permissions,
-          resumeSessionId: s.session_id,
-          initialNotes: s.notes ?? '',
+          notes: s.notes ?? '',
+        };
+        setTerminals((prev) => [...prev, entry]);
+        terminalsRef.current = [...terminalsRef.current, entry];
+        dispatchWebviewMessage({
+          type: 'agentCreated',
+          id: agentId,
+          terminalId: ghostId,
+          name: entry.label,
         });
       }
     },
-    [open],
+    [],
   );
 
   const close = useCallback(async (id: string): Promise<void> => {
@@ -395,6 +422,32 @@ export function useTerminals(): UseTerminalsResult {
     [persistProjectSessions],
   );
 
+  /** See UseTerminalsResult.activateGhost. */
+  const activateGhost = useCallback(
+    (ghostId: string, realTermId: string, sessionId: string | null): void => {
+      let projectId: string | null = null;
+      setTerminals((prev) =>
+        prev.map((t) => {
+          if (t.id !== ghostId) return t;
+          projectId = t.projectId;
+          return {
+            ...t,
+            id: realTermId,
+            sessionId: sessionId ?? t.sessionId,
+          };
+        }),
+      );
+      terminalsRef.current = terminalsRef.current.map((t) =>
+        t.id === ghostId
+          ? { ...t, id: realTermId, sessionId: sessionId ?? t.sessionId }
+          : t,
+      );
+      setActive((prev) => (prev === ghostId ? realTermId : prev));
+      if (projectId) persistProjectSessions(projectId);
+    },
+    [persistProjectSessions],
+  );
+
   /** Set / update a terminal's session UUID. Idempotent — no-op if the
    *  current sessionId already matches. Triggers a persist so the
    *  session survives the next launch. */
@@ -453,6 +506,7 @@ export function useTerminals(): UseTerminalsResult {
       rename,
       updateNotes,
       setSessionId,
+      activateGhost,
     }),
     [
       terminals,
@@ -464,6 +518,7 @@ export function useTerminals(): UseTerminalsResult {
       rename,
       updateNotes,
       setSessionId,
+      activateGhost,
     ],
   );
 }

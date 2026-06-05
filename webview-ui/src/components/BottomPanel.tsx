@@ -290,6 +290,12 @@ export function SessionsPane({
                 cwd={t.cwd}
                 resumeSessionId={t.sessionId}
                 skipPermissions={t.skipPermissions}
+                onActivateGhost={
+                  t.id.startsWith('ghost:')
+                    ? (realTermId, sessionId) =>
+                        terminals.activateGhost(t.id, realTermId, sessionId)
+                    : undefined
+                }
                 bindTermId={t.id}
                 agentId={t.agentId}
                 maxMessages={globalConfig.maxMessagesPerSession}
