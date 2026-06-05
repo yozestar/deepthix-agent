@@ -224,82 +224,70 @@ function App(): React.JSX.Element {
                 flexDirection: 'column',
                 flex: 1,
                 minHeight: 0,
+                position: 'relative',
               }}
             >
-              <div
-                style={{
-                  flex: 1,
-                  minHeight: 0,
-                  position: 'relative',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                }}
-              >
-                {/* SessionsTopArea (Coach pane above the chat) removed per
-                    user request — Sessions view now uses the full pane height
-                    for the chat itself. Coach was rarely used and ate
-                    half the visible space. Re-enable by uncommenting
-                    if needed. */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 24,
-                    right: 24,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'flex-end',
-                    gap: 8,
-                    zIndex: 6,
-                  }}
-                >
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      background: 'var(--color-bg-dark)',
-                      border: '2px solid var(--color-border)',
-                      boxShadow: 'var(--shadow-pixel)',
-                      padding: '6px 10px',
-                      fontFamily: 'var(--font-pixel)',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      userSelect: 'none',
-                    }}
-                    title="Pass --dangerously-skip-permissions to new sessions"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={skipPerms}
-                      onChange={(e) => setSkipPerms(e.target.checked)}
-                    />
-                    skip perms
-                  </label>
-                  <button
-                    type="button"
-                    onClick={onSpawnAgent}
-                    style={{
-                      padding: '14px 24px',
-                      background: 'var(--color-accent)',
-                      color: 'var(--color-bg-dark)',
-                      border: '2px solid var(--color-border)',
-                      boxShadow: 'var(--shadow-pixel)',
-                      fontFamily: 'var(--font-pixel)',
-                      fontSize: '18px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    + Session
-                  </button>
-                </div>
-              </div>
               <SessionsPane
                 terminals={terminals}
                 projectId={projects.activeProjectId}
                 globalConfig={globalConfig.config}
                 updateGlobalConfig={globalConfig.update}
               />
+              {/* + Session button + skip-perms toggle — floating overlay
+                  in the top-right corner of the SESSIONS view so the
+                  chat below can use the full height. */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 12,
+                  right: 16,
+                  display: 'flex',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                  zIndex: 6,
+                }}
+              >
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: 'var(--color-bg-dark)',
+                    border: '2px solid var(--color-border)',
+                    boxShadow: 'var(--shadow-pixel)',
+                    padding: '4px 8px',
+                    fontFamily: 'var(--font-pixel)',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                  title="Pass --dangerously-skip-permissions to new sessions"
+                >
+                  <input
+                    type="checkbox"
+                    checked={skipPerms}
+                    onChange={(e) => setSkipPerms(e.target.checked)}
+                  />
+                  skip perms
+                </label>
+                <button
+                  type="button"
+                  onClick={onSpawnAgent}
+                  style={{
+                    padding: '8px 16px',
+                    background: 'var(--color-accent)',
+                    color: 'var(--color-bg-dark)',
+                    border: '2px solid var(--color-border)',
+                    boxShadow: 'var(--shadow-pixel)',
+                    fontFamily: 'var(--font-pixel)',
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  + Session
+                </button>
+              </div>
             </div>
           )}
 
