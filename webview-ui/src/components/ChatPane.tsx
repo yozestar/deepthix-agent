@@ -2403,6 +2403,11 @@ function ChatInput({
           background: 'var(--color-bg-dark)',
           borderTop: attachments.length > 0 ? 'none' : '1px solid var(--color-border)',
           display: 'flex',
+          // align-items: flex-start so the textarea's own height (controlled
+          // by the resize handle in its bottom-right corner) wins over flex
+          // stretch — without this the textarea's height was dictated by
+          // the parent BottomPanel and the resize handle was a no-op.
+          alignItems: 'flex-start',
           gap: 8,
           flexShrink: 0,
         }}

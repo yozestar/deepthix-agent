@@ -54,7 +54,13 @@ pub const IDLE_REAPER_TICK_SECS: u64 = 60;
 /// user accumulated 9 stale sessions ≈ 1.95 GB before macOS started
 /// thrashing. Six is a generous ceiling — most workflows need 1-3
 /// active conversations at a time.
-pub const MAX_ACTIVE_SESSIONS: usize = 6;
+// Default cap on concurrent claude sessions. Was 6 (upstream
+// default) but the operator-mode user reported running 20 projects
+// in parallel — opening project #7 silently failed because chat_spawn
+// refused with "Too many active sessions". Each claude process is
+// ~200 MB RAM, so 20 = ~4 GB which is fine on modern dev machines;
+// users with less RAM can lower it via Settings → SESSIONS.
+pub const MAX_ACTIVE_SESSIONS: usize = 20;
 
 // Reads DEEPTHIX_IDLE_TIMEOUT_MS at boot. Accepts any i64; values <= 0
 // disable the reaper entirely (sessions live until app exit). Falls

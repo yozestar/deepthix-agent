@@ -4,11 +4,16 @@
 // proposes improvements every 10 min when ON). One coach for the whole
 // app — flipping ON in any project means ON for every project.
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { TerminalEntry } from '../hooks/useTerminals';
 import type { Project } from '../tauri/types';
 import { CoachPane } from './CoachPane';
+
+/** localStorage key — persists "coach pane hidden" across reloads so
+ *  the user doesn't have to re-hide every restart. Stored as the
+ *  string "1" when hidden, absent otherwise. */
+const COACH_HIDDEN_KEY = 'deepthix.coach.hidden';
 
 interface Props {
   /** EVERY terminal across every project — the coach is global so it
@@ -41,6 +46,52 @@ export function SessionsTopArea({
       });
   }, [allTerminals, projects]);
 
+  const [hidden, setHidden] = useState(
+    () => typeof window !== 'undefined' && window.localStorage.getItem(COACH_HIDDEN_KEY) === '1',
+  );
+  useEffect(() => {
+    function syncFromStorage(): void {
+      setHidden(window.localStorage.getItem(COACH_HIDDEN_KEY) === '1');
+    }
+    window.addEventListener('storage', syncFromStorage);
+    return () => window.removeEventListener('storage', syncFromStorage);
+  }, []);
+
+  if (hidden) {
+    return (
+      <div
+        style={{
+          padding: '4px 12px',
+          background: 'var(--color-bg-dark)',
+          borderBottom: '1px solid var(--color-border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          fontFamily: 'var(--font-pixel)',
+          fontSize: 11,
+          color: 'var(--color-text-muted)',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            window.localStorage.removeItem(COACH_HIDDEN_KEY);
+            setHidden(false);
+          }}
+          className="dt-btn"
+          style={{
+            padding: '2px 10px',
+            fontSize: 11,
+            cursor: 'pointer',
+          }}
+          title="Réafficher le panneau Coach"
+        >
+          👁 Afficher coach
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -50,7 +101,13 @@ export function SessionsTopArea({
         flexDirection: 'column',
       }}
     >
-      <CoachPane sessions={sessions} />
+      <CoachPane
+        sessions={sessions}
+        onHide={() => {
+          window.localStorage.setItem(COACH_HIDDEN_KEY, '1');
+          setHidden(true);
+        }}
+      />
     </div>
   );
 }

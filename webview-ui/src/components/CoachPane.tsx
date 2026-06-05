@@ -103,6 +103,9 @@ interface Props {
    *  excerpts on each tick. The coach is global — there's no per-
    *  project filter. */
   sessions: SessionRef[];
+  /** Called when user clicks the ✕ in the header — parent unmounts
+   *  the pane and replaces it with a thin "Show coach" toggle. */
+  onHide?: () => void;
 }
 
 interface CoachMessage {
@@ -121,7 +124,7 @@ function shortId(s: string | null | undefined, n = 8): string {
   return s ? s.slice(0, n) : '?';
 }
 
-export function CoachPane({ sessions }: Props): React.JSX.Element {
+export function CoachPane({ sessions, onHide }: Props): React.JSX.Element {
   const [state, setState] = useState<CoachState>({
     enabled: false,
     coach_session_id: null,
@@ -789,6 +792,20 @@ export function CoachPane({ sessions }: Props): React.JSX.Element {
             style={headerBtn(true)}
           >
             ⏹ Stop
+          </button>
+        )}
+        {onHide && (
+          <button
+            type="button"
+            onClick={onHide}
+            title="Masquer ce panneau (réaffichable via le bouton 👁 en haut)"
+            style={{
+              ...headerBtn(false),
+              padding: '4px 10px',
+              opacity: 0.7,
+            }}
+          >
+            ✕
           </button>
         )}
       </div>

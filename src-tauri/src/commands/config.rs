@@ -72,7 +72,10 @@ pub fn active_session_cap() -> usize {
         .ok()
         .and_then(|c| c.max_active_sessions)
         .unwrap_or(crate::commands::chat::MAX_ACTIVE_SESSIONS as u32);
-    raw.clamp(2, 20) as usize
+    // Max raised 20 → 50 — operator-mode users with many micro-projects
+    // were silently capped. 50 × ~200 MB = ~10 GB, still within reach of
+    // a 32 GB workstation; the actual ceiling is the user's RAM, not us.
+    raw.clamp(2, 50) as usize
 }
 
 #[tauri::command]
