@@ -362,31 +362,13 @@ pub fn chat_spawn(
     state: State<'_, ChatManager>,
     args: ChatSpawnArgs,
 ) -> Result<ChatSpawnResult, String> {
-    // Refuse the spawn if we're at the active-sessions ceiling. This
-    // is the last line of defence after the idle reaper. The cap is
-    // read live from GlobalConfig.max_active_sessions (Settings →
-    // SESSIONS), so a user can raise/lower it without restarting.
-    //
-    // EXCEPTION: when resume_session_id is set, this call is RESTORING
-    // an existing on-disk session (app startup, project switch, etc.),
-    // not creating a new one. The user implicitly already accepted
-    // having that many sessions when they were created — denying the
-    // restore would silently drop projects from the sidebar (the user
-    // sees "no session" and can't even read the past JSONL because
-    // the BottomPanel only mounts ChatPane for sessions that exist in
-    // the live registry). So we let resumes bypass the cap entirely;
-    // the cap only applies to brand-new spawns (+ Session button).
-    if args.resume_session_id.is_none() {
-        let cap = crate::commands::config::active_session_cap();
-        let map = state.inner.lock().unwrap();
-        if map.len() >= cap {
-            return Err(format!(
-                "Too many active sessions ({}/{}). Close one before opening another — each claude process holds ~200 MB of RAM. Adjust the cap in Settings → SESSIONS if you want more.",
-                map.len(),
-                cap,
-            ));
-        }
-    }
+    // Cap removed per user feedback — they want session creation to be
+    // transparent ("avant tu te débrouilles, je veux pas en entendre
+    // parler"). The idle reaper still kills sessions inactive for 30 min
+    // (DEEPTHIX_IDLE_TIMEOUT_MS) so RAM doesn't grow unbounded; the cap
+    // was a belt-and-braces guard against the original zombie-children
+    // bug, which the reaper now handles directly. The Settings field is
+    // kept for back-compat but no longer enforced here.
     let term_id = format!("chat-{}", uuid::Uuid::new_v4().simple());
     tracing::info!(
         target: "deepthix::chat",

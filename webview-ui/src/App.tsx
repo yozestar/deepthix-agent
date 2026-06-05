@@ -6,7 +6,8 @@ import { MemoryPane } from './components/MemoryPane';
 import { NotificationToasts } from './components/NotificationToasts';
 import { OverviewPane } from './components/OverviewPane';
 import { SchedulesPane } from './components/SchedulesPane';
-import { SessionsTopArea } from './components/SessionsTopArea';
+// SessionsTopArea import removed — Coach pane was unmounted from the
+// Sessions view per user request to give the chat the full height.
 import { SettingsPane } from './components/SettingsPane';
 import { Sidebar } from './components/Sidebar';
 import { SkillsPane } from './components/SkillsPane';
@@ -235,10 +236,11 @@ function App(): React.JSX.Element {
                   flexDirection: 'column',
                 }}
               >
-                <SessionsTopArea
-                  allTerminals={terminals.terminals}
-                  projects={projects.projects}
-                />
+                {/* SessionsTopArea (Coach pane above the chat) removed per
+                    user request — Sessions view now uses the full pane height
+                    for the chat itself. Coach was rarely used and ate
+                    half the visible space. Re-enable by uncommenting
+                    if needed. */}
                 <div
                   style={{
                     position: 'absolute',
