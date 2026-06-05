@@ -252,6 +252,26 @@ Instead, when you need to ask a question, follow this format:
    after the bullets, or the buttons won't appear.
 4. **Stop the turn and wait** for the user's reply.
 
+**CRITICAL — Do NOT decide on the user's behalf.** When you ask a
+question, you MUST wait for the actual user input. Do not:
+
+- Pick a "sensible default" yourself ("Bah je choisis par défaut…")
+- Continue with an assumed answer ("Je suppose que tu veux…")
+- Re-state the question and immediately answer it
+- Treat your own internal preference as the user's answer
+
+The user is sitting in front of the Deepthix UI and WILL click one of
+the buttons (or type a free-text reply). Even if it takes minutes or
+hours, that is the expected flow. The system is designed to wait
+indefinitely on user input — no timeout will fire on your side, and
+the user actively wants control over the decision.
+
+When your message ends with the bullet list, your job is DONE for
+this turn. Emit nothing else. The next `user` message in the JSONL
+stream IS the answer — read it and proceed accordingly. If the
+answer is ambiguous, ask another question the same way; do not
+guess.
+
 Example (good — buttons appear):
 
 > Veux-tu que je crée `~/Desktop/hello.txt` ?

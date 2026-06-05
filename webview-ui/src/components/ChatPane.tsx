@@ -2490,18 +2490,19 @@ function ChatInput({
               : 'Message claude (⏎ send, ⇧⏎ newline, ↑/↓ history, / for commands)'
           }
           disabled={spawning}
-          rows={3}
+          rows={6}
           style={{
             flex: 1,
-            resize: 'none',
-            padding: '8px',
+            resize: 'vertical',
+            minHeight: '6.5em',
+            padding: '10px',
             background: 'var(--color-bg)',
             color: 'var(--color-text)',
             border: '2px solid var(--color-border)',
             outline: 'none',
             fontFamily: 'var(--font-pixel)',
-            fontSize: '13px',
-            lineHeight: 1.4,
+            fontSize: '14px',
+            lineHeight: 1.5,
           }}
         />
         <button
@@ -3139,18 +3140,27 @@ function QuickRepliesImpl({
   termId: string | null;
 }): React.JSX.Element | null {
   const [sent, setSent] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const options = useMemo(() => extractTrailingOptions(text), [text]);
   if (options.length === 0) return null;
-  if (sent) return null;
+  if (sent && !sendError) return null;
   if (!termId) return null;
 
   const onClick = (opt: string): void => {
     setSent(true);
-    void chatSendUserText(termId, opt).catch((e) => {
-      console.warn('[Deepthix][QuickReplies] send failed', e);
-      setSent(false);
-    });
+    setSendError(null);
+    console.info('[Deepthix][QuickReplies] sending choice', { termId, opt });
+    void chatSendUserText(termId, opt)
+      .then(() => {
+        console.info('[Deepthix][QuickReplies] choice delivered to claude', { opt });
+      })
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn('[Deepthix][QuickReplies] send failed', e);
+        setSent(false);
+        setSendError(msg);
+      });
     // Mirror to the conversation pane so the user sees their choice
     // rendered as a normal user bubble (the actual chat_event for
     // this turn comes from claude later).
@@ -3160,6 +3170,26 @@ function QuickRepliesImpl({
       }),
     );
   };
+
+  if (sendError) {
+    return (
+      <div
+        style={{
+          alignSelf: 'flex-start',
+          marginTop: -4,
+          marginLeft: 8,
+          padding: '4px 8px',
+          background: 'var(--color-danger)',
+          color: 'var(--color-bg-dark)',
+          border: '2px solid var(--color-border)',
+          fontSize: '11px',
+          maxWidth: '92%',
+        }}
+      >
+        ⚠ Choix non envoyé ({sendError}) — réessayez :
+      </div>
+    );
+  }
 
   return (
     <div

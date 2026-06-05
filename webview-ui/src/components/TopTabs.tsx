@@ -24,11 +24,13 @@ interface Props {
   onChangeMode: (m: Mode) => void;
 }
 
-/** Visible top-tab modes, in display order. `'settings'` is filtered out. */
+/** Visible top-tab modes, in display order. `'settings'` is filtered out.
+ *  `'files'` (Code) hidden per user request — operator-style usage, code
+ *  pane never opened. Mode still exists in the union so callers can switch
+ *  to it programmatically if a future feature needs it. */
 const VISIBLE_MODES: ReadonlyArray<Mode> = [
   'overview',
   'sessions',
-  'files',
   'process',
   'memory',
   'skills',

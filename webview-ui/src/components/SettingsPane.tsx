@@ -30,6 +30,9 @@ import {
   MAX_MESSAGES_PER_SESSION_DEFAULT,
   MAX_MESSAGES_PER_SESSION_MAX,
   MAX_MESSAGES_PER_SESSION_MIN,
+  UI_TEXT_SCALE_MAX,
+  UI_TEXT_SCALE_MIN,
+  UI_TEXT_SCALE_STEP,
 } from '../hooks/useGlobalConfig';
 import { THEMES } from '../themes';
 
@@ -331,6 +334,36 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
             );
           })}
         </div>
+      </Section>
+
+      {/* UI TEXT SCALE — scales every rem/em-based text without touching
+          fixed pixel widths so the layout stays put (xterm unaffected). */}
+      <Section
+        title="TEXT SIZE"
+        subtitle="Agrandit le texte de l'interface (chat, sidebar, settings) sans casser la mise en page. xterm garde sa propre taille."
+      >
+        <Row label="Échelle texte">
+          <BumpControl
+            value={`${Math.round(config.uiTextScale * 100)} %`}
+            onMinus={() =>
+              update({
+                uiTextScale: Math.max(
+                  UI_TEXT_SCALE_MIN,
+                  Number((config.uiTextScale - UI_TEXT_SCALE_STEP).toFixed(2)),
+                ),
+              })
+            }
+            onPlus={() =>
+              update({
+                uiTextScale: Math.min(
+                  UI_TEXT_SCALE_MAX,
+                  Number((config.uiTextScale + UI_TEXT_SCALE_STEP).toFixed(2)),
+                ),
+              })
+            }
+            ariaLabel="UI text scale"
+          />
+        </Row>
       </Section>
 
       {/* BOX STYLE section — chrome of every bubble / card / panel. */}

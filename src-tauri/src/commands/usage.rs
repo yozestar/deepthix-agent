@@ -238,12 +238,14 @@ pub struct ClaudeSubscription {
     pub authenticated: bool,
 }
 
+#[cfg(target_os = "macos")]
 #[derive(Deserialize)]
 struct KeychainPayload {
     #[serde(rename = "claudeAiOauth")]
     claude_ai_oauth: Option<OauthBlock>,
 }
 
+#[cfg(target_os = "macos")]
 #[derive(Deserialize)]
 struct OauthBlock {
     #[serde(rename = "subscriptionType", default)]
@@ -254,36 +256,51 @@ struct OauthBlock {
 
 #[tauri::command]
 pub fn read_claude_subscription() -> Result<ClaudeSubscription, String> {
-    // `security find-generic-password -s "Claude Code-credentials" -w` prints
-    // ONLY the password value (the JSON blob) on stdout. We parse it for
-    // the subscription metadata. macOS-only — fine since the whole app is.
-    let output = Command::new("security")
-        .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
-        .output()
-        .map_err(|e| format!("security spawn failed: {e}"))?;
-    if !output.status.success() {
-        // Not authed → return empty/unauthenticated rather than error
-        // so the UI can show a sane "not signed in" placeholder.
-        tracing::debug!(target: "deepthix::commands", "no Claude Code keychain entry");
+    // `security find-generic-password -s "Claude Code-credentials" -w` is a
+    // macOS Keychain probe — the only place claude code stores the OAuth
+    // blob there. On Windows / Linux the binary doesn't exist and the
+    // command above always errored with "security spawn failed: program
+    // not found", which the UI surfaced as a red banner in the Usage pane.
+    // Short-circuit to an empty/unauthenticated result on non-macOS so the
+    // UI just shows the "not signed in" placeholder instead.
+    #[cfg(not(target_os = "macos"))]
+    {
+        tracing::debug!(
+            target: "deepthix::commands",
+            "read_claude_subscription: not macOS — returning default (no Keychain probe)"
+        );
         return Ok(ClaudeSubscription::default());
     }
-    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let parsed: KeychainPayload = match serde_json::from_str(&raw) {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!(target: "deepthix::commands", error = %e, "parse keychain payload");
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("security")
+            .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+            .output()
+            .map_err(|e| format!("security spawn failed: {e}"))?;
+        if !output.status.success() {
+            // Not authed → return empty/unauthenticated rather than error
+            // so the UI can show a sane "not signed in" placeholder.
+            tracing::debug!(target: "deepthix::commands", "no Claude Code keychain entry");
             return Ok(ClaudeSubscription::default());
         }
-    };
-    let oauth = parsed.claude_ai_oauth.unwrap_or(OauthBlock {
-        subscription_type: None,
-        rate_limit_tier: None,
-    });
-    Ok(ClaudeSubscription {
-        subscription_type: oauth.subscription_type.unwrap_or_default(),
-        rate_limit_tier: oauth.rate_limit_tier.unwrap_or_default(),
-        authenticated: true,
-    })
+        let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let parsed: KeychainPayload = match serde_json::from_str(&raw) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(target: "deepthix::commands", error = %e, "parse keychain payload");
+                return Ok(ClaudeSubscription::default());
+            }
+        };
+        let oauth = parsed.claude_ai_oauth.unwrap_or(OauthBlock {
+            subscription_type: None,
+            rate_limit_tier: None,
+        });
+        Ok(ClaudeSubscription {
+            subscription_type: oauth.subscription_type.unwrap_or_default(),
+            rate_limit_tier: oauth.rate_limit_tier.unwrap_or_default(),
+            authenticated: true,
+        })
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -54,6 +54,14 @@ pub struct GlobalConfig {
     /// own terminal_font_family.
     #[serde(default)]
     pub ui_font: Option<String>,
+    /// Multiplier on the root <html> font-size for the whole UI (rem-
+    /// based text scales; pixel widths don't). 0.85..1.6. Default 1.0.
+    /// Lets the user enlarge chat / sidebar / settings text without
+    /// triggering the horizontal-overflow that the old CSS `zoom`
+    /// approach caused (see commit 1de8396). xterm is unaffected; it
+    /// keeps its own terminal_font_size.
+    #[serde(default)]
+    pub ui_text_scale: Option<f32>,
 }
 
 /// Read the user's active-session cap (clamped to a sane range), or

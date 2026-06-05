@@ -77,6 +77,10 @@ export interface GlobalConfig {
   maxMessagesPerSession: number;
   /** UI font: 'pixel' (charm) or 'inter' (lecture longue). */
   uiFont: UiFontId;
+  /** Multiplier on root font-size for the whole UI (xterm not affected).
+   *  Range 0.85..1.6, default 1.0. Scales rem/em-based text without
+   *  touching pixel widths so the layout stays put. */
+  uiTextScale: number;
 }
 
 export const BOX_STYLE_IDS = ['pixel', 'glass', 'flat', 'soft', 'neon'] as const;
@@ -86,6 +90,19 @@ const DEFAULT_BOX_STYLE: BoxStyleId = 'pixel';
 function applyBoxStyle(style: BoxStyleId): void {
   document.documentElement.setAttribute('data-box-style', style);
 }
+
+/** Scale every rem/em-sized text in the UI by `scale` (xterm reads its
+ *  own px-based config and is unaffected). Works by changing the root
+ *  font-size — does NOT use CSS `zoom`, which previously scaled chrome
+ *  widths too and caused horizontal overflow (commit 1de8396). */
+function applyUiTextScale(scale: number): void {
+  const safe = Math.max(UI_TEXT_SCALE_MIN, Math.min(UI_TEXT_SCALE_MAX, scale));
+  document.documentElement.style.fontSize = `${16 * safe}px`;
+}
+export const UI_TEXT_SCALE_MIN = 0.85;
+export const UI_TEXT_SCALE_MAX = 1.6;
+export const UI_TEXT_SCALE_DEFAULT = 1.0;
+export const UI_TEXT_SCALE_STEP = 0.05;
 
 export const MAX_ACTIVE_SESSIONS_DEFAULT = 6;
 export const MAX_ACTIVE_SESSIONS_MIN = 2;
@@ -103,6 +120,7 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   maxActiveSessions: MAX_ACTIVE_SESSIONS_DEFAULT,
   maxMessagesPerSession: MAX_MESSAGES_PER_SESSION_DEFAULT,
   uiFont: DEFAULT_UI_FONT,
+  uiTextScale: UI_TEXT_SCALE_DEFAULT,
 };
 
 const clampSessions = (n: number): number =>
@@ -157,6 +175,10 @@ function payloadToConfig(payload: GlobalConfigPayload | null | undefined): Globa
       (UI_FONT_IDS as readonly string[]).includes(payload.ui_font)
         ? (payload.ui_font as UiFontId)
         : DEFAULT_GLOBAL_CONFIG.uiFont,
+    uiTextScale:
+      typeof payload?.ui_text_scale === 'number'
+        ? Math.max(UI_TEXT_SCALE_MIN, Math.min(UI_TEXT_SCALE_MAX, payload.ui_text_scale))
+        : DEFAULT_GLOBAL_CONFIG.uiTextScale,
   };
 }
 
@@ -171,6 +193,7 @@ function configToPayload(config: GlobalConfig): GlobalConfigPayload {
     max_active_sessions: config.maxActiveSessions,
     max_messages_per_session: config.maxMessagesPerSession,
     ui_font: config.uiFont,
+    ui_text_scale: config.uiTextScale,
   };
 }
 
@@ -196,6 +219,7 @@ export function useGlobalConfig(): UseGlobalConfigResult {
         latestRef.current = resolved;
         applyTheme(resolved.themeId);
         applyUiFont(resolved.uiFont);
+        applyUiTextScale(resolved.uiTextScale);
         applyBoxStyle(resolved.boxStyle);
         setConfig(resolved);
         setLoaded(true);
@@ -239,6 +263,12 @@ export function useGlobalConfig(): UseGlobalConfigResult {
       // directly via its canvas API (TerminalTab.tsx).
       if (partial.uiFont && partial.uiFont !== prev.uiFont) {
         applyUiFont(next.uiFont);
+      }
+      if (
+        typeof partial.uiTextScale === 'number' &&
+        partial.uiTextScale !== prev.uiTextScale
+      ) {
+        applyUiTextScale(next.uiTextScale);
       }
       if (partial.boxStyle && partial.boxStyle !== prev.boxStyle) {
         applyBoxStyle(next.boxStyle);

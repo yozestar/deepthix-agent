@@ -56,6 +56,18 @@ export function ProjectList({
     return map;
   }, [terminals]);
 
+  // Sort projects most-recently-touched first so the project the user
+  // just worked in is always at the top of the sidebar — saves a scroll
+  // when juggling a dozen projects. Uses last_opened_unix_ms which the
+  // Rust side bumps on every project switch.
+  const sortedProjects = useMemo(
+    () =>
+      [...projects].sort(
+        (a, b) => (b.last_opened_unix_ms ?? 0) - (a.last_opened_unix_ms ?? 0),
+      ),
+    [projects],
+  );
+
   const commitRename = (id: string, original: string): void => {
     const trimmed = editingValue.trim();
     if (trimmed && trimmed !== original) {
@@ -109,7 +121,7 @@ export function ProjectList({
           No projects yet.
         </div>
       )}
-      {projects.map((p) => {
+      {sortedProjects.map((p) => {
         const isActive = p.id === activeProjectId;
         const isEditing = editingId === p.id;
         const sessions = sessionsByProject.get(p.id) ?? [];

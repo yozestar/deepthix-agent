@@ -905,6 +905,8 @@ export interface GlobalConfigPayload {
   /** Trailing messages kept in webview state per session (50..500, default 100). */
   max_messages_per_session?: number | null;
   ui_font?: string | null;
+  /** Multiplier on root font-size for the whole UI (0.85..1.6, default 1.0). */
+  ui_text_scale?: number | null;
 }
 
 export async function readGlobalConfig(): Promise<GlobalConfigPayload> {
