@@ -1,9 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { TerminalEntry } from '../hooks/useTerminals';
+import { jsonlMtimeMs } from '../tauri/commands';
 import type { Project } from '../tauri/types';
 import { StatusDot } from './StatusDot';
+
+/** How often to re-scan the JSONL mtimes to keep the sidebar sorted by
+ *  last-chat-message. 30s is enough for the user to notice the order
+ *  refreshing without hammering the disk (every Tauri call = one stat()).
+ */
+const ACTIVITY_POLL_MS = 30_000;
 
 interface Props {
   projects: Project[];
@@ -56,17 +63,90 @@ export function ProjectList({
     return map;
   }, [terminals]);
 
-  // Sort projects most-recently-touched first so the project the user
-  // just worked in is always at the top of the sidebar — saves a scroll
-  // when juggling a dozen projects. Uses last_opened_unix_ms which the
-  // Rust side bumps on every project switch.
-  const sortedProjects = useMemo(
+  // Per-(project, sessionId) JSONL mtime cache. Polled every
+  // ACTIVITY_POLL_MS so projects re-sort when claude writes a new
+  // message into one of their sessions (the actual "last activity"
+  // the user cares about — not just when they clicked-to-switch).
+  const [sessionMtimes, setSessionMtimes] = useState<Map<string, number>>(new Map());
+  // Re-derive a stable list of (cwd, sessionId) pairs to query so the
+  // polling effect doesn't fire on every terminal-list re-render — only
+  // when the actual set of sessions changes.
+  const sessionsToProbe = useMemo(() => {
+    const out: { cwd: string; sessionId: string; key: string }[] = [];
+    for (const t of terminals) {
+      if (t.kind !== 'claude' || !t.sessionId) continue;
+      out.push({
+        cwd: t.cwd,
+        sessionId: t.sessionId,
+        key: `${t.cwd}::${t.sessionId}`,
+      });
+    }
+    return out;
+  }, [terminals]);
+  const sessionsKey = useMemo(
     () =>
-      [...projects].sort(
-        (a, b) => (b.last_opened_unix_ms ?? 0) - (a.last_opened_unix_ms ?? 0),
-      ),
-    [projects],
+      sessionsToProbe
+        .map((s) => s.key)
+        .sort()
+        .join('|'),
+    [sessionsToProbe],
   );
+  const sessionsToProbeRef = useRef(sessionsToProbe);
+  useEffect(() => {
+    sessionsToProbeRef.current = sessionsToProbe;
+  }, [sessionsToProbe]);
+  useEffect(() => {
+    let cancelled = false;
+    const probe = async (): Promise<void> => {
+      const targets = sessionsToProbeRef.current;
+      if (targets.length === 0) return;
+      const results = await Promise.allSettled(
+        targets.map((s) => jsonlMtimeMs(s.cwd, s.sessionId)),
+      );
+      if (cancelled) return;
+      setSessionMtimes((prev) => {
+        const next = new Map(prev);
+        results.forEach((r, i) => {
+          if (r.status === 'fulfilled' && r.value.mtime_ms > 0) {
+            next.set(targets[i].key, r.value.mtime_ms);
+          }
+        });
+        return next;
+      });
+    };
+    // Fire once immediately so the first sort reflects disk state, then
+    // poll on a slow interval. Re-runs when the set of sessions changes
+    // (sessionsKey memo above) so newly-added sessions get probed too.
+    void probe();
+    const interval = setInterval(() => void probe(), ACTIVITY_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [sessionsKey]);
+
+  // Sort projects by their last *chat* activity (max JSONL mtime across
+  // their sessions) — so the project where claude just wrote a reply
+  // bubbles to the top even if the user is currently on another
+  // project. Fallback to last_opened_unix_ms when a project has no
+  // sessions yet.
+  const sortedProjects = useMemo(() => {
+    const activityForProject = (projectId: string, cwd: string): number => {
+      const sessions = sessionsByProject.get(projectId) ?? [];
+      let max = 0;
+      for (const s of sessions) {
+        if (!s.sessionId) continue;
+        const t = sessionMtimes.get(`${cwd}::${s.sessionId}`) ?? 0;
+        if (t > max) max = t;
+      }
+      return max;
+    };
+    return [...projects].sort((a, b) => {
+      const ta = activityForProject(a.id, a.path) || (a.last_opened_unix_ms ?? 0);
+      const tb = activityForProject(b.id, b.path) || (b.last_opened_unix_ms ?? 0);
+      return tb - ta;
+    });
+  }, [projects, sessionsByProject, sessionMtimes]);
 
   const commitRename = (id: string, original: string): void => {
     const trimmed = editingValue.trim();
