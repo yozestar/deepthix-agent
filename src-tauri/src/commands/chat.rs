@@ -1328,7 +1328,16 @@ pub fn chat_load_history(project_cwd: PathBuf, session_id: String) -> Result<Vec
             return Ok(vec![]);
         }
     };
-    Ok(raw.lines().filter(|l| !l.is_empty()).map(|s| s.to_string()).collect())
+    // Cap to the last HISTORY_TAIL_LINES non-empty lines. A long-running
+    // session's JSONL can reach 8-10 MB (thousands of records); shipping
+    // all of them over IPC and parsing each into a Message bubble froze
+    // the UI for tens of seconds on project switch. The webview only
+    // keeps the last ~100 messages in state anyway (messagesCap), so
+    // anything beyond a few hundred trailing lines is invisible work.
+    const HISTORY_TAIL_LINES: usize = 600;
+    let all: Vec<&str> = raw.lines().filter(|l| !l.is_empty()).collect();
+    let start = all.len().saturating_sub(HISTORY_TAIL_LINES);
+    Ok(all[start..].iter().map(|s| s.to_string()).collect())
 }
 
 /// Format the last `last_n` user/assistant turns of a session into a

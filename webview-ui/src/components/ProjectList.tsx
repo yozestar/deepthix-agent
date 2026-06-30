@@ -170,6 +170,8 @@ export function ProjectList({
         flexDirection: 'column',
         gap: '4px',
         fontFamily: 'var(--font-pixel)',
+        flex: 1,
+        minHeight: 0,
       }}
     >
       {/* SETTINGS button (Phase 11). Sits above the PROJECTS section so
@@ -196,6 +198,19 @@ export function ProjectList({
         <span>Projects</span>
         <span style={{ opacity: 0.65, fontSize: 9 }}>{projects.length}</span>
       </div>
+      {/* Scrollable project list — the user runs 20+ projects, so the
+          rows get their own scroll area while SETTINGS (above) and
+          + Open Folder (below) stay pinned. */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+        }}
+      >
       {projects.length === 0 && (
         <div style={{ fontSize: '13px', opacity: 0.6, padding: '4px' }}>
           No projects yet.
@@ -306,6 +321,7 @@ export function ProjectList({
           </div>
         );
       })}
+      </div>
       <button
         type="button"
         onClick={onOpenFolder}
@@ -319,6 +335,7 @@ export function ProjectList({
           cursor: 'pointer',
           fontSize: '13px',
           fontFamily: 'var(--font-pixel)',
+          flexShrink: 0,
         }}
       >
         + Open Folder

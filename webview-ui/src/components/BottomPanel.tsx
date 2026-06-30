@@ -88,6 +88,10 @@ export function SessionsPane({
   const draggingRef = useRef(false);
   const startYRef = useRef(0);
   const startHRef = useRef(0);
+  // Set of terminal ids whose ChatPane has been mounted at least once.
+  // Drives lazy mounting (see the content map below) so we don't pay
+  // chat_load_history for every session on startup.
+  const visitedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, String(height));
@@ -142,6 +146,17 @@ export function SessionsPane({
   // When there are no visible sessions, hide the panel entirely so the
   // tamagotchi gets the whole main area.
   if (visible.length === 0) return null;
+
+  // PERF: only MOUNT a claude ChatPane once its tab has actually been
+  // viewed. Before this, BottomPanel mounted EVERY terminal across
+  // EVERY project (line "terminals.terminals.map") — with lazy-spawn
+  // ghosts that meant 20+ ChatPanes all calling chat_load_history and
+  // parsing multi-MB JSONL transcripts at once on app start / project
+  // switch, freezing the UI ~30s. Now a claude pane mounts only when
+  // it becomes the active tab (and stays mounted afterwards so
+  // re-clicks are instant). Shell terminals still mount eagerly — they
+  // host a live xterm pty whose scrollback must survive project switches.
+  if (effectiveActive) visitedRef.current.add(effectiveActive);
 
   // Drag handles + height state intentionally kept (line ~82-140) but
   // unused now that SessionsPane fills the parent — the old code split
@@ -266,8 +281,13 @@ export function SessionsPane({
 
       {/* xterm content (one node per terminal, hidden via display:none for inactive). */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {/* Mount EVERY terminal so xterm scrollback survives project switches. */}
-        {terminals.terminals.map((t) => (
+        {/* Mount shells eagerly (live xterm scrollback must survive
+            project switches) but claude chat panes only once visited
+            (lazy — see visitedRef above). This keeps startup / project
+            switch from hydrating 20+ multi-MB JSONL transcripts at once. */}
+        {terminals.terminals
+          .filter((t) => t.kind !== 'claude' || visitedRef.current.has(t.id))
+          .map((t) => (
           <div
             key={t.id}
             style={{
