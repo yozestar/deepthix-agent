@@ -88,10 +88,14 @@ export function SessionsPane({
   const draggingRef = useRef(false);
   const startYRef = useRef(0);
   const startHRef = useRef(0);
-  // Set of terminal ids whose ChatPane has been mounted at least once.
-  // Drives lazy mounting (see the content map below) so we don't pay
-  // chat_load_history for every session on startup.
-  const visitedRef = useRef<Set<string>>(new Set());
+  // Set of terminal AGENT IDS whose ChatPane has been mounted at least
+  // once. Drives lazy mounting (see the content map below) so we don't
+  // pay chat_load_history for every session on startup. Keyed by
+  // agentId (a stable per-entry number) NOT id, because a ghost
+  // session's id changes from "ghost:<sid>" to "chat-<uuid>" when it's
+  // promoted on first send — keying by id would drop the pane from the
+  // visited set (and remount it), losing the just-typed first message.
+  const visitedRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, String(height));
@@ -156,7 +160,8 @@ export function SessionsPane({
   // it becomes the active tab (and stays mounted afterwards so
   // re-clicks are instant). Shell terminals still mount eagerly — they
   // host a live xterm pty whose scrollback must survive project switches.
-  if (effectiveActive) visitedRef.current.add(effectiveActive);
+  const activeEntry = visible.find((t) => t.id === effectiveActive);
+  if (activeEntry) visitedRef.current.add(activeEntry.agentId);
 
   // Drag handles + height state intentionally kept (line ~82-140) but
   // unused now that SessionsPane fills the parent — the old code split
@@ -286,10 +291,10 @@ export function SessionsPane({
             (lazy — see visitedRef above). This keeps startup / project
             switch from hydrating 20+ multi-MB JSONL transcripts at once. */}
         {terminals.terminals
-          .filter((t) => t.kind !== 'claude' || visitedRef.current.has(t.id))
+          .filter((t) => t.kind !== 'claude' || visitedRef.current.has(t.agentId))
           .map((t) => (
           <div
-            key={t.id}
+            key={t.agentId}
             style={{
               position: 'absolute',
               inset: 0,
