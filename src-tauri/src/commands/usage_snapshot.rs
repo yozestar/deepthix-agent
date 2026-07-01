@@ -105,9 +105,21 @@ printf ' '
     // ship it via Tauri's sidecar config — for now we just look beside
     // the running executable, which works for both dev and any sidecar
     // copy that lands in the same dir.
+    //
+    // Platform note: the binary is `deepthix-mcp.exe` on Windows and
+    // `deepthix-mcp` elsewhere. The previous code only ever looked for
+    // the extension-less name, so on Windows `.exists()` was always
+    // false and the orchestrator tools (deepthix__run_subtask) were
+    // silently disabled — the user hit "run_subtask not loaded" with
+    // the reaper logging "deepthix-mcp binary not found beside app".
+    let mcp_name = if cfg!(windows) {
+        "deepthix-mcp.exe"
+    } else {
+        "deepthix-mcp"
+    };
     let mcp_bin = std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|d| d.join("deepthix-mcp")))
+        .and_then(|p| p.parent().map(|d| d.join(mcp_name)))
         .filter(|p| p.exists());
 
     let overlay = serde_json::json!({
