@@ -70,23 +70,23 @@ export function ProjectList({
   const [sessionMtimes, setSessionMtimes] = useState<Map<string, number>>(new Map());
   // Re-derive a stable list of (cwd, sessionId) pairs to query so the
   // polling effect doesn't fire on every terminal-list re-render — only
-  // when the actual set of sessions changes.
+  // when the actual set of sessions changes. Keyed by sessionId ALONE
+  // (a globally-unique UUID) so the sort lookup below can't miss due to
+  // a cwd-string mismatch between the project path and the session cwd
+  // (verbatim \\?\ prefix, trailing slash, etc.) — that mismatch was
+  // why the sidebar wasn't actually re-sorting by last activity.
   const sessionsToProbe = useMemo(() => {
-    const out: { cwd: string; sessionId: string; key: string }[] = [];
+    const out: { cwd: string; sessionId: string }[] = [];
     for (const t of terminals) {
       if (t.kind !== 'claude' || !t.sessionId) continue;
-      out.push({
-        cwd: t.cwd,
-        sessionId: t.sessionId,
-        key: `${t.cwd}::${t.sessionId}`,
-      });
+      out.push({ cwd: t.cwd, sessionId: t.sessionId });
     }
     return out;
   }, [terminals]);
   const sessionsKey = useMemo(
     () =>
       sessionsToProbe
-        .map((s) => s.key)
+        .map((s) => s.sessionId)
         .sort()
         .join('|'),
     [sessionsToProbe],
@@ -108,7 +108,7 @@ export function ProjectList({
         const next = new Map(prev);
         results.forEach((r, i) => {
           if (r.status === 'fulfilled' && r.value.mtime_ms > 0) {
-            next.set(targets[i].key, r.value.mtime_ms);
+            next.set(targets[i].sessionId, r.value.mtime_ms);
           }
         });
         return next;
@@ -131,19 +131,19 @@ export function ProjectList({
   // project. Fallback to last_opened_unix_ms when a project has no
   // sessions yet.
   const sortedProjects = useMemo(() => {
-    const activityForProject = (projectId: string, cwd: string): number => {
+    const activityForProject = (projectId: string): number => {
       const sessions = sessionsByProject.get(projectId) ?? [];
       let max = 0;
       for (const s of sessions) {
         if (!s.sessionId) continue;
-        const t = sessionMtimes.get(`${cwd}::${s.sessionId}`) ?? 0;
+        const t = sessionMtimes.get(s.sessionId) ?? 0;
         if (t > max) max = t;
       }
       return max;
     };
     return [...projects].sort((a, b) => {
-      const ta = activityForProject(a.id, a.path) || (a.last_opened_unix_ms ?? 0);
-      const tb = activityForProject(b.id, b.path) || (b.last_opened_unix_ms ?? 0);
+      const ta = activityForProject(a.id) || (a.last_opened_unix_ms ?? 0);
+      const tb = activityForProject(b.id) || (b.last_opened_unix_ms ?? 0);
       return tb - ta;
     });
   }, [projects, sessionsByProject, sessionMtimes]);

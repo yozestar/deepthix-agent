@@ -14,6 +14,7 @@ import { SkillsPane } from './components/SkillsPane';
 import { TerminalDropTarget } from './components/TerminalDropTarget';
 import { UpdaterBanner } from './components/UpdaterBanner';
 import { type Mode, TopTabs } from './components/TopTabs';
+import { UsagePane } from './components/UsagePane';
 import { VariablesPane } from './components/VariablesPane';
 import { VoiceRecorder } from './components/VoiceRecorder';
 import { Welcome } from './components/Welcome';
@@ -153,17 +154,6 @@ function App(): React.JSX.Element {
     void terminals.open(projectId, cwd, 'claude', undefined, { skipPermissions: skipPerms });
   };
 
-  // Sidebar file-tree click → switch to Files mode + open the file. Used by
-  // both the sidebar's `onFileClick` handler and as a shared API.
-  const onSidebarFileClick = useCallback(
-    (path: string): void => {
-      console.debug('[Deepthix][App] sidebar file click', { path });
-      openFiles.open(path);
-      setMode('files');
-    },
-    [openFiles],
-  );
-
   const onOpenSettings = useCallback((): void => {
     console.debug('[Deepthix][App] open settings');
     setMode('settings');
@@ -180,8 +170,6 @@ function App(): React.JSX.Element {
     >
       <Sidebar
         projects={projects}
-        fileTree={fileTree}
-        onFileClick={onSidebarFileClick}
         terminals={terminals.terminals}
         onOpenSettings={onOpenSettings}
         settingsActive={mode === 'settings'}
@@ -326,6 +314,11 @@ function App(): React.JSX.Element {
                 fileTree={fileTree}
                 openFiles={openFiles}
               />
+            </ModeOverlay>
+          )}
+          {mode === 'usage' && (
+            <ModeOverlay>
+              <UsagePane />
             </ModeOverlay>
           )}
           {mode === 'skills' && (

@@ -12,6 +12,7 @@ export type Mode =
   | 'process'
   | 'memory'
   | 'files'
+  | 'usage'
   | 'skills'
   | 'schedule'
   | 'workflow'
@@ -25,12 +26,13 @@ interface Props {
 }
 
 /** Visible top-tab modes, in display order. `'settings'` is filtered out.
- *  `'files'` (Code) hidden per user request — operator-style usage, code
- *  pane never opened. Mode still exists in the union so callers can switch
- *  to it programmatically if a future feature needs it. */
+ *  FILES and USAGE live here (moved out of the left sidebar per user
+ *  request — the sidebar is now the projects-only scroll column). */
 const VISIBLE_MODES: ReadonlyArray<Mode> = [
   'overview',
   'sessions',
+  'files',
+  'usage',
   'process',
   'memory',
   'skills',

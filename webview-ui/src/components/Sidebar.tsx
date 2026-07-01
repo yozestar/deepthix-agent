@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { UseFileTreeResult } from '../hooks/useFileTree';
 import type { UseProjectsResult } from '../hooks/useProjects';
 import type { TerminalEntry } from '../hooks/useTerminals';
-import { FileTree } from './FileTree';
 import { ProjectList } from './ProjectList';
-import { UsagePane } from './UsagePane';
 
 const MIN_WIDTH = 160;
 const DEFAULT_WIDTH = 220;
@@ -13,13 +10,6 @@ const STORAGE_KEY = 'deepthix.sidebarWidth';
 
 interface Props {
   projects: UseProjectsResult;
-  fileTree: UseFileTreeResult;
-  /**
-   * Optional. Forwarded to the FileTree: clicking a file in the sidebar tree
-   * fires this callback. App.tsx uses it to switch to Files mode and open
-   * the file as a sub-tab.
-   */
-  onFileClick?: (path: string) => void;
   /** All terminals across every project — feeds the per-project status dot. */
   terminals: TerminalEntry[];
   /** Switches the right pane to the SettingsPane. */
@@ -30,8 +20,6 @@ interface Props {
 
 export function Sidebar({
   projects,
-  fileTree,
-  onFileClick,
   terminals,
   onOpenSettings,
   settingsActive,
@@ -90,6 +78,10 @@ export function Sidebar({
           borderRight: '1px solid var(--color-border)',
         }}
       >
+        {/* Left sidebar is now PROJECTS-only per user request — the
+            FileTree and Usage blocks moved to the top-menu tabs (FILES
+            / USAGE) so the whole left column is the scrollable project
+            switcher. */}
         <ProjectList
           projects={projects.projects}
           activeProjectId={projects.activeProjectId}
@@ -101,9 +93,6 @@ export function Sidebar({
           onOpenSettings={onOpenSettings}
           settingsActive={settingsActive}
         />
-        <hr className="dt-divider" />
-        <FileTree tree={fileTree} onFileClick={onFileClick} />
-        <UsagePane />
       </div>
       <div
         onMouseDown={onMouseDown}
