@@ -13,6 +13,7 @@
 // reads a `{"type":"user","message":{...}}` line on stdin and produces
 // the matching response.
 
+import { Mic, SendHorizontal } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -1691,7 +1692,7 @@ function ChatPaneImpl({
           padding: '6px 12px',
           background: 'var(--color-bg-dark)',
           borderBottom: '1px solid var(--color-border)',
-          fontSize: '11px',
+          fontSize: '0.6875rem',
           gap: 8,
           flexShrink: 0,
         }}
@@ -1722,7 +1723,7 @@ function ChatPaneImpl({
               color: currentModel ? 'var(--color-bg-dark)' : 'inherit',
               border: '2px solid var(--color-border)',
               fontFamily: 'var(--font-pixel)',
-              fontSize: 10,
+              fontSize: '0.625rem',
               cursor: termId ? 'pointer' : 'default',
               letterSpacing: '0.04em',
               opacity: termId ? 1 : 0.4,
@@ -1740,7 +1741,7 @@ function ChatPaneImpl({
                   color: 'var(--color-accent)',
                   fontWeight: 'bold',
                   letterSpacing: '0.06em',
-                  fontSize: 9,
+                  fontSize: '0.5625rem',
                 }}
               >
                 {currentEffort.toUpperCase()}
@@ -1753,7 +1754,7 @@ function ChatPaneImpl({
             <>
               <ThinkingIndicator />
               {liveUsage && (
-                <span style={{ opacity: 0.75, fontSize: 11 }}>
+                <span style={{ opacity: 0.75, fontSize: '0.6875rem' }}>
                   {Math.max(0, Math.round((liveUsage.nowMs - liveUsage.startedAt) / 1000))}s
                   {liveUsage.outputTokens > 0 && ` · ${formatTokenCount(liveUsage.outputTokens)} tok`}
                 </span>
@@ -1870,7 +1871,7 @@ function ChatPaneImpl({
               padding: '8px 10px',
               background: 'var(--color-danger)',
               color: 'var(--color-bg-dark)',
-              fontSize: '12px',
+              fontSize: '0.75rem',
               border: '2px solid var(--color-border)',
             }}
           >
@@ -1878,7 +1879,7 @@ function ChatPaneImpl({
           </div>
         )}
         {messages.length === 0 && !error && (
-          <div style={{ opacity: 0.55, padding: '24px', textAlign: 'center', fontSize: '13px' }}>
+          <div style={{ opacity: 0.55, padding: '24px', textAlign: 'center', fontSize: '0.8125rem' }}>
             Type a message and hit ⏎ to start.
           </div>
         )}
@@ -2111,10 +2112,10 @@ function ModelPicker({
         }}
       >
         <div>
-          <div style={{ fontSize: 13, fontWeight: 'bold', letterSpacing: '0.05em' }}>
+          <div style={{ fontSize: '0.8125rem', fontWeight: 'bold', letterSpacing: '0.05em' }}>
             Switch model & reasoning effort
           </div>
-          <div style={{ fontSize: 11, opacity: 0.65, marginTop: 2 }}>
+          <div style={{ fontSize: '0.6875rem', opacity: 0.65, marginTop: 2 }}>
             Conversation context is preserved (--resume).
           </div>
         </div>
@@ -2140,22 +2141,22 @@ function ModelPicker({
                   border: `2px solid ${isSelected ? 'var(--color-accent)' : 'var(--color-border)'}`,
                   cursor: 'pointer',
                   fontFamily: 'var(--font-pixel)',
-                  fontSize: 12,
+                  fontSize: '0.75rem',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 2,
                   transition: 'border-color 120ms ease, background 120ms ease',
                 }}
               >
-                <span style={{ fontWeight: 'bold', fontSize: 13 }}>
+                <span style={{ fontWeight: 'bold', fontSize: '0.8125rem' }}>
                   {c.label}
                   {isSelected && (
-                    <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--color-accent)' }}>
+                    <span style={{ marginLeft: 8, fontSize: '0.625rem', color: 'var(--color-accent)' }}>
                       ✓
                     </span>
                   )}
                 </span>
-                <span style={{ fontSize: 11, opacity: 0.75 }}>{c.tagline}</span>
+                <span style={{ fontSize: '0.6875rem', opacity: 0.75 }}>{c.tagline}</span>
               </button>
             );
           })}
@@ -2182,7 +2183,7 @@ function ModelPicker({
                     border: `2px solid ${isSelected ? 'var(--color-accent)' : 'var(--color-border)'}`,
                     cursor: 'pointer',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: 11,
+                    fontSize: '0.6875rem',
                     fontWeight: isSelected ? 'bold' : 'normal',
                     transition: 'border-color 120ms ease, background 120ms ease',
                   }}
@@ -2192,13 +2193,13 @@ function ModelPicker({
               );
             })}
           </div>
-          <div style={{ fontSize: 10, opacity: 0.7, lineHeight: 1.45 }}>
+          <div style={{ fontSize: '0.625rem', opacity: 0.7, lineHeight: 1.45 }}>
             {EFFORT_CHOICES.find((e) => e.id === draftEffort)?.tagline ?? ''}
           </div>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-          <button type="button" onClick={onClose} className="dt-btn" style={{ fontSize: 11 }}>
+          <button type="button" onClick={onClose} className="dt-btn" style={{ fontSize: '0.6875rem' }}>
             Cancel
           </button>
           <button
@@ -2206,7 +2207,7 @@ function ModelPicker({
             onClick={() => onPick(draftModel, draftEffort)}
             disabled={isUnchanged}
             className="dt-btn dt-btn--primary"
-            style={{ fontSize: 11 }}
+            style={{ fontSize: '0.6875rem' }}
           >
             {isUnchanged ? 'No change' : 'Apply'}
           </button>
@@ -2371,7 +2372,7 @@ function ChatInput({
             zIndex: 10,
             maxHeight: 240,
             overflow: 'auto',
-            fontSize: '12px',
+            fontSize: '0.75rem',
           }}
         >
           {filtered.map((cmd, i) => (
@@ -2396,7 +2397,7 @@ function ChatInput({
                 border: 'none',
                 cursor: 'pointer',
                 fontFamily: 'var(--font-pixel)',
-                fontSize: '12px',
+                fontSize: '0.75rem',
               }}
             >
               /{cmd}
@@ -2529,7 +2530,7 @@ function ChatInput({
             border: '2px solid var(--color-border)',
             outline: 'none',
             fontFamily: 'var(--font-pixel)',
-            fontSize: '14px',
+            fontSize: '0.875rem',
             lineHeight: 1.5,
           }}
         />
@@ -2546,10 +2547,14 @@ function ChatInput({
             boxShadow: canSend && input.trim() ? 'var(--shadow-pixel)' : 'none',
             cursor: canSend && input.trim() ? 'pointer' : 'default',
             fontFamily: 'var(--font-pixel)',
-            fontSize: '13px',
+            fontSize: '0.8125rem',
             opacity: canSend && input.trim() ? 1 : 0.4,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
           }}
         >
+          <SendHorizontal size="1.1em" strokeWidth={2} aria-hidden />
           {input.trim() && busy ? 'Queue' : 'Send'}
         </button>
         {busy && (
@@ -2565,7 +2570,7 @@ function ChatInput({
               boxShadow: 'var(--shadow-pixel)',
               cursor: 'pointer',
               fontFamily: 'var(--font-pixel)',
-              fontSize: '13px',
+              fontSize: '0.8125rem',
             }}
           >
             ⏹ Stop
@@ -2605,7 +2610,7 @@ function AttachmentChip({
         maxWidth: 180,
         overflow: 'hidden',
         fontFamily: 'var(--font-pixel)',
-        fontSize: 11,
+        fontSize: '0.6875rem',
       }}
       title={att.path}
     >
@@ -2659,7 +2664,7 @@ function AttachmentChip({
           color: 'var(--color-text)',
           border: '1px solid var(--color-border)',
           fontFamily: 'var(--font-pixel)',
-          fontSize: 11,
+          fontSize: '0.6875rem',
           lineHeight: 1,
           cursor: 'pointer',
           padding: 0,
@@ -2703,7 +2708,7 @@ function MicButton({ disabled }: { disabled: boolean }): React.JSX.Element {
         boxShadow: holding ? 'var(--shadow-pixel)' : 'none',
         cursor: disabled ? 'default' : 'pointer',
         fontFamily: 'var(--font-pixel)',
-        fontSize: '13px',
+        fontSize: '0.8125rem',
         opacity: disabled ? 0.4 : 1,
         display: 'inline-flex',
         alignItems: 'center',
@@ -2711,8 +2716,8 @@ function MicButton({ disabled }: { disabled: boolean }): React.JSX.Element {
         userSelect: 'none',
       }}
     >
-      <span>{holding ? '🔴' : '🎙'}</span>
-      <span style={{ fontSize: 10, opacity: 0.7 }}>⌘M</span>
+      <Mic size="1.1em" strokeWidth={1.75} aria-hidden />
+      <span style={{ fontSize: '0.625rem', opacity: 0.7 }}>⌘M</span>
     </button>
   );
 }
@@ -2745,7 +2750,7 @@ function PendingPlaceholder(): React.JSX.Element {
         border: '2px solid var(--color-border)',
         boxShadow: 'var(--shadow-pixel)',
         padding: '8px 12px',
-        fontSize: 12,
+        fontSize: '0.75rem',
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
@@ -2818,7 +2823,7 @@ function LastMessageStamp({ ts }: { ts: number }): React.JSX.Element {
     <div
       style={{
         opacity: 0.5,
-        fontSize: 11,
+        fontSize: '0.6875rem',
         padding: '4px 12px 8px',
         textAlign: 'right',
         fontFamily: 'var(--font-pixel)',
@@ -2913,7 +2918,7 @@ function ResumePickerPopup({
             justifyContent: 'space-between',
           }}
         >
-          <span style={{ fontSize: 14, fontWeight: 'bold', letterSpacing: '0.06em' }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 'bold', letterSpacing: '0.06em' }}>
             /resume — pick a session
           </span>
           <button
@@ -2925,7 +2930,7 @@ function ResumePickerPopup({
               color: 'inherit',
               border: '1px solid var(--color-border)',
               fontFamily: 'var(--font-pixel)',
-              fontSize: 11,
+              fontSize: '0.6875rem',
               cursor: 'pointer',
             }}
           >
@@ -2934,13 +2939,13 @@ function ResumePickerPopup({
         </div>
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 8 }}>
           {error && (
-            <div style={{ padding: 12, color: 'var(--color-danger)', fontSize: 12 }}>{error}</div>
+            <div style={{ padding: 12, color: 'var(--color-danger)', fontSize: '0.75rem' }}>{error}</div>
           )}
           {!error && !sessions && (
-            <div style={{ padding: 12, opacity: 0.6, fontSize: 12 }}>Loading…</div>
+            <div style={{ padding: 12, opacity: 0.6, fontSize: '0.75rem' }}>Loading…</div>
           )}
           {!error && sessions && sessions.length === 0 && (
-            <div style={{ padding: 12, opacity: 0.6, fontSize: 12 }}>
+            <div style={{ padding: 12, opacity: 0.6, fontSize: '0.75rem' }}>
               No resumable sessions found in <code>{cwd}</code>.
             </div>
           )}
@@ -2965,7 +2970,7 @@ function ResumePickerPopup({
                     border: '1px solid var(--color-border)',
                     cursor: isCurrent ? 'default' : 'pointer',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: 12,
+                    fontSize: '0.75rem',
                     opacity: isCurrent ? 0.6 : 1,
                     boxSizing: 'border-box',
                   }}
@@ -2982,26 +2987,26 @@ function ResumePickerPopup({
                     <span
                       style={{
                         fontFamily: 'Menlo, Consolas, monospace',
-                        fontSize: 11,
+                        fontSize: '0.6875rem',
                         color: 'var(--color-accent)',
                       }}
                     >
                       {s.session_id.slice(0, 8)}
                     </span>
-                    <span style={{ fontSize: 10, opacity: 0.55 }}>
+                    <span style={{ fontSize: '0.625rem', opacity: 0.55 }}>
                       {new Date(s.modified_ms).toLocaleString()}
                     </span>
-                    <span style={{ fontSize: 10, opacity: 0.55 }}>
+                    <span style={{ fontSize: '0.625rem', opacity: 0.55 }}>
                       · {s.user_turn_count} turn{s.user_turn_count === 1 ? '' : 's'}
                     </span>
-                    <span style={{ fontSize: 10, opacity: 0.55 }}>
+                    <span style={{ fontSize: '0.625rem', opacity: 0.55 }}>
                       · {(s.size_bytes / 1024).toFixed(1)} KB
                     </span>
                     {isCurrent && (
                       <span
                         style={{
                           marginLeft: 'auto',
-                          fontSize: 10,
+                          fontSize: '0.625rem',
                           padding: '1px 6px',
                           background: 'var(--color-accent)',
                           color: 'var(--color-bg-dark)',
@@ -3014,7 +3019,7 @@ function ResumePickerPopup({
                   </div>
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: '0.6875rem',
                       opacity: 0.85,
                       lineHeight: 1.4,
                       maxHeight: 36,
@@ -3093,7 +3098,7 @@ function MessageBubbleImpl({
           className="dt-chat-msg"
           style={{
             alignSelf: 'center',
-            fontSize: '11px',
+            fontSize: '0.6875rem',
             opacity: 0.7,
             padding: '6px 10px',
             border: '1px dashed var(--color-border)',
@@ -3117,7 +3122,7 @@ function MessageBubbleImpl({
           className="dt-chat-msg"
           style={{
             alignSelf: 'center',
-            fontSize: '11px',
+            fontSize: '0.6875rem',
             opacity: 0.7,
             padding: '4px 10px',
             border: '2px solid var(--color-border)',
@@ -3134,7 +3139,7 @@ function MessageBubbleImpl({
           className="dt-chat-msg"
           style={{
             alignSelf: 'stretch',
-            fontSize: '12px',
+            fontSize: '0.75rem',
             padding: '6px 10px',
             background: 'var(--color-danger)',
             color: 'var(--color-bg-dark)',
@@ -3210,7 +3215,7 @@ function QuickRepliesImpl({
           background: 'var(--color-danger)',
           color: 'var(--color-bg-dark)',
           border: '2px solid var(--color-border)',
-          fontSize: '11px',
+          fontSize: '0.6875rem',
           maxWidth: '92%',
         }}
       >
@@ -3240,7 +3245,7 @@ function QuickRepliesImpl({
           title={opt}
           style={{
             padding: '4px 12px',
-            fontSize: 11,
+            fontSize: '0.6875rem',
             fontFamily: 'var(--font-pixel)',
             background: 'var(--color-accent)',
             color: 'var(--color-bg-dark)',
@@ -3365,7 +3370,7 @@ function BubbleImpl({
         border: '2px solid var(--color-border)',
         boxShadow: 'var(--shadow-pixel)',
         padding: '8px 10px',
-        fontSize: '13px',
+        fontSize: '0.8125rem',
         lineHeight: 1.45,
         whiteSpace: markdown ? 'normal' : 'pre-wrap',
         wordBreak: 'break-word',
@@ -3373,7 +3378,7 @@ function BubbleImpl({
     >
       <div
         style={{
-          fontSize: '10px',
+          fontSize: '0.625rem',
           opacity: 0.6,
           marginBottom: 4,
           display: 'flex',
@@ -3397,7 +3402,7 @@ function BubbleImpl({
               marginLeft: 4,
               padding: '0 4px',
               fontFamily: 'var(--font-pixel)',
-              fontSize: '11px',
+              fontSize: '0.6875rem',
               lineHeight: 1.2,
               background: 'transparent',
               color: 'inherit',
@@ -3459,7 +3464,7 @@ function DateSeparator({ ts }: { ts: number }): React.JSX.Element {
     <div
       style={{
         alignSelf: 'center',
-        fontSize: 10,
+        fontSize: '0.625rem',
         opacity: 0.55,
         background: 'var(--color-bg-dark)',
         border: '1px solid var(--color-border)',
@@ -3486,7 +3491,7 @@ function DateSeparator({ ts }: { ts: number }): React.JSX.Element {
 const MarkdownBody = memo(MarkdownBodyImpl);
 function MarkdownBodyImpl({ source }: { source: string }): React.JSX.Element {
   return (
-    <div style={{ fontSize: '13px', lineHeight: 1.5 }}>
+    <div className="dt-markdown" style={{ fontSize: '0.875rem', lineHeight: 1.6 }}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -3499,13 +3504,13 @@ function MarkdownBodyImpl({ source }: { source: string }): React.JSX.Element {
           ),
           li: ({ children }) => <li style={{ margin: '2px 0' }}>{children}</li>,
           h1: ({ children }) => (
-            <h1 style={{ fontSize: '15px', fontWeight: 'bold', margin: '8px 0 4px' }}>{children}</h1>
+            <h1 style={{ fontSize: '0.9375rem', fontWeight: 'bold', margin: '8px 0 4px' }}>{children}</h1>
           ),
           h2: ({ children }) => (
-            <h2 style={{ fontSize: '14px', fontWeight: 'bold', margin: '8px 0 4px' }}>{children}</h2>
+            <h2 style={{ fontSize: '0.875rem', fontWeight: 'bold', margin: '8px 0 4px' }}>{children}</h2>
           ),
           h3: ({ children }) => (
-            <h3 style={{ fontSize: '13px', fontWeight: 'bold', margin: '6px 0 3px' }}>{children}</h3>
+            <h3 style={{ fontSize: '0.8125rem', fontWeight: 'bold', margin: '6px 0 3px' }}>{children}</h3>
           ),
           strong: ({ children }) => <strong style={{ fontWeight: 'bold' }}>{children}</strong>,
           em: ({ children }) => <em style={{ fontStyle: 'italic' }}>{children}</em>,
@@ -3532,7 +3537,7 @@ function MarkdownBodyImpl({ source }: { source: string }): React.JSX.Element {
                   className={className}
                   style={{
                     fontFamily: 'Menlo, Consolas, monospace',
-                    fontSize: '12px',
+                    fontSize: '0.75rem',
                     color: 'var(--color-text)',
                   }}
                 >
@@ -3544,11 +3549,11 @@ function MarkdownBodyImpl({ source }: { source: string }): React.JSX.Element {
               <code
                 style={{
                   fontFamily: 'Menlo, Consolas, monospace',
-                  fontSize: '12px',
+                  fontSize: '0.75rem',
                   background: 'var(--color-bg)',
                   border: '1px solid var(--color-border)',
                   padding: '0 4px',
-                  borderRadius: 0,
+                  borderRadius: 'var(--surface-radius, 0px)',
                 }}
               >
                 {children}
@@ -3561,10 +3566,11 @@ function MarkdownBodyImpl({ source }: { source: string }): React.JSX.Element {
                 margin: '4px 0 8px',
                 padding: '8px 10px',
                 background: 'var(--color-bg)',
-                border: '2px solid var(--color-border)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--surface-radius, 0px)',
                 overflow: 'auto',
                 fontFamily: 'Menlo, Consolas, monospace',
-                fontSize: '12px',
+                fontSize: '0.75rem',
                 whiteSpace: 'pre',
                 lineHeight: 1.4,
               }}
@@ -3586,7 +3592,7 @@ function MarkdownBodyImpl({ source }: { source: string }): React.JSX.Element {
           ),
           table: ({ children }) => (
             <div style={{ overflow: 'auto', margin: '4px 0 8px' }}>
-              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '12px' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.75rem' }}>
                 {children}
               </table>
             </div>
@@ -3797,7 +3803,7 @@ function ToolBubbleImpl({
         border: '2px solid var(--color-border)',
         borderLeft: `4px solid ${style.accent}`,
         boxShadow: 'var(--shadow-pixel)',
-        fontSize: '12px',
+        fontSize: '0.75rem',
       }}
     >
       <button
@@ -3827,7 +3833,7 @@ function ToolBubbleImpl({
             background: style.accent,
             color: 'var(--color-bg-dark)',
             fontWeight: 'bold',
-            fontSize: 11,
+            fontSize: '0.6875rem',
             flexShrink: 0,
           }}
         >
@@ -3864,7 +3870,7 @@ function ToolBubbleImpl({
           />
         )}
         {!isResult && (
-          <span style={{ opacity: 0.4, fontSize: 11, flexShrink: 0 }}>
+          <span style={{ opacity: 0.4, fontSize: '0.6875rem', flexShrink: 0 }}>
             {expanded ? '▾' : '▸'}
           </span>
         )}
@@ -3895,7 +3901,7 @@ function ToolBubbleImpl({
               background: 'var(--color-bg)',
               border: '1px solid var(--color-border)',
               fontFamily: 'Menlo, Consolas, monospace',
-              fontSize: 11,
+              fontSize: '0.6875rem',
               lineHeight: 1.4,
               overflow: 'auto',
               maxHeight: 280,
@@ -3920,7 +3926,7 @@ function ToolBubbleImpl({
               maxHeight: 280,
               overflow: 'auto',
               fontFamily: 'Menlo, Consolas, monospace',
-              fontSize: 11,
+              fontSize: '0.6875rem',
               lineHeight: 1.4,
             }}
           >
@@ -4132,7 +4138,7 @@ function AskUserPrompt({
           padding: '6px 10px',
           background: 'var(--color-bg)',
           border: '1px solid var(--color-border)',
-          fontSize: 11,
+          fontSize: '0.6875rem',
           fontFamily: 'var(--font-pixel)',
           opacity: 0.85,
         }}
@@ -4183,7 +4189,7 @@ function AskUserPrompt({
           borderTop: '1px solid var(--color-border)',
         }}
       >
-        <div style={{ fontSize: 11, opacity: 0.75, flex: 1 }}>
+        <div style={{ fontSize: '0.6875rem', opacity: 0.75, flex: 1 }}>
           {answeredCount}/{questions.length}{' '}
           {questions.length === 1 ? 'question répondue' : 'questions répondues'}
         </div>
@@ -4192,13 +4198,13 @@ function AskUserPrompt({
           className="dt-btn"
           disabled={submitting || !allAnswered}
           onClick={() => void handleSubmit()}
-          style={{ fontSize: 11, padding: '6px 12px' }}
+          style={{ fontSize: '0.6875rem', padding: '6px 12px' }}
         >
           {questions.length === 1 ? 'Envoyer' : 'Envoyer toutes les réponses'}
         </button>
       </div>
       {error && (
-        <div style={{ fontSize: 11, color: 'var(--color-danger)' }}>Erreur: {error}</div>
+        <div style={{ fontSize: '0.6875rem', color: 'var(--color-danger)' }}>Erreur: {error}</div>
       )}
     </div>
   );
@@ -4229,7 +4235,7 @@ function QuestionBlock({
         <div
           style={{
             alignSelf: 'flex-start',
-            fontSize: 10,
+            fontSize: '0.625rem',
             padding: '2px 6px',
             background: 'var(--color-accent)',
             color: 'var(--color-bg-dark)',
@@ -4243,7 +4249,7 @@ function QuestionBlock({
       )}
       <div
         style={{
-          fontSize: 12,
+          fontSize: '0.75rem',
           lineHeight: 1.4,
           color: 'var(--color-text)',
           fontFamily: 'var(--font-pixel)',
@@ -4269,7 +4275,7 @@ function QuestionBlock({
                 color: active ? 'var(--color-bg-dark)' : 'var(--color-text)',
                 border: '1px solid var(--color-border)',
                 fontFamily: 'var(--font-pixel)',
-                fontSize: 11,
+                fontSize: '0.6875rem',
                 lineHeight: 1.3,
                 opacity: disabled ? 0.6 : 1,
                 display: 'flex',
@@ -4281,7 +4287,7 @@ function QuestionBlock({
               {opt.description && (
                 <div
                   style={{
-                    fontSize: 10,
+                    fontSize: '0.625rem',
                     opacity: active ? 0.85 : 0.65,
                     fontWeight: 'normal',
                   }}
@@ -4305,7 +4311,7 @@ function QuestionBlock({
           color: 'var(--color-text)',
           border: '1px solid var(--color-border)',
           padding: '4px 8px',
-          fontSize: 11,
+          fontSize: '0.6875rem',
           fontFamily: 'var(--font-pixel)',
         }}
       />

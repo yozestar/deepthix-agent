@@ -5,11 +5,73 @@
 export interface Theme {
   id: string;
   name: string;
+  /** Light themes flip `color-scheme` so native widgets (scrollbars,
+   *  date pickers, autofill) match. Defaults to dark. */
+  scheme?: 'dark' | 'light';
   /** Map of CSS variable name (without leading `--`) to value. */
   colors: Record<string, string>;
 }
 
+/** Pseudo-theme: follows the OS light/dark setting live, resolving to
+ *  the two "Moderne" palettes below. */
+export const SYSTEM_THEME_ID = 'system';
+const SYSTEM_DARK_ID = 'moderne-sombre';
+const SYSTEM_LIGHT_ID = 'moderne-clair';
+
 export const THEMES: Theme[] = [
+  {
+    // Calm slate palette, low glare, soft blue accent. Default for new
+    // installs — made for long reading sessions.
+    id: 'moderne-sombre',
+    name: 'Moderne sombre',
+    colors: {
+      'color-bg': '#1b1f27',
+      'color-bg-dark': '#161a21',
+      'color-bg-session': '#1f242d',
+      'color-bg-thumb': '#262c36',
+      'color-border': '#333b48',
+      'color-accent': '#7aa2f7',
+      'color-accent-bright': '#9bb8fa',
+      'color-session-active': '#5ec4a8',
+      'color-text': '#d7dce4',
+      'color-text-muted': 'rgba(215, 220, 228, 0.55)',
+      'color-btn-bg': '#242a34',
+      'color-btn-hover': '#2d3440',
+      'color-active-bg': '#2f3a4f',
+      'color-danger': '#e5747c',
+      'color-warning': '#e2b86b',
+      'color-status-success': '#8cc98f',
+      'shadow-hard': '2px 2px 0px #0d1015',
+    },
+  },
+  {
+    // Paper-white daytime palette. Chrome (sidebar / top bar) sits one
+    // step darker than the conversation so the reading area stays the
+    // brightest, calmest surface.
+    id: 'moderne-clair',
+    name: 'Moderne clair',
+    scheme: 'light',
+    colors: {
+      'color-bg': '#f6f7f9',
+      'color-bg-dark': '#eceef2',
+      'color-bg-session': '#ffffff',
+      'color-bg-thumb': '#e4e7ec',
+      'color-border': '#d5d9e0',
+      'color-accent': '#3b6fd8',
+      'color-accent-bright': '#5584e6',
+      'color-session-active': '#0f9d7a',
+      'color-text': '#1f2530',
+      'color-text-muted': 'rgba(31, 37, 48, 0.58)',
+      'color-btn-bg': '#e8ebf0',
+      'color-btn-hover': '#dde2ea',
+      'color-active-bg': '#dbe6fb',
+      'color-danger': '#d0454f',
+      'color-warning': '#c77d12',
+      'color-status-success': '#2f8f4e',
+      'color-status-permission': '#a67c00',
+      'shadow-hard': '2px 2px 0px #c9ced8',
+    },
+  },
   {
     id: 'pixel-default',
     name: 'Pixel Default',
@@ -37,7 +99,7 @@ export const THEMES: Theme[] = [
       'color-danger': '#d14249',
       'color-warning': '#ff8d14',
       'color-status-success': '#89d185',
-      'shadow-pixel': '2px 2px 0px #0a0a14',
+      'shadow-hard': '2px 2px 0px #0a0a14',
     },
   },
   {
@@ -60,7 +122,7 @@ export const THEMES: Theme[] = [
       'color-danger': '#ff5555',
       'color-warning': '#ffb86c',
       'color-status-success': '#50fa7b',
-      'shadow-pixel': '2px 2px 0px #14151c',
+      'shadow-hard': '2px 2px 0px #14151c',
     },
   },
   {
@@ -83,7 +145,7 @@ export const THEMES: Theme[] = [
       'color-danger': '#bf616a',
       'color-warning': '#ebcb8b',
       'color-status-success': '#a3be8c',
-      'shadow-pixel': '2px 2px 0px #1a1d24',
+      'shadow-hard': '2px 2px 0px #1a1d24',
     },
   },
   {
@@ -106,7 +168,7 @@ export const THEMES: Theme[] = [
       'color-danger': '#f7768e',
       'color-warning': '#e0af68',
       'color-status-success': '#9ece6a',
-      'shadow-pixel': '2px 2px 0px #0c0d12',
+      'shadow-hard': '2px 2px 0px #0c0d12',
     },
   },
   {
@@ -129,7 +191,7 @@ export const THEMES: Theme[] = [
       'color-danger': '#f38ba8',
       'color-warning': '#fab387',
       'color-status-success': '#a6e3a1',
-      'shadow-pixel': '2px 2px 0px #11111b',
+      'shadow-hard': '2px 2px 0px #11111b',
     },
   },
   {
@@ -152,7 +214,7 @@ export const THEMES: Theme[] = [
       'color-danger': '#fb4934',
       'color-warning': '#fe8019',
       'color-status-success': '#b8bb26',
-      'shadow-pixel': '2px 2px 0px #0a0a0a',
+      'shadow-hard': '2px 2px 0px #0a0a0a',
     },
   },
   {
@@ -175,7 +237,7 @@ export const THEMES: Theme[] = [
       'color-danger': '#f92672',
       'color-warning': '#fd971f',
       'color-status-success': '#a6e22e',
-      'shadow-pixel': '2px 2px 0px #14140e',
+      'shadow-hard': '2px 2px 0px #14140e',
     },
   },
   {
@@ -203,7 +265,7 @@ export const THEMES: Theme[] = [
       'color-danger': '#e07a82',
       'color-warning': '#e6c073',
       'color-status-success': '#a3d976',
-      'shadow-pixel': '2px 2px 0px #11141c',
+      'shadow-hard': '2px 2px 0px #11141c',
     },
   },
   {
@@ -226,18 +288,51 @@ export const THEMES: Theme[] = [
       'color-danger': '#dc322f',
       'color-warning': '#cb4b16',
       'color-status-success': '#859900',
-      'shadow-pixel': '2px 2px 0px #001017',
+      'shadow-hard': '2px 2px 0px #001017',
     },
   },
 ];
 
-export const DEFAULT_THEME_ID = 'pixel-default';
+export const DEFAULT_THEME_ID = 'moderne-sombre';
 
-export function applyTheme(themeId: string): void {
-  const theme = THEMES.find((t) => t.id === themeId) ?? THEMES[0];
+/** Every CSS variable any theme writes — cleared before applying the next
+ *  theme so a key one theme sets (e.g. status-permission) doesn't leak
+ *  into a theme that relies on the stylesheet default. */
+const ALL_THEME_KEYS = [...new Set(THEMES.flatMap((t) => Object.keys(t.colors)))];
+
+let systemQuery: MediaQueryList | null = null;
+let systemListener: ((e: MediaQueryListEvent) => void) | null = null;
+
+function writeTheme(theme: Theme): void {
   const root = document.documentElement;
+  for (const key of ALL_THEME_KEYS) root.style.removeProperty(`--${key}`);
   for (const [key, value] of Object.entries(theme.colors)) {
     root.style.setProperty(`--${key}`, value);
   }
-  console.debug('[Deepthix][themes] applied', theme.id);
+  root.style.colorScheme = theme.scheme ?? 'dark';
+  root.setAttribute('data-theme-scheme', theme.scheme ?? 'dark');
+}
+
+/** Resolve a theme id to a concrete palette ('system' → light/dark per OS). */
+export function resolveTheme(themeId: string, prefersDark: boolean): Theme {
+  const id =
+    themeId === SYSTEM_THEME_ID ? (prefersDark ? SYSTEM_DARK_ID : SYSTEM_LIGHT_ID) : themeId;
+  return THEMES.find((t) => t.id === id) ?? THEMES[0];
+}
+
+export function applyTheme(themeId: string): void {
+  // Drop any previous OS listener; re-attach only for the 'system' theme.
+  if (systemQuery && systemListener) systemQuery.removeEventListener('change', systemListener);
+  systemQuery = null;
+  systemListener = null;
+
+  if (themeId === SYSTEM_THEME_ID && typeof window.matchMedia === 'function') {
+    systemQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    systemListener = (e) => writeTheme(resolveTheme(SYSTEM_THEME_ID, e.matches));
+    systemQuery.addEventListener('change', systemListener);
+    writeTheme(resolveTheme(SYSTEM_THEME_ID, systemQuery.matches));
+  } else {
+    writeTheme(resolveTheme(themeId, true));
+  }
+  console.debug('[Deepthix][themes] applied', themeId);
 }

@@ -72,10 +72,10 @@ function MemoryColumn({
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
-          <span style={{ fontSize: '15px', letterSpacing: '0.05em' }}>{title}</span>
+          <span style={{ fontSize: '0.9375rem', letterSpacing: '0.05em' }}>{title}</span>
           <span
             style={{
-              fontSize: '12px',
+              fontSize: '0.75rem',
               opacity: 0.6,
               whiteSpace: 'nowrap',
               overflow: 'hidden',
@@ -88,7 +88,7 @@ function MemoryColumn({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {showSaved && (
-            <span style={{ fontSize: '12px', color: 'var(--color-status-success)' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-status-success)' }}>
               saved ✓
             </span>
           )}
@@ -104,7 +104,7 @@ function MemoryColumn({
               boxShadow: disabled || saving ? 'none' : 'var(--shadow-pixel)',
               cursor: disabled || saving ? 'default' : 'pointer',
               fontFamily: 'var(--font-pixel)',
-              fontSize: '13px',
+              fontSize: '0.8125rem',
               opacity: disabled ? 0.5 : 1,
             }}
             title="Save CLAUDE.md"
@@ -122,7 +122,7 @@ function MemoryColumn({
               alignItems: 'center',
               justifyContent: 'center',
               padding: 24,
-              fontSize: '14px',
+              fontSize: '0.875rem',
               opacity: 0.7,
               textAlign: 'center',
               lineHeight: 1.5,
@@ -150,7 +150,7 @@ function MemoryColumn({
               color: 'var(--color-text)',
               padding: '12px',
               fontFamily: 'var(--font-pixel), Menlo, Consolas, monospace',
-              fontSize: '14px',
+              fontSize: '0.875rem',
               lineHeight: 1.6,
             }}
           />
@@ -160,7 +160,7 @@ function MemoryColumn({
         <div
           style={{
             padding: '6px 12px',
-            fontSize: '13px',
+            fontSize: '0.8125rem',
             color: 'var(--color-danger)',
             borderTop: '2px solid var(--color-danger)',
           }}

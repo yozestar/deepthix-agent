@@ -83,7 +83,7 @@ export function CodeEditor({ path, value, onChange, onSave }: Props): React.JSX.
         flex: 1,
         minHeight: 0,
         height: '100%',
-        fontSize: '13px',
+        fontSize: '0.8125rem',
       }}
       // Important: the wrapper node has flex:1 above, but @uiw/react-codemirror
       // also needs an explicit height on the inner editor wrapper or it

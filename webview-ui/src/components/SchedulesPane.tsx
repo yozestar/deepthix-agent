@@ -233,7 +233,7 @@ export function SchedulesPane({ terminals }: Props): React.JSX.Element {
           gap: 8,
         }}
       >
-        <span style={{ fontSize: '14px', opacity: 0.85 }}>
+        <span style={{ fontSize: '0.875rem', opacity: 0.85 }}>
           Schedules — {schedules.length} job{schedules.length === 1 ? '' : 's'}
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -251,7 +251,7 @@ export function SchedulesPane({ terminals }: Props): React.JSX.Element {
             background: 'var(--color-danger)',
             color: 'var(--color-bg-dark)',
             border: '2px solid var(--color-border)',
-            fontSize: '12px',
+            fontSize: '0.75rem',
           }}
         >
           {error}
@@ -366,7 +366,7 @@ export function SchedulesPane({ terminals }: Props): React.JSX.Element {
       {/* Job list */}
       {schedules.length === 0 ? (
         <div className="dt-empty">
-          <div style={{ fontSize: 36, opacity: 0.5 }}>⌛</div>
+          <div style={{ fontSize: '2.25rem', opacity: 0.5 }}>⌛</div>
           <div className="dt-empty-title">No schedules yet</div>
           <div className="dt-empty-sub">
             Click <strong>+ New job</strong> to declare a recurring or one-shot prompt that fires
@@ -427,10 +427,10 @@ function ScheduleRow({
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-        <strong style={{ fontSize: '13px' }}>
+        <strong style={{ fontSize: '0.8125rem' }}>
           {schedule.name || schedule.prompt.slice(0, 40)}
           {schedule.paused && (
-            <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.7 }}>(paused)</span>
+            <span style={{ marginLeft: 8, fontSize: '0.6875rem', opacity: 0.7 }}>(paused)</span>
           )}
         </strong>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -441,7 +441,7 @@ function ScheduleRow({
           </PixelButton>
         </div>
       </div>
-      <div style={{ fontSize: '11px', opacity: 0.75 }}>
+      <div style={{ fontSize: '0.6875rem', opacity: 0.75 }}>
         <div>Target: {targetLabel}</div>
         <div>{cadenceText}</div>
         <div>
@@ -451,7 +451,7 @@ function ScheduleRow({
       </div>
       <div
         style={{
-          fontSize: '12px',
+          fontSize: '0.75rem',
           padding: '6px 8px',
           background: 'var(--color-bg)',
           border: '1px solid var(--color-border)',
@@ -488,7 +488,7 @@ const inputStyle: React.CSSProperties = {
   color: 'var(--color-text)',
   border: '2px solid var(--color-border)',
   fontFamily: 'var(--font-pixel)',
-  fontSize: '12px',
+  fontSize: '0.75rem',
   width: '100%',
   boxSizing: 'border-box',
 };
@@ -501,7 +501,7 @@ function Field({
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '11px' }}>
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.6875rem' }}>
       <span style={{ opacity: 0.7 }}>{label}</span>
       {children}
     </label>
@@ -536,7 +536,7 @@ function PixelButton({
         border: '2px solid var(--color-border)',
         boxShadow: 'var(--shadow-pixel)',
         fontFamily: 'var(--font-pixel)',
-        fontSize: '12px',
+        fontSize: '0.75rem',
         cursor: 'pointer',
       }}
     >

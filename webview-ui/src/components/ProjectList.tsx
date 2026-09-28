@@ -1,3 +1,4 @@
+import { FolderPlus, Settings, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAgentStatus } from '../hooks/useAgentStatus';
@@ -182,21 +183,21 @@ export function ProjectList({
         className={settingsActive ? 'dt-btn dt-btn--primary' : 'dt-btn'}
         style={{
           marginBottom: '6px',
-          fontSize: '13px',
-          letterSpacing: '0.06em',
+          fontSize: '0.8125rem',
+          letterSpacing: '0.02em',
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
         }}
         title="Edit global terminal & app settings"
       >
-        <span aria-hidden>⚙</span>
-        <span>SETTINGS</span>
+        <Settings size="1.1em" strokeWidth={1.75} aria-hidden />
+        <span>Settings</span>
       </button>
 
       <div className="dt-section-header" style={{ paddingLeft: 4, paddingTop: 6 }}>
         <span>Projects</span>
-        <span style={{ opacity: 0.65, fontSize: 9 }}>{projects.length}</span>
+        <span style={{ opacity: 0.65, fontSize: '0.5625rem' }}>{projects.length}</span>
       </div>
       {/* Scrollable project list — the user runs 20+ projects, so the
           rows get their own scroll area while SETTINGS (above) and
@@ -212,7 +213,7 @@ export function ProjectList({
         }}
       >
       {projects.length === 0 && (
-        <div style={{ fontSize: '13px', opacity: 0.6, padding: '4px' }}>
+        <div style={{ fontSize: '0.8125rem', opacity: 0.6, padding: '4px' }}>
           No projects yet.
         </div>
       )}
@@ -252,7 +253,7 @@ export function ProjectList({
               borderLeft: isActive
                 ? '3px solid var(--color-bg-dark)'
                 : '3px solid transparent',
-              fontSize: '13px',
+              fontSize: '0.8125rem',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -289,7 +290,7 @@ export function ProjectList({
                     border: 'none',
                     color: 'inherit',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: '14px',
+                    fontSize: '0.875rem',
                     width: '100%',
                     outline: 'none',
                   }}
@@ -314,9 +315,11 @@ export function ProjectList({
                 cursor: 'pointer',
                 opacity: 0.6,
                 padding: '0 4px',
+                display: 'inline-flex',
+                alignItems: 'center',
               }}
             >
-              ×
+              <X size="1em" strokeWidth={2} aria-hidden />
             </button>
           </div>
         );
@@ -333,12 +336,17 @@ export function ProjectList({
           border: '2px solid var(--color-border)',
           boxShadow: 'var(--shadow-pixel)',
           cursor: 'pointer',
-          fontSize: '13px',
+          fontSize: '0.8125rem',
           fontFamily: 'var(--font-pixel)',
           flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px',
         }}
       >
-        + Open Folder
+        <FolderPlus size="1.1em" strokeWidth={1.75} aria-hidden />
+        <span>Open folder</span>
       </button>
     </div>
   );

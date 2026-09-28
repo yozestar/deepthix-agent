@@ -34,7 +34,7 @@ import {
   UI_TEXT_SCALE_MIN,
   UI_TEXT_SCALE_STEP,
 } from '../hooks/useGlobalConfig';
-import { THEMES } from '../themes';
+import { resolveTheme, SYSTEM_THEME_ID, THEMES } from '../themes';
 
 interface BoxStyleMeta {
   id: BoxStyleId;
@@ -42,6 +42,7 @@ interface BoxStyleMeta {
   blurb: string;
 }
 const BOX_STYLE_META: BoxStyleMeta[] = [
+  { id: 'modern', label: 'Modern', blurb: 'Rounded corners, hairline borders, soft shadows. Calm for long reading.' },
   { id: 'pixel', label: 'Pixel', blurb: 'Hard 2px shadow, square corners. The original look.' },
   { id: 'glass', label: 'Glass', blurb: 'Frosted backdrop blur + translucent surface.' },
   { id: 'flat', label: 'Flat', blurb: 'Hairline border, no shadow.' },
@@ -127,7 +128,7 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
             onPlus={() => bumpFont(+1)}
             ariaLabel="font size"
           />
-          <span style={{ opacity: 0.5, fontSize: '12px', marginLeft: '8px' }}>
+          <span style={{ opacity: 0.5, fontSize: '0.75rem', marginLeft: '8px' }}>
             ({TERMINAL_FONT_SIZE_MIN}–{TERMINAL_FONT_SIZE_MAX} px)
           </span>
         </Row>
@@ -166,13 +167,13 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
                     fontFamily: 'var(--font-pixel)',
                   }}
                 >
-                  <span style={{ fontSize: '11px', opacity: 0.85 }}>{p.label}</span>
+                  <span style={{ fontSize: '0.6875rem', opacity: 0.85 }}>{p.label}</span>
                   {/* Preview rendered with the actual stack so the user sees
                       what they're picking before committing. */}
                   <span
                     style={{
                       fontFamily: p.value,
-                      fontSize: '14px',
+                      fontSize: '0.875rem',
                       letterSpacing: 0,
                     }}
                   >
@@ -191,7 +192,7 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
                   color: 'var(--color-bg-dark)',
                   border: '2px solid var(--color-border)',
                   fontFamily: 'var(--font-pixel)',
-                  fontSize: '11px',
+                  fontSize: '0.6875rem',
                 }}
               >
                 (custom) — {config.terminalFontFamily}
@@ -207,7 +208,7 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
             onPlus={() => bumpLineHeight(+TERMINAL_LINE_HEIGHT_STEP)}
             ariaLabel="line height"
           />
-          <span style={{ opacity: 0.5, fontSize: '12px', marginLeft: '8px' }}>
+          <span style={{ opacity: 0.5, fontSize: '0.75rem', marginLeft: '8px' }}>
             ({TERMINAL_LINE_HEIGHT_MIN.toFixed(1)}–{TERMINAL_LINE_HEIGHT_MAX.toFixed(1)})
           </span>
         </Row>
@@ -218,7 +219,7 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
             padding: '8px 10px',
             background: 'var(--color-bg-dark)',
             border: '2px solid var(--color-border)',
-            fontSize: '12px',
+            fontSize: '0.75rem',
             opacity: 0.75,
             lineHeight: 1.5,
           }}
@@ -233,6 +234,10 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
       {/* THEME section */}
       <Section title="THEME" subtitle="Pre-built color packs that look good together. Live preview.">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
+          <SystemThemeCard
+            active={config.themeId === SYSTEM_THEME_ID}
+            onPick={() => update({ themeId: SYSTEM_THEME_ID })}
+          />
           {THEMES.map((t) => {
             const active = t.id === config.themeId;
             return (
@@ -251,12 +256,12 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
                   fontFamily: 'var(--font-pixel)',
                   color: t.colors['color-text'],
                   textAlign: 'left',
-                  fontSize: '13px',
+                  fontSize: '0.8125rem',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
                   <span>{t.name}</span>
-                  {active && <span style={{ fontSize: '11px', opacity: 0.7 }}>●</span>}
+                  {active && <span style={{ fontSize: '0.6875rem', opacity: 0.7 }}>●</span>}
                 </div>
                 <div style={{ display: 'flex', gap: '4px', height: '14px' }}>
                   {['color-bg', 'color-accent', 'color-status-success', 'color-danger', 'color-warning'].map((k) => (
@@ -311,23 +316,23 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    fontSize: '13px',
+                    fontSize: '0.8125rem',
                   }}
                 >
                   <span>{f.label}</span>
-                  {active && <span style={{ fontSize: '11px', opacity: 0.7 }}>●</span>}
+                  {active && <span style={{ fontSize: '0.6875rem', opacity: 0.7 }}>●</span>}
                 </div>
                 <span
                   style={{
                     fontFamily: f.previewFamily,
-                    fontSize: '16px',
+                    fontSize: '1rem',
                     letterSpacing: 0,
                     lineHeight: 1.4,
                   }}
                 >
                   The quick brown fox 0123
                 </span>
-                <span style={{ fontSize: '10px', opacity: 0.6, lineHeight: 1.4 }}>
+                <span style={{ fontSize: '0.625rem', opacity: 0.6, lineHeight: 1.4 }}>
                   {f.blurb}
                 </span>
               </button>
@@ -364,6 +369,10 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
             ariaLabel="UI text scale"
           />
         </Row>
+        <div style={{ fontSize: '0.75rem', opacity: 0.65 }}>
+          Raccourcis : Ctrl + / Ctrl − / Ctrl 0 (réinitialiser), partout sauf dans un terminal.
+        </div>
+        <ReadingPreview />
       </Section>
 
       {/* BOX STYLE section — chrome of every bubble / card / panel. */}
@@ -405,14 +414,14 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    fontSize: '13px',
+                    fontSize: '0.8125rem',
                   }}
                 >
                   <span>{s.label}</span>
-                  {active && <span style={{ fontSize: '11px', opacity: 0.7 }}>●</span>}
+                  {active && <span style={{ fontSize: '0.6875rem', opacity: 0.7 }}>●</span>}
                 </div>
                 <BoxStylePreview id={s.id} />
-                <span style={{ fontSize: '10px', opacity: 0.6, lineHeight: 1.4 }}>
+                <span style={{ fontSize: '0.625rem', opacity: 0.6, lineHeight: 1.4 }}>
                   {s.blurb}
                 </span>
               </button>
@@ -420,7 +429,7 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
           })}
         </div>
         {!(BOX_STYLE_IDS as readonly string[]).includes(config.boxStyle) && (
-          <div style={{ fontSize: 11, opacity: 0.6 }}>
+          <div style={{ fontSize: '0.6875rem', opacity: 0.6 }}>
             (custom — {config.boxStyle})
           </div>
         )}
@@ -448,7 +457,7 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
         style={{
           marginTop: 'auto',
           padding: '6px 0 0',
-          fontSize: '12px',
+          fontSize: '0.75rem',
           opacity: 0.55,
         }}
       >
@@ -493,9 +502,9 @@ function Section({ title, subtitle, children }: SectionProps): React.JSX.Element
           marginBottom: '4px',
         }}
       >
-        <span style={{ fontSize: '14px', letterSpacing: '0.08em' }}>{title}</span>
+        <span style={{ fontSize: '0.875rem', letterSpacing: '0.08em' }}>{title}</span>
         {subtitle && (
-          <span style={{ fontSize: '12px', opacity: 0.6 }}>{subtitle}</span>
+          <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>{subtitle}</span>
         )}
       </div>
       {children}
@@ -516,7 +525,7 @@ function Row({ label, children, align = 'center' }: RowProps): React.JSX.Element
     <div style={{ display: 'flex', alignItems, gap: '12px' }}>
       <span
         style={{
-          fontSize: '13px',
+          fontSize: '0.8125rem',
           opacity: 0.75,
           minWidth: '120px',
           paddingTop: align === 'start' ? '4px' : 0,
@@ -545,7 +554,7 @@ function BoxStylePreview({ id }: { id: BoxStyleId }): React.JSX.Element {
   const base: React.CSSProperties = {
     height: 36,
     padding: '6px 8px',
-    fontSize: 11,
+    fontSize: '0.6875rem',
     fontFamily: 'var(--font-pixel)',
     color: 'var(--color-text)',
     display: 'flex',
@@ -553,6 +562,15 @@ function BoxStylePreview({ id }: { id: BoxStyleId }): React.JSX.Element {
   };
   let style: React.CSSProperties;
   switch (id) {
+    case 'modern':
+      style = {
+        ...base,
+        background: 'var(--color-bg-dark)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 10,
+        boxShadow: '0 1px 2px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.12)',
+      };
+      break;
     case 'pixel':
       style = {
         ...base,
@@ -601,6 +619,99 @@ function BoxStylePreview({ id }: { id: BoxStyleId }): React.JSX.Element {
   return <div style={style}>preview</div>;
 }
 
+/** Theme card for the OS-following pseudo-theme: split swatch showing
+ *  the light and dark palettes it switches between. */
+function SystemThemeCard({ active, onPick }: { active: boolean; onPick: () => void }): React.JSX.Element {
+  const dark = resolveTheme(SYSTEM_THEME_ID, true);
+  const light = resolveTheme(SYSTEM_THEME_ID, false);
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+        padding: '10px',
+        background: light.colors['color-bg-dark'],
+        border: `2px solid ${active ? dark.colors['color-accent'] : dark.colors['color-border']}`,
+        boxShadow: active ? `4px 4px 0 ${dark.colors['color-accent']}` : `2px 2px 0 ${dark.colors['color-border']}`,
+        cursor: 'pointer',
+        fontFamily: 'var(--font-pixel)',
+        color: light.colors['color-text'],
+        textAlign: 'left',
+        fontSize: '0.8125rem',
+      }}
+      title="Clair le jour, sombre le soir — suit le réglage clair/sombre de Windows"
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+        <span>Suivre Windows</span>
+        {active && <span style={{ fontSize: '0.6875rem', opacity: 0.7 }}>●</span>}
+      </div>
+      <div style={{ display: 'flex', gap: '4px', height: '14px' }}>
+        {[light, dark].flatMap((t) =>
+          ['color-bg', 'color-accent'].map((k) => (
+            <span
+              key={`${t.id}-${k}`}
+              style={{ flex: 1, background: t.colors[k], border: `1px solid ${t.colors['color-border']}` }}
+            />
+          )),
+        )}
+      </div>
+    </button>
+  );
+}
+
+/** Live sample of a chat exchange rendered with the CURRENT theme, font,
+ *  text size and box style — so the user sees the reading comfort
+ *  before leaving Settings. */
+function ReadingPreview(): React.JSX.Element {
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        padding: 12,
+        background: 'var(--color-bg-session)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--surface-radius, 0px)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <div style={{ fontSize: '0.6875rem', opacity: 0.6 }}>Aperçu</div>
+      <div
+        style={{
+          alignSelf: 'flex-end',
+          maxWidth: '80%',
+          padding: '8px 12px',
+          background: 'var(--color-accent)',
+          color: 'var(--color-bg-dark)',
+          borderRadius: 'var(--surface-radius, 0px)',
+          fontSize: '0.875rem',
+        }}
+      >
+        Peux-tu vérifier les factures en attente ?
+      </div>
+      <div
+        style={{
+          alignSelf: 'flex-start',
+          maxWidth: '80%',
+          padding: '8px 12px',
+          background: 'var(--color-bg-dark)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 'var(--surface-radius, 0px)',
+          fontSize: '0.875rem',
+          lineHeight: 1.6,
+        }}
+      >
+        J&apos;ai trouvé <strong>12 factures</strong> en brouillon, pour un total de{' '}
+        <code>18 240,00 €</code> HT.
+      </div>
+    </div>
+  );
+}
+
 interface BumpControlProps {
   value: string;
   onMinus: () => void;
@@ -619,7 +730,7 @@ function BumpControl({ value, onMinus, onPlus, ariaLabel }: BumpControlProps): R
     border: '2px solid var(--color-border)',
     cursor: 'pointer',
     fontFamily: 'var(--font-pixel)',
-    fontSize: '14px',
+    fontSize: '0.875rem',
     lineHeight: 1,
     display: 'flex',
     alignItems: 'center',
@@ -629,7 +740,7 @@ function BumpControl({ value, onMinus, onPlus, ariaLabel }: BumpControlProps): R
     minWidth: '46px',
     textAlign: 'center',
     fontFamily: 'var(--font-pixel)',
-    fontSize: '13px',
+    fontSize: '0.8125rem',
     padding: '0 8px',
   };
   return (
@@ -746,24 +857,24 @@ function UpdatesSection(): React.JSX.Element {
       subtitle="Auto-checked on every launch. The orange banner at the top of the window appears when an update is available."
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13 }}>
+        <span style={{ fontSize: '0.8125rem' }}>
           Installed: <strong>v{version}</strong>
         </span>
         {statusPill}
       </div>
       {status.kind === 'available' && (
-        <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.5 }}>
+        <div style={{ fontSize: '0.75rem', opacity: 0.85, lineHeight: 1.5 }}>
           A newer version is available. Open the orange banner at the top of the window and click
           <strong> Install + restart</strong>. (Or run the manual install via the project README.)
         </div>
       )}
       {status.kind === 'error' && (
-        <div style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.5 }}>
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-danger)', lineHeight: 1.5 }}>
           {status.message}
         </div>
       )}
       {status.kind === 'not_configured' && (
-        <div style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.5 }}>
+        <div style={{ fontSize: '0.75rem', opacity: 0.7, lineHeight: 1.5 }}>
           The repo's release pipeline ships unsigned artifacts (no `TAURI_SIGNING_PRIVATE_KEY` secret yet), so the in-app updater can't verify downloads. The app itself is fine — manual install from the GitHub release page works as before.
         </div>
       )}
@@ -782,7 +893,7 @@ function UpdatesSection(): React.JSX.Element {
             color: 'inherit',
             border: '2px solid var(--color-border)',
             fontFamily: 'var(--font-pixel)',
-            fontSize: 12,
+            fontSize: '0.75rem',
             cursor: status.kind === 'checking' ? 'wait' : 'pointer',
           }}
         >
@@ -800,7 +911,7 @@ function AboutSection(): React.JSX.Element {
   }, []);
   return (
     <Section title="ABOUT" subtitle="">
-      <div style={{ fontSize: 13, lineHeight: 1.6, opacity: 0.85 }}>
+      <div style={{ fontSize: '0.8125rem', lineHeight: 1.6, opacity: 0.85 }}>
         <div>
           <strong>Deepthix Agent</strong>
           <span style={{ opacity: 0.6, marginLeft: 6 }}>v{version}</span>
@@ -879,18 +990,18 @@ function NumberRow({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13 }}>{label}</span>
+        <span style={{ fontSize: '0.8125rem' }}>{label}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button type="button" onClick={() => onChange(clamp(value - step))} style={bumpStyle}>
             −
           </button>
-          <span style={{ fontSize: 13, minWidth: 36, textAlign: 'center' }}>{value}</span>
+          <span style={{ fontSize: '0.8125rem', minWidth: 36, textAlign: 'center' }}>{value}</span>
           <button type="button" onClick={() => onChange(clamp(value + step))} style={bumpStyle}>
             +
           </button>
         </div>
       </div>
-      <span style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>{hint}</span>
+      <span style={{ fontSize: '0.6875rem', opacity: 0.6, lineHeight: 1.5 }}>{hint}</span>
     </div>
   );
 }
@@ -903,7 +1014,7 @@ const bumpStyle: React.CSSProperties = {
   color: 'inherit',
   border: '2px solid var(--color-border)',
   fontFamily: 'var(--font-pixel)',
-  fontSize: 14,
+  fontSize: '0.875rem',
   cursor: 'pointer',
 };
 
@@ -914,7 +1025,7 @@ function Pill({ bg, text }: { bg: string; text: string }): React.JSX.Element {
         background: bg,
         color: '#fff',
         padding: '3px 8px',
-        fontSize: 10,
+        fontSize: '0.625rem',
         fontWeight: 'bold',
         letterSpacing: '0.05em',
         fontFamily: 'var(--font-pixel)',

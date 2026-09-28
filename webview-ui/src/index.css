@@ -51,8 +51,16 @@
   --color-status-success: #89d185;
   --color-status-error: var(--color-danger);
 
-  /* Shadow */
-  --shadow-pixel: 2px 2px 0px #0a0a14;
+  /* Shadow. Themes set --shadow-hard (their tinted pixel shadow); the
+   * active box style decides what --shadow-pixel resolves to. Themes must
+   * NOT write --shadow-pixel directly: an inline :root property beats the
+   * :root[data-box-style] rules below and would pin every style to the
+   * hard pixel shadow. */
+  --shadow-hard: 2px 2px 0px #0a0a14;
+  --shadow-pixel: var(--shadow-hard);
+
+  /* Monospace stack for code blocks / inline code (never the UI font). */
+  --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, Menlo, monospace;
 
   /* Non-utility values */
   --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
@@ -65,18 +73,19 @@
 
   --font-pixel: 'FS Pixel Sans', sans-serif;
 
-  /* Text sizes (pixel-art scale, base = 22px) */
+  /* Text sizes (pixel-art scale, base = 22px at 100 %). rem so the
+   * Settings → text size multiplier (root font-size) scales them. */
   --text-*: initial;
-  --text-2xs: 16px;
-  --text-xs: 18px;
-  --text-sm: 20px;
-  --text-base: 22px;
-  --text-lg: 26px;
-  --text-xl: 30px;
-  --text-2xl: 36px;
-  --text-3xl: 44px;
-  --text-4xl: 52px;
-  --text-5xl: 64px;
+  --text-2xs: 1rem;
+  --text-xs: 1.125rem;
+  --text-sm: 1.25rem;
+  --text-base: 1.375rem;
+  --text-lg: 1.625rem;
+  --text-xl: 1.875rem;
+  --text-2xl: 2.25rem;
+  --text-3xl: 2.75rem;
+  --text-4xl: 3.25rem;
+  --text-5xl: 4rem;
 
   /* Colors — reference :root vars so VS Code shows swatches */
   --color-bg: var(--color-bg);
@@ -224,7 +233,7 @@
   justify-content: space-between;
   padding: 8px 12px 4px;
   font-family: var(--font-pixel);
-  font-size: 10px;
+  font-size: 0.625rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-text-muted);
@@ -294,12 +303,12 @@
   font-family: var(--font-pixel);
 }
 .dt-empty-title {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--color-text);
   letter-spacing: 0.04em;
 }
 .dt-empty-sub {
-  font-size: 11px;
+  font-size: 0.6875rem;
   opacity: 0.85;
   max-width: 360px;
   line-height: 1.5;
@@ -330,6 +339,7 @@
 :root[data-box-style='pixel'] {
   --surface-radius: 0px;
   --surface-blur: 0px;
+  --shadow-pixel: var(--shadow-hard);
 }
 
 /* Universal "surface" selector. Any element that uses our shadow var
@@ -369,7 +379,7 @@
  * buttons that merely set `color: var(--color-bg-dark)`. */
 :root[data-box-style='glass'] [style*='background:var(--color-bg-dark)'],
 :root[data-box-style='glass'] [style*='background: var(--color-bg-dark)'] {
-  background: rgba(24, 24, 40, 0.55) !important;
+  background: color-mix(in srgb, var(--color-bg-dark) 60%, transparent) !important;
   -webkit-backdrop-filter: blur(var(--surface-blur));
   backdrop-filter: blur(var(--surface-blur));
 }
@@ -435,5 +445,81 @@
 :root[data-box-style='neon'] [style*='background:var(--color-bg-dark)'],
 :root[data-box-style='neon'] [style*='background: var(--color-bg-dark)'] {
   border-color: var(--color-accent) !important;
-  box-shadow: 0 0 0 1px var(--color-accent), 0 0 12px rgba(255, 60, 140, 0.4) !important;
+  box-shadow: 0 0 0 1px var(--color-accent), 0 0 12px color-mix(in srgb, var(--color-accent) 45%, transparent) !important;
+}
+
+/* Modern — the calm default: rounded corners, hairline borders, soft
+ * layered shadows, sentence-case section labels. Designed for long
+ * reading sessions (pairs with the Inter UI font + "Moderne" themes). */
+:root[data-box-style='modern'] {
+  --surface-radius: 10px;
+  --shadow-pixel: 0 1px 2px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+:root[data-box-style='modern'] .dt-card,
+:root[data-box-style='modern'] .pixel-panel,
+:root[data-box-style='modern'] [style*='var(--shadow-pixel)'],
+:root[data-box-style='modern'] [style*='2px 2px 0px'] {
+  border-width: 1px !important;
+  border-radius: var(--surface-radius) !important;
+  box-shadow: var(--shadow-pixel) !important;
+}
+:root[data-box-style='modern'] .dt-btn,
+:root[data-box-style='modern'] .dt-btn--primary,
+:root[data-box-style='modern'] .dt-btn--danger,
+:root[data-box-style='modern'] button[style*='border: 2px'],
+:root[data-box-style='modern'] button[style*='border:2px'] {
+  border-width: 1px !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+:root[data-box-style='modern'] .dt-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+:root[data-box-style='modern'] input,
+:root[data-box-style='modern'] select,
+:root[data-box-style='modern'] textarea {
+  border-width: 1px !important;
+  border-radius: 8px !important;
+}
+:root[data-box-style='modern'] input:focus-visible,
+:root[data-box-style='modern'] textarea:focus-visible,
+:root[data-box-style='modern'] select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  outline-offset: 1px;
+}
+:root[data-box-style='modern'] .dt-section-header {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+:root[data-box-style='modern'] *::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+}
+/* The pixel "press" nudge feels glitchy on rounded chrome. */
+:root:not([data-box-style='pixel']) .dt-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Code always renders in a monospace face. The UI-font switcher injects
+ * `* { font-family: … !important }`; these element selectors are more
+ * specific, so they still win. */
+code,
+kbd,
+samp,
+pre,
+pre * {
+  font-family: var(--font-mono) !important;
+}
+
+/* Markdown lists inside chat bubbles: Tailwind's preflight strips list
+ * markers, which made bullet lists read as a wall of lines. */
+.dt-markdown ul {
+  list-style: disc;
+}
+.dt-markdown ol {
+  list-style: decimal;
+}
+.dt-markdown li::marker {
+  color: var(--color-accent);
 }

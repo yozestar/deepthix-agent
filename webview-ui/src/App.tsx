@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ProcessPane, SessionsPane } from './components/BottomPanel';
@@ -227,8 +228,8 @@ function App(): React.JSX.Element {
               <div
                 style={{
                   position: 'absolute',
-                  top: 12,
-                  right: 16,
+                  top: 6,
+                  right: 12,
                   display: 'flex',
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -246,7 +247,7 @@ function App(): React.JSX.Element {
                     boxShadow: 'var(--shadow-pixel)',
                     padding: '4px 8px',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: '12px',
+                    fontSize: '0.75rem',
                     cursor: 'pointer',
                     userSelect: 'none',
                   }}
@@ -263,17 +264,21 @@ function App(): React.JSX.Element {
                   type="button"
                   onClick={onSpawnAgent}
                   style={{
-                    padding: '8px 16px',
+                    padding: '6px 12px',
                     background: 'var(--color-accent)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
                     color: 'var(--color-bg-dark)',
                     border: '2px solid var(--color-border)',
                     boxShadow: 'var(--shadow-pixel)',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: '14px',
+                    fontSize: '0.875rem',
                     cursor: 'pointer',
                   }}
                 >
-                  + Session
+                  <Plus size="1.1em" strokeWidth={2} aria-hidden />
+                  <span>New session</span>
                 </button>
               </div>
             </div>

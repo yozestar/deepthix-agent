@@ -140,7 +140,7 @@ export function UpdaterBanner(): React.JSX.Element | null {
         color: 'var(--color-bg-dark)',
         padding: '6px 12px',
         fontFamily: 'var(--font-pixel)',
-        fontSize: 12,
+        fontSize: '0.75rem',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -194,7 +194,7 @@ const btnStyle: React.CSSProperties = {
   border: '1px solid var(--color-bg-dark)',
   padding: '2px 10px',
   fontFamily: 'var(--font-pixel)',
-  fontSize: 11,
+  fontSize: '0.6875rem',
   cursor: 'pointer',
 };
 

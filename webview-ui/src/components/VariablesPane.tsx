@@ -131,7 +131,7 @@ export function VariablesPane(): React.JSX.Element {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span
             style={{
-              fontSize: 15,
+              fontSize: '0.9375rem',
               fontWeight: 'bold',
               letterSpacing: '0.06em',
               color: 'var(--color-accent)',
@@ -139,7 +139,7 @@ export function VariablesPane(): React.JSX.Element {
           >
             VARIABLES
           </span>
-          <span style={{ fontSize: 11, opacity: 0.7 }}>
+          <span style={{ fontSize: '0.6875rem', opacity: 0.7 }}>
             Shared key/value state · both you and claude can read/write
           </span>
         </div>
@@ -154,7 +154,7 @@ export function VariablesPane(): React.JSX.Element {
               border: '2px solid var(--color-border)',
               boxShadow: 'var(--shadow-pixel)',
               fontFamily: 'var(--font-pixel)',
-              fontSize: 12,
+              fontSize: '0.75rem',
               cursor: 'pointer',
             }}
           >
@@ -169,7 +169,7 @@ export function VariablesPane(): React.JSX.Element {
             padding: '6px 16px',
             background: 'var(--color-danger)',
             color: 'var(--color-bg-dark)',
-            fontSize: 12,
+            fontSize: '0.75rem',
           }}
         >
           ✗ {error}
@@ -179,7 +179,7 @@ export function VariablesPane(): React.JSX.Element {
       {/* Body */}
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 16 }}>
         {loading ? (
-          <div style={{ opacity: 0.6, fontSize: 12 }}>Loading…</div>
+          <div style={{ opacity: 0.6, fontSize: '0.75rem' }}>Loading…</div>
         ) : vars.length === 0 && !draft ? (
           <EmptyState onAdd={() => setDraft({ key: '', value: '', description: '' })} />
         ) : (
@@ -220,7 +220,7 @@ export function VariablesPane(): React.JSX.Element {
         <div
           style={{
             padding: '6px 16px 10px',
-            fontSize: 9,
+            fontSize: '0.5625rem',
             opacity: 0.55,
             wordBreak: 'break-all',
             lineHeight: 1.4,
@@ -252,11 +252,11 @@ function EmptyState({ onAdd }: { onAdd: () => void }): React.JSX.Element {
         opacity: 0.85,
       }}
     >
-      <div style={{ fontSize: 32, opacity: 0.55 }}>🗂</div>
-      <div style={{ fontSize: 14, fontWeight: 'bold' }}>
+      <div style={{ fontSize: '2rem', opacity: 0.55 }}>🗂</div>
+      <div style={{ fontSize: '0.875rem', fontWeight: 'bold' }}>
         No variables yet
       </div>
-      <div style={{ fontSize: 11, opacity: 0.7, maxWidth: 420, lineHeight: 1.5 }}>
+      <div style={{ fontSize: '0.6875rem', opacity: 0.7, maxWidth: 420, lineHeight: 1.5 }}>
         Variables are a shared key/value scratchpad — pin context that should
         outlive a single conversation (sprint id, prod host, last deploy SHA…).
         Both you and claude can read or update them.
@@ -271,7 +271,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }): React.JSX.Element {
           border: '2px solid var(--color-border)',
           boxShadow: 'var(--shadow-pixel)',
           fontFamily: 'var(--font-pixel)',
-          fontSize: 12,
+          fontSize: '0.75rem',
           cursor: 'pointer',
         }}
       >
@@ -288,7 +288,7 @@ function HeaderCell({ children }: { children: React.ReactNode }): React.JSX.Elem
     <div
       style={{
         padding: '8px 10px',
-        fontSize: 10,
+        fontSize: '0.625rem',
         fontWeight: 'bold',
         letterSpacing: '0.06em',
         opacity: 0.65,
@@ -324,7 +324,7 @@ function DraftRow({
     border: '1px solid var(--color-border)',
     color: 'var(--color-text)',
     fontFamily: 'var(--font-pixel)',
-    fontSize: 12,
+    fontSize: '0.75rem',
     boxSizing: 'border-box',
   };
   return (
@@ -384,7 +384,7 @@ function DraftRow({
             color: 'var(--color-bg-dark)',
             border: '1px solid var(--color-border)',
             fontFamily: 'var(--font-pixel)',
-            fontSize: 10,
+            fontSize: '0.625rem',
             cursor: 'pointer',
           }}
         >
@@ -400,7 +400,7 @@ function DraftRow({
             color: 'inherit',
             border: '1px solid var(--color-border)',
             fontFamily: 'var(--font-pixel)',
-            fontSize: 10,
+            fontSize: '0.625rem',
             cursor: 'pointer',
           }}
         >
@@ -452,7 +452,7 @@ function VariableRow({
   const cellStyle: React.CSSProperties = {
     padding: '6px 10px',
     borderBottom: '1px solid var(--color-border)',
-    fontSize: 12,
+    fontSize: '0.75rem',
     display: 'flex',
     alignItems: 'center',
   };
@@ -463,7 +463,7 @@ function VariableRow({
     border: '1px solid transparent',
     color: 'var(--color-text)',
     fontFamily: 'var(--font-pixel)',
-    fontSize: 12,
+    fontSize: '0.75rem',
     boxSizing: 'border-box',
   };
   return (
@@ -472,7 +472,7 @@ function VariableRow({
         <span
           style={{
             fontFamily: 'Menlo, Consolas, monospace',
-            fontSize: 12,
+            fontSize: '0.75rem',
             color: 'var(--color-accent)',
             wordBreak: 'break-all',
           }}
@@ -523,7 +523,7 @@ function VariableRow({
             color: 'var(--color-danger)',
             border: '1px solid var(--color-border)',
             fontFamily: 'var(--font-pixel)',
-            fontSize: 11,
+            fontSize: '0.6875rem',
             cursor: 'pointer',
           }}
         >

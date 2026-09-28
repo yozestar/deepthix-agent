@@ -68,7 +68,7 @@ export function SessionsTopArea({
           alignItems: 'center',
           justifyContent: 'flex-end',
           fontFamily: 'var(--font-pixel)',
-          fontSize: 11,
+          fontSize: '0.6875rem',
           color: 'var(--color-text-muted)',
         }}
       >
@@ -81,7 +81,7 @@ export function SessionsTopArea({
           className="dt-btn"
           style={{
             padding: '2px 10px',
-            fontSize: 11,
+            fontSize: '0.6875rem',
             cursor: 'pointer',
           }}
           title="Réafficher le panneau Coach"

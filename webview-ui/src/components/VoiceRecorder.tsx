@@ -383,7 +383,7 @@ export function VoiceRecorder({
         borderLeft: `4px solid ${state.kind === 'recording' ? 'var(--color-bg-dark)' : 'var(--color-bg-dark)'}`,
         boxShadow: 'var(--shadow-pixel)',
         fontFamily: 'var(--font-pixel)',
-        fontSize: '13px',
+        fontSize: '0.8125rem',
         fontWeight: 'bold',
         letterSpacing: '0.04em',
         zIndex: 100,

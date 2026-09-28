@@ -100,12 +100,12 @@ export function OverviewPane({ terminals, projects, onChangeMode }: Props): Reac
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: '15px', letterSpacing: '0.06em' }}>OVERVIEW</span>
-          <span style={{ fontSize: '12px', opacity: 0.6 }}>
+          <span style={{ fontSize: '0.9375rem', letterSpacing: '0.06em' }}>OVERVIEW</span>
+          <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>
             Sessions claude du projet actif.
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.75rem' }}>
           <span style={{ opacity: 0.7 }}>
             {totalSessions} session{totalSessions === 1 ? '' : 's'}
           </span>
@@ -125,7 +125,7 @@ export function OverviewPane({ terminals, projects, onChangeMode }: Props): Reac
             border: '2px dashed var(--color-border)',
             background: 'var(--color-bg-dark)',
             textAlign: 'center',
-            fontSize: '14px',
+            fontSize: '0.875rem',
             opacity: 0.7,
             lineHeight: 1.6,
           }}
@@ -215,7 +215,7 @@ function ProjectGroupView({
         <StatusDot status={projectStatus} />
         <span
           style={{
-            fontSize: '14px',
+            fontSize: '0.875rem',
             letterSpacing: '0.06em',
             color: isActive ? 'var(--color-accent-bright)' : 'inherit',
           }}
@@ -225,7 +225,7 @@ function ProjectGroupView({
         {group.projectPath && (
           <span
             style={{
-              fontSize: '11px',
+              fontSize: '0.6875rem',
               opacity: 0.5,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -304,7 +304,7 @@ function SessionPill({
         boxShadow: 'var(--shadow-pixel)',
         cursor: 'pointer',
         fontFamily: 'var(--font-pixel)',
-        fontSize: '12px',
+        fontSize: '0.75rem',
       }}
       role="button"
       tabIndex={0}
@@ -339,7 +339,7 @@ function SessionPill({
         style={{
           marginLeft: '4px',
           padding: '0 4px',
-          fontSize: '10px',
+          fontSize: '0.625rem',
           opacity: 0.7,
           borderLeft: '1px solid currentColor',
         }}
@@ -521,14 +521,14 @@ function SessionDashboard({
         >
           <span
             style={{
-              fontSize: '13px',
+              fontSize: '0.8125rem',
               fontFamily: 'var(--font-pixel)',
               color: 'var(--color-text)',
             }}
           >
             {sessionLabel}
           </span>
-          <span style={{ fontSize: '11px', opacity: 0.6, fontFamily: 'var(--font-pixel)' }}>
+          <span style={{ fontSize: '0.6875rem', opacity: 0.6, fontFamily: 'var(--font-pixel)' }}>
             {isWorking
               ? 'claude is working…'
               : 'No dashboard yet — claude can `Write` to $DEEPTHIX_DASHBOARD_PATH'}

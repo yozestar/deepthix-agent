@@ -669,7 +669,7 @@ export function CoachPane({ sessions, onHide }: Props): React.JSX.Element {
           padding: '12px 16px',
           background: 'var(--color-bg-dark)',
           borderBottom: `2px solid ${state.enabled ? 'var(--color-accent)' : 'var(--color-border)'}`,
-          fontSize: 12,
+          fontSize: '0.75rem',
           transition: 'border-color 200ms ease, box-shadow 200ms ease',
           // Subtle accent halo when ON to make the header read as a
           // distinct section even with theme variations.
@@ -685,7 +685,7 @@ export function CoachPane({ sessions, onHide }: Props): React.JSX.Element {
             <span
               style={{
                 fontWeight: 'bold',
-                fontSize: 15,
+                fontSize: '0.9375rem',
                 letterSpacing: '0.06em',
                 color: state.enabled ? 'var(--color-accent)' : 'var(--color-text)',
                 transition: 'color 200ms ease',
@@ -695,7 +695,7 @@ export function CoachPane({ sessions, onHide }: Props): React.JSX.Element {
             </span>
             <span
               style={{
-                fontSize: 10,
+                fontSize: '0.625rem',
                 padding: '1px 6px',
                 background: 'var(--color-bg)',
                 border: '1px solid var(--color-border)',
@@ -707,7 +707,7 @@ export function CoachPane({ sessions, onHide }: Props): React.JSX.Element {
             </span>
             <span
               style={{
-                fontSize: 10,
+                fontSize: '0.625rem',
                 padding: '1px 6px',
                 background: state.enabled ? 'var(--color-accent)' : 'transparent',
                 color: state.enabled ? 'var(--color-bg-dark)' : 'var(--color-text-muted)',
@@ -725,7 +725,7 @@ export function CoachPane({ sessions, onHide }: Props): React.JSX.Element {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
-                  fontSize: 10,
+                  fontSize: '0.625rem',
                   color: 'var(--color-accent)',
                   letterSpacing: '0.05em',
                   fontWeight: 'bold',
@@ -747,7 +747,7 @@ export function CoachPane({ sessions, onHide }: Props): React.JSX.Element {
           </div>
           <div
             style={{
-              fontSize: 11,
+              fontSize: '0.6875rem',
               opacity: 0.75,
               display: 'flex',
               alignItems: 'center',
@@ -816,7 +816,7 @@ export function CoachPane({ sessions, onHide }: Props): React.JSX.Element {
             padding: '6px 10px',
             background: 'var(--color-danger)',
             color: 'var(--color-bg-dark)',
-            fontSize: 12,
+            fontSize: '0.75rem',
           }}
         >
           {error}
@@ -913,7 +913,7 @@ function ToggleSwitch({
           left: enabled ? 6 : undefined,
           right: enabled ? undefined : 6,
           fontFamily: 'var(--font-pixel)',
-          fontSize: 8,
+          fontSize: '0.5rem',
           color: enabled ? 'var(--color-bg-dark)' : 'var(--color-text)',
           opacity: 0.85,
           letterSpacing: '0.05em',
@@ -934,7 +934,7 @@ function headerBtn(danger: boolean): React.CSSProperties {
     border: '2px solid var(--color-border)',
     boxShadow: 'var(--shadow-pixel)',
     fontFamily: 'var(--font-pixel)',
-    fontSize: 11,
+    fontSize: '0.6875rem',
     cursor: 'pointer',
     flexShrink: 0,
   };
@@ -976,10 +976,10 @@ function WatchingPlaceholder({
           animation: 'pulse 1.6s ease-in-out infinite',
         }}
       />
-      <div style={{ fontSize: 13, fontWeight: 'bold' }}>
+      <div style={{ fontSize: '0.8125rem', fontWeight: 'bold' }}>
         Coach is watching {sessions} session{sessions === 1 ? '' : 's'}
       </div>
-      <div style={{ fontSize: 11, opacity: 0.7, maxWidth: 380 }}>
+      <div style={{ fontSize: '0.6875rem', opacity: 0.7, maxWidth: 380 }}>
         {nextRunIn === 'starting…' || nextRunIn === 'any moment' ? (
           <>
             First analysis is starting now — proposals will appear here in a few seconds. Or
@@ -1005,7 +1005,7 @@ function WatchingPlaceholder({
           boxShadow: busy || sessions === 0 ? 'none' : 'var(--shadow-pixel)',
           cursor: busy || sessions === 0 ? 'default' : 'pointer',
           fontFamily: 'var(--font-pixel)',
-          fontSize: 12,
+          fontSize: '0.75rem',
           opacity: busy || sessions === 0 ? 0.5 : 1,
         }}
       >
@@ -1020,11 +1020,11 @@ function EmptyCoach({ hasSessions }: { hasSessions: boolean }): React.JSX.Elemen
     display: 'flex',
     alignItems: 'flex-start',
     gap: 10,
-    fontSize: 12,
+    fontSize: '0.75rem',
     lineHeight: 1.5,
   };
   const iconStyle: React.CSSProperties = {
-    fontSize: 16,
+    fontSize: '1rem',
     minWidth: 22,
     textAlign: 'center',
     paddingTop: 1,
@@ -1044,7 +1044,7 @@ function EmptyCoach({ hasSessions }: { hasSessions: boolean }): React.JSX.Elemen
     >
       <div
         style={{
-          fontSize: 32,
+          fontSize: '2rem',
           opacity: 0.55,
           letterSpacing: '0.05em',
         }}
@@ -1053,7 +1053,7 @@ function EmptyCoach({ hasSessions }: { hasSessions: boolean }): React.JSX.Elemen
       </div>
       <div
         style={{
-          fontSize: 16,
+          fontSize: '1rem',
           fontWeight: 'bold',
           letterSpacing: '0.04em',
           color: 'var(--color-text)',
@@ -1064,7 +1064,7 @@ function EmptyCoach({ hasSessions }: { hasSessions: boolean }): React.JSX.Elemen
       </div>
       <div
         style={{
-          fontSize: 11,
+          fontSize: '0.6875rem',
           opacity: 0.7,
           maxWidth: 460,
           textAlign: 'center',
@@ -1115,7 +1115,7 @@ function EmptyCoach({ hasSessions }: { hasSessions: boolean }): React.JSX.Elemen
       </div>
       <div
         style={{
-          fontSize: 11,
+          fontSize: '0.6875rem',
           opacity: 0.55,
           textAlign: 'center',
           maxWidth: 460,
@@ -1243,7 +1243,7 @@ function _CoachBubble({
         className="dt-chat-msg"
         style={{
           alignSelf: 'center',
-          fontSize: 11,
+          fontSize: '0.6875rem',
           opacity: 0.6,
           padding: '2px 10px',
           border: '1px dashed var(--color-border)',
@@ -1264,7 +1264,7 @@ function _CoachBubble({
           background: 'var(--color-bg-dark)',
           border: '2px solid var(--color-border)',
           boxShadow: 'var(--shadow-pixel)',
-          fontSize: 13,
+          fontSize: '0.8125rem',
         }}
       >
         <span style={{ opacity: 0.5 }}>▌</span>
@@ -1288,13 +1288,13 @@ function _CoachBubble({
           border: '2px solid var(--color-border)',
           boxShadow: 'var(--shadow-pixel)',
           padding: '8px 10px',
-          fontSize: 13,
+          fontSize: '0.8125rem',
           lineHeight: 1.45,
           wordBreak: 'break-word',
           whiteSpace: 'pre-wrap',
         }}
       >
-        <div style={{ fontSize: 10, opacity: 0.6, marginBottom: 4 }}>
+        <div style={{ fontSize: '0.625rem', opacity: 0.6, marginBottom: 4 }}>
           coach · writing…
         </div>
         <span style={{ opacity: 0.5 }}>▌</span>
@@ -1321,12 +1321,12 @@ function _CoachBubble({
           border: '2px solid var(--color-border)',
           boxShadow: 'var(--shadow-pixel)',
           padding: '8px 10px',
-          fontSize: 13,
+          fontSize: '0.8125rem',
           lineHeight: 1.45,
           wordBreak: 'break-word',
         }}
       >
-        <div style={{ fontSize: 10, opacity: 0.6, marginBottom: 4 }}>
+        <div style={{ fontSize: '0.625rem', opacity: 0.6, marginBottom: 4 }}>
           coach · {new Date(m.ts).toLocaleTimeString()}
         </div>
         {m.streaming ? (
@@ -1344,7 +1344,7 @@ function _CoachBubble({
       <div
         style={{
           alignSelf: 'flex-start',
-          fontSize: 10,
+          fontSize: '0.625rem',
           opacity: 0.6,
           padding: '0 4px',
         }}
@@ -1421,7 +1421,7 @@ function ProposalCardImpl({
         borderLeft: `4px solid ${accent}`,
         boxShadow: 'var(--shadow-pixel)',
         padding: '10px 12px',
-        fontSize: 13,
+        fontSize: '0.8125rem',
         opacity: decision === 'dismissed' ? 0.45 : 1,
         textDecoration: decision === 'dismissed' ? 'line-through' : 'none',
         display: 'flex',
@@ -1431,7 +1431,7 @@ function ProposalCardImpl({
     >
       <div style={{ fontWeight: 'bold', lineHeight: 1.3 }}>{proposal.title || '(no title)'}</div>
       {proposal.why && (
-        <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>{proposal.why}</div>
+        <div style={{ fontSize: '0.75rem', opacity: 0.85, lineHeight: 1.4 }}>{proposal.why}</div>
       )}
       {proposal.memory && (
         <pre
@@ -1441,7 +1441,7 @@ function ProposalCardImpl({
             background: 'var(--color-bg)',
             border: '1px solid var(--color-border)',
             fontFamily: 'Menlo, Consolas, monospace',
-            fontSize: 11,
+            fontSize: '0.6875rem',
             lineHeight: 1.4,
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
@@ -1452,7 +1452,7 @@ function ProposalCardImpl({
           {proposal.memory}
         </pre>
       )}
-      {err && <div style={{ fontSize: 11, color: 'var(--color-danger)' }}>error: {err}</div>}
+      {err && <div style={{ fontSize: '0.6875rem', color: 'var(--color-danger)' }}>error: {err}</div>}
       {decision === 'pending' ? (
         <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
           <button
@@ -1473,7 +1473,7 @@ function ProposalCardImpl({
           </button>
         </div>
       ) : (
-        <div style={{ fontSize: 10, opacity: 0.7 }}>
+        <div style={{ fontSize: '0.625rem', opacity: 0.7 }}>
           {decision === 'accepted'
             ? proposal.memory
               ? '✓ added to CLAUDE.md'
@@ -1582,7 +1582,7 @@ function ScheduleCardImpl({
         borderLeft: `4px solid ${accent}`,
         boxShadow: 'var(--shadow-pixel)',
         padding: '10px 12px',
-        fontSize: 13,
+        fontSize: '0.8125rem',
         opacity: decision === 'dismissed' ? 0.45 : 1,
         textDecoration: decision === 'dismissed' ? 'line-through' : 'none',
         display: 'flex',
@@ -1596,7 +1596,7 @@ function ScheduleCardImpl({
         </span>
         <span
           style={{
-            fontSize: 10,
+            fontSize: '0.625rem',
             padding: '1px 6px',
             background: 'var(--color-bg)',
             border: '1px solid var(--color-border)',
@@ -1607,7 +1607,7 @@ function ScheduleCardImpl({
         </span>
       </div>
       {schedule.why && (
-        <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>{schedule.why}</div>
+        <div style={{ fontSize: '0.75rem', opacity: 0.85, lineHeight: 1.4 }}>{schedule.why}</div>
       )}
       {schedule.prompt && (
         <pre
@@ -1617,7 +1617,7 @@ function ScheduleCardImpl({
             background: 'var(--color-bg)',
             border: '1px solid var(--color-border)',
             fontFamily: 'Menlo, Consolas, monospace',
-            fontSize: 11,
+            fontSize: '0.6875rem',
             lineHeight: 1.4,
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
@@ -1629,7 +1629,7 @@ function ScheduleCardImpl({
           {schedule.prompt}
         </pre>
       )}
-      {err && <div style={{ fontSize: 11, color: 'var(--color-danger)' }}>error: {err}</div>}
+      {err && <div style={{ fontSize: '0.6875rem', color: 'var(--color-danger)' }}>error: {err}</div>}
       {decision === 'pending' ? (
         <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
           <button
@@ -1650,7 +1650,7 @@ function ScheduleCardImpl({
           </button>
         </div>
       ) : (
-        <div style={{ fontSize: 10, opacity: 0.7 }}>
+        <div style={{ fontSize: '0.625rem', opacity: 0.7 }}>
           {decision === 'accepted'
             ? '⏱ schedule created — manage it in the SCHEDULE tab'
             : '✗ dismissed'}
@@ -1717,7 +1717,7 @@ function WorkflowCardImpl({
         borderLeft: `4px solid ${accent}`,
         boxShadow: 'var(--shadow-pixel)',
         padding: '10px 12px',
-        fontSize: 13,
+        fontSize: '0.8125rem',
         opacity: decision === 'dismissed' ? 0.45 : 1,
         textDecoration: decision === 'dismissed' ? 'line-through' : 'none',
         display: 'flex',
@@ -1731,7 +1731,7 @@ function WorkflowCardImpl({
         </span>
         <span
           style={{
-            fontSize: 10,
+            fontSize: '0.625rem',
             padding: '1px 6px',
             background: 'var(--color-bg)',
             border: '1px solid var(--color-border)',
@@ -1745,7 +1745,7 @@ function WorkflowCardImpl({
           <span
             key={t}
             style={{
-              fontSize: 9,
+              fontSize: '0.5625rem',
               padding: '1px 5px',
               background: 'var(--color-bg)',
               border: '1px solid var(--color-border)',
@@ -1757,10 +1757,10 @@ function WorkflowCardImpl({
         ))}
       </div>
       {workflow.why && (
-        <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>{workflow.why}</div>
+        <div style={{ fontSize: '0.75rem', opacity: 0.85, lineHeight: 1.4 }}>{workflow.why}</div>
       )}
       {workflow.description && (
-        <div style={{ fontSize: 11, opacity: 0.7, lineHeight: 1.4 }}>
+        <div style={{ fontSize: '0.6875rem', opacity: 0.7, lineHeight: 1.4 }}>
           {workflow.description}
         </div>
       )}
@@ -1772,7 +1772,7 @@ function WorkflowCardImpl({
             background: 'var(--color-bg)',
             border: '1px solid var(--color-border)',
             fontFamily: 'Menlo, Consolas, monospace',
-            fontSize: 11,
+            fontSize: '0.6875rem',
             lineHeight: 1.4,
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
@@ -1784,7 +1784,7 @@ function WorkflowCardImpl({
           {workflow.prompt}
         </pre>
       )}
-      {err && <div style={{ fontSize: 11, color: 'var(--color-danger)' }}>error: {err}</div>}
+      {err && <div style={{ fontSize: '0.6875rem', color: 'var(--color-danger)' }}>error: {err}</div>}
       {decision === 'pending' ? (
         <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
           <button
@@ -1801,7 +1801,7 @@ function WorkflowCardImpl({
           </button>
         </div>
       ) : (
-        <div style={{ fontSize: 10, opacity: 0.7 }}>
+        <div style={{ fontSize: '0.625rem', opacity: 0.7 }}>
           {decision === 'accepted'
             ? '🧰 saved — find it in the WORKFLOW tab'
             : '✗ dismissed'}
@@ -1820,7 +1820,7 @@ function cardBtn(primary: boolean, busy: boolean): React.CSSProperties {
     boxShadow: primary && !busy ? 'var(--shadow-pixel)' : 'none',
     cursor: busy ? 'default' : 'pointer',
     fontFamily: 'var(--font-pixel)',
-    fontSize: 11,
+    fontSize: '0.6875rem',
     opacity: busy ? 0.5 : 1,
   };
 }

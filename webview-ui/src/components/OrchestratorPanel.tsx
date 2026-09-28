@@ -130,7 +130,7 @@ export function OrchestratorPanel({
           flexShrink: 0,
           cursor: 'pointer',
           fontFamily: 'var(--font-pixel)',
-          fontSize: '11px',
+          fontSize: '0.6875rem',
           letterSpacing: '0.1em',
           writingMode: 'vertical-rl',
           textOrientation: 'mixed',
@@ -183,8 +183,8 @@ export function OrchestratorPanel({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '14px', letterSpacing: '0.06em' }}>CHEF</span>
-            <span style={{ fontSize: '10px', opacity: 0.55 }}>orchestrator</span>
+            <span style={{ fontSize: '0.875rem', letterSpacing: '0.06em' }}>CHEF</span>
+            <span style={{ fontSize: '0.625rem', opacity: 0.55 }}>orchestrator</span>
           </div>
           <button
             type="button"
@@ -197,7 +197,7 @@ export function OrchestratorPanel({
               padding: '2px 8px',
               cursor: 'pointer',
               fontFamily: 'var(--font-pixel)',
-              fontSize: '11px',
+              fontSize: '0.6875rem',
             }}
           >
             ▶ hide
@@ -225,7 +225,7 @@ export function OrchestratorPanel({
                 alignItems: 'center',
                 justifyContent: 'center',
                 opacity: 0.55,
-                fontSize: '13px',
+                fontSize: '0.8125rem',
               }}
             >
               spawning orchestrator…

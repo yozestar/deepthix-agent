@@ -250,7 +250,7 @@ export function TerminalDropTarget({
         border: '2px solid var(--color-border)',
         boxShadow: 'var(--shadow-pixel)',
         fontFamily: 'var(--font-pixel)',
-        fontSize: '13px',
+        fontSize: '0.8125rem',
         zIndex: 200,
         pointerEvents: 'none',
         display: 'flex',

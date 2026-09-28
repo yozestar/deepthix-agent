@@ -65,7 +65,7 @@ export interface GlobalConfig {
   terminalLineHeight: number;
   /** Theme id — drives the live :root CSS variables. */
   themeId: string;
-  /** Box / surface style: pixel | glass | flat | soft | neon. */
+  /** Box / surface style: modern | pixel | glass | flat | soft | neon. */
   boxStyle: BoxStyleId;
   /** Hard cap on concurrent claude sessions Deepthix will spawn. Each
    *  claude process holds 200-250 MB resident, so this protects the
@@ -83,9 +83,11 @@ export interface GlobalConfig {
   uiTextScale: number;
 }
 
-export const BOX_STYLE_IDS = ['pixel', 'glass', 'flat', 'soft', 'neon'] as const;
+export const BOX_STYLE_IDS = ['modern', 'pixel', 'glass', 'flat', 'soft', 'neon'] as const;
 export type BoxStyleId = (typeof BOX_STYLE_IDS)[number];
-const DEFAULT_BOX_STYLE: BoxStyleId = 'pixel';
+// 'modern' for new installs (rounded, hairline borders, soft shadows);
+// existing configs keep whatever style they saved.
+const DEFAULT_BOX_STYLE: BoxStyleId = 'modern';
 
 function applyBoxStyle(style: BoxStyleId): void {
   document.documentElement.setAttribute('data-box-style', style);
@@ -285,6 +287,28 @@ export function useGlobalConfig(): UseGlobalConfigResult {
       });
     }, PERSIST_DEBOUNCE_MS);
   }, []);
+
+  // App-wide text-size shortcuts: Ctrl + / Ctrl − / Ctrl 0. Skipped when
+  // focus is inside an xterm (terminal keeps its own Cmd+=/- zoom and
+  // Ctrl+- must still reach the shell).
+  useEffect(() => {
+    function onKeyDown(ev: KeyboardEvent): void {
+      if (!ev.ctrlKey || ev.altKey || ev.metaKey) return;
+      const target = ev.target as Element | null;
+      if (target?.closest?.('.xterm')) return;
+      const current = latestRef.current.uiTextScale;
+      let next: number | null = null;
+      if (ev.key === '=' || ev.key === '+') next = current + UI_TEXT_SCALE_STEP;
+      else if (ev.key === '-') next = current - UI_TEXT_SCALE_STEP;
+      else if (ev.key === '0') next = UI_TEXT_SCALE_DEFAULT;
+      if (next === null) return;
+      ev.preventDefault();
+      const clamped = Math.max(UI_TEXT_SCALE_MIN, Math.min(UI_TEXT_SCALE_MAX, Number(next.toFixed(2))));
+      if (clamped !== current) update({ uiTextScale: clamped });
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [update]);
 
   return useMemo(() => ({ config, update, loaded }), [config, update, loaded]);
 }

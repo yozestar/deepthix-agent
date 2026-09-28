@@ -292,8 +292,8 @@ export function SkillsPane({ projectPath }: Props): React.JSX.Element {
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: '15px', letterSpacing: '0.06em' }}>SKILLS</span>
-          <span style={{ fontSize: '12px', opacity: 0.6 }}>
+          <span style={{ fontSize: '0.9375rem', letterSpacing: '0.06em' }}>SKILLS</span>
+          <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>
             Drop a SKILL.md folder anywhere on this pane to install. Click a row to view.
           </span>
         </div>
@@ -309,7 +309,7 @@ export function SkillsPane({ projectPath }: Props): React.JSX.Element {
               border: '2px solid var(--color-border)',
               padding: '4px 8px',
               fontFamily: 'var(--font-pixel)',
-              fontSize: '12px',
+              fontSize: '0.75rem',
               minWidth: '160px',
             }}
           />
@@ -347,7 +347,7 @@ export function SkillsPane({ projectPath }: Props): React.JSX.Element {
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          fontSize: 11,
+          fontSize: '0.6875rem',
           opacity: 0.85,
         }}
       >
@@ -380,7 +380,7 @@ export function SkillsPane({ projectPath }: Props): React.JSX.Element {
             color: 'var(--color-danger)',
             border: '2px solid var(--color-danger)',
             padding: '6px 10px',
-            fontSize: '12px',
+            fontSize: '0.75rem',
           }}
         >
           {error}
@@ -388,7 +388,7 @@ export function SkillsPane({ projectPath }: Props): React.JSX.Element {
       )}
 
       {!skills && !error && (
-        <div style={{ opacity: 0.6, fontSize: '13px' }}>scanning skills…</div>
+        <div style={{ opacity: 0.6, fontSize: '0.8125rem' }}>scanning skills…</div>
       )}
 
       {groups && (
@@ -455,7 +455,7 @@ const iconBtnStyle: React.CSSProperties = {
   color: 'inherit',
   border: '2px solid var(--color-border)',
   fontFamily: 'var(--font-pixel)',
-  fontSize: '12px',
+  fontSize: '0.75rem',
   cursor: 'pointer',
 };
 
@@ -508,14 +508,14 @@ function SkillSection({
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <span style={{ fontSize: '13px', letterSpacing: '0.06em' }}>{title}</span>
-          <span style={{ fontSize: '11px', opacity: 0.55 }}>
+          <span style={{ fontSize: '0.8125rem', letterSpacing: '0.06em' }}>{title}</span>
+          <span style={{ fontSize: '0.6875rem', opacity: 0.55 }}>
             {skills.length} {skills.length === 1 ? 'skill' : 'skills'}
           </span>
         </div>
         <span
           style={{
-            fontSize: '11px',
+            fontSize: '0.6875rem',
             opacity: 0.5,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -527,7 +527,7 @@ function SkillSection({
         </span>
       </div>
       {skills.length === 0 ? (
-        <div style={{ padding: '14px 12px', fontSize: '12px', opacity: 0.55 }}>{empty}</div>
+        <div style={{ padding: '14px 12px', fontSize: '0.75rem', opacity: 0.55 }}>{empty}</div>
       ) : (
         <div>
           {skills.map((s) => (
@@ -602,7 +602,7 @@ function SkillRow({
           marginTop: 2,
           background: badgeBg,
           color: '#fff',
-          fontSize: 10,
+          fontSize: '0.625rem',
           fontWeight: 'bold',
           letterSpacing: '0.05em',
           fontFamily: 'var(--font-pixel)',
@@ -651,14 +651,14 @@ function SkillRow({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '13px' }}>
+          <span style={{ fontSize: '0.8125rem' }}>
             {skill.plugin && <span style={{ opacity: 0.6 }}>{skill.plugin}:</span>}
             {skill.name}
           </span>
           {skill.hidden_from_menu && (
             <span
               style={{
-                fontSize: '10px',
+                fontSize: '0.625rem',
                 padding: '1px 6px',
                 background: 'var(--color-bg-dark)',
                 border: '1px solid var(--color-border)',
@@ -673,11 +673,11 @@ function SkillRow({
               this — no need for a redundant inline pill. */}
         </div>
         {skill.description && (
-          <div style={{ fontSize: '11px', opacity: 0.7, lineHeight: 1.4 }}>{skill.description}</div>
+          <div style={{ fontSize: '0.6875rem', opacity: 0.7, lineHeight: 1.4 }}>{skill.description}</div>
         )}
         <div
           style={{
-            fontSize: '10px',
+            fontSize: '0.625rem',
             opacity: 0.4,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -696,7 +696,7 @@ function SkillRow({
           style={{
             ...iconBtnStyle,
             padding: '2px 8px',
-            fontSize: 11,
+            fontSize: '0.6875rem',
             color: 'var(--color-danger)',
             borderColor: 'var(--color-danger)',
           }}
@@ -784,10 +784,10 @@ function SkillViewer({
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-            <span style={{ fontSize: 14, letterSpacing: '0.06em' }}>{skill.name}</span>
+            <span style={{ fontSize: '0.875rem', letterSpacing: '0.06em' }}>{skill.name}</span>
             <span
               style={{
-                fontSize: 11,
+                fontSize: '0.6875rem',
                 opacity: 0.55,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -808,7 +808,7 @@ function SkillViewer({
             padding: '12px 16px',
             overflow: 'auto',
             fontFamily: 'var(--font-pixel)',
-            fontSize: 12,
+            fontSize: '0.75rem',
             lineHeight: 1.55,
           }}
         >
@@ -918,23 +918,23 @@ function MarketplaceSection({
           fontFamily: 'var(--font-pixel)',
         }}
       >
-        <span style={{ fontSize: '13px', letterSpacing: '0.06em' }}>
+        <span style={{ fontSize: '0.8125rem', letterSpacing: '0.06em' }}>
           {open ? '▾' : '▸'} Marketplace
         </span>
-        <span style={{ fontSize: '11px', opacity: 0.55 }}>
+        <span style={{ fontSize: '0.6875rem', opacity: 0.55 }}>
           {catalog ? `${catalog.skills.length} skills` : 'click to load'}
         </span>
       </button>
       {open && (
         <div style={{ padding: '12px' }}>
           {error && (
-            <div style={{ color: 'var(--color-danger)', fontSize: 12, marginBottom: 8 }}>
+            <div style={{ color: 'var(--color-danger)', fontSize: '0.75rem', marginBottom: 8 }}>
               {error}
             </div>
           )}
-          {!catalog && !error && <div style={{ opacity: 0.6, fontSize: 12 }}>loading catalog…</div>}
+          {!catalog && !error && <div style={{ opacity: 0.6, fontSize: '0.75rem' }}>loading catalog…</div>}
           {catalog && catalog.skills.length === 0 && (
-            <div style={{ opacity: 0.6, fontSize: 12 }}>
+            <div style={{ opacity: 0.6, fontSize: '0.75rem' }}>
               No skills in the catalog yet — submit one via PR to{' '}
               <code>docs/skills-marketplace.json</code>.
             </div>
@@ -957,14 +957,14 @@ function MarketplaceSection({
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                        <span style={{ fontSize: 13 }}>{entry.name}</span>
+                        <span style={{ fontSize: '0.8125rem' }}>{entry.name}</span>
                         {entry.author && (
-                          <span style={{ fontSize: 10, opacity: 0.6 }}>by {entry.author}</span>
+                          <span style={{ fontSize: '0.625rem', opacity: 0.6 }}>by {entry.author}</span>
                         )}
                         {installed && (
                           <span
                             style={{
-                              fontSize: 10,
+                              fontSize: '0.625rem',
                               padding: '1px 6px',
                               background: 'var(--color-bg)',
                               border: '1px solid var(--color-border)',
@@ -975,7 +975,7 @@ function MarketplaceSection({
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>
+                      <div style={{ fontSize: '0.6875rem', opacity: 0.7, marginTop: 2 }}>
                         {entry.description}
                       </div>
                     </div>
@@ -986,7 +986,7 @@ function MarketplaceSection({
                       style={{
                         ...iconBtnStyle,
                         padding: '4px 10px',
-                        fontSize: 11,
+                        fontSize: '0.6875rem',
                       }}
                     >
                       {busy ? '…' : installed ? 'reinstall' : 'install'}

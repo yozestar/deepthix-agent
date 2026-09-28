@@ -295,7 +295,7 @@ export function TamagotchiView({ terminals, onSelectSession }: Props): React.JSX
             left: '50%',
             transform: 'translate(-50%, -50%)',
             color: 'var(--color-text-muted)',
-            fontSize: '16px',
+            fontSize: '1rem',
             textAlign: 'center',
           }}
         >
@@ -357,7 +357,7 @@ function BallView({
             border: '2px solid var(--color-border)',
             boxShadow: 'var(--shadow-pixel)',
             padding: '2px 6px',
-            fontSize: '13px',
+            fontSize: '0.8125rem',
             fontFamily: 'var(--font-pixel)',
             whiteSpace: 'nowrap',
             pointerEvents: 'none',
@@ -387,7 +387,7 @@ function BallView({
           top: `${RADIUS * 2 + 4}px`,
           left: '50%',
           transform: 'translateX(-50%)',
-          fontSize: '13px',
+          fontSize: '0.8125rem',
           fontFamily: 'var(--font-pixel)',
           background: 'var(--color-bg-dark)',
           color: 'var(--color-text)',

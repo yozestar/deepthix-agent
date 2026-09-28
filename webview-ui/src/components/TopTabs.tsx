@@ -6,6 +6,21 @@
 // the top tab strip — the SETTINGS button at the top of the sidebar
 // switches into it instead.
 
+import type { LucideIcon } from 'lucide-react';
+import {
+  Brain,
+  CalendarClock,
+  Cpu,
+  FolderOpen,
+  FolderTree,
+  Gauge,
+  LayoutDashboard,
+  MessagesSquare,
+  Sparkles,
+  Variable,
+  Workflow,
+} from 'lucide-react';
+
 export type Mode =
   | 'overview'
   | 'sessions'
@@ -41,6 +56,20 @@ const VISIBLE_MODES: ReadonlyArray<Mode> = [
   'variables',
 ];
 
+/** Icon + human label per tab (sentence case instead of SHOUTING). */
+const MODE_META: Record<Exclude<Mode, 'settings'>, { label: string; Icon: LucideIcon }> = {
+  overview: { label: 'Overview', Icon: LayoutDashboard },
+  sessions: { label: 'Sessions', Icon: MessagesSquare },
+  files: { label: 'Files', Icon: FolderTree },
+  usage: { label: 'Usage', Icon: Gauge },
+  process: { label: 'Process', Icon: Cpu },
+  memory: { label: 'Memory', Icon: Brain },
+  skills: { label: 'Skills', Icon: Sparkles },
+  schedule: { label: 'Schedule', Icon: CalendarClock },
+  workflow: { label: 'Workflows', Icon: Workflow },
+  variables: { label: 'Variables', Icon: Variable },
+};
+
 export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.Element {
   return (
     <div
@@ -62,12 +91,14 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
       <div
         style={{
           display: 'flex',
-          alignItems: 'baseline',
+          alignItems: 'center',
           gap: '8px',
           padding: '4px 8px',
-          fontSize: '15px',
+          fontSize: '0.9375rem',
           letterSpacing: '0.04em',
-          maxWidth: '50%',
+          maxWidth: '40%',
+          minWidth: '120px',
+          flexShrink: 0,
           overflow: 'hidden',
           whiteSpace: 'nowrap',
           textOverflow: 'ellipsis',
@@ -76,15 +107,26 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
         }}
         title={projectName ?? 'Deepthix Agent'}
       >
-        <span style={{ color: 'var(--color-accent)' }}>▸</span>
-        <span>{projectName ?? 'Deepthix Agent'}</span>
+        <FolderOpen
+          size="1.05em"
+          strokeWidth={1.75}
+          style={{ color: 'var(--color-accent)', alignSelf: 'center', flexShrink: 0 }}
+          aria-hidden
+        />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {projectName ?? 'Deepthix Agent'}
+        </span>
       </div>
 
       {/* Right: mode tabs. Active tab gets an underline-style accent
           instead of full-fill — calmer chrome. */}
-      <div style={{ display: 'flex', gap: '2px' }}>
+      {/* Tabs scroll horizontally instead of squeezing the project name
+          when the window is narrow or the UI text size is large. */}
+      <div style={{ display: 'flex', gap: '2px', minWidth: 0, overflowX: 'auto', scrollbarWidth: 'none' }}>
         {VISIBLE_MODES.map((m) => {
           const active = m === mode;
+          const meta = MODE_META[m as Exclude<Mode, 'settings'>];
+          const Icon = meta.Icon;
           return (
             <button
               key={m}
@@ -101,10 +143,15 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
                 borderBottom: `2px solid ${active ? 'var(--color-accent)' : 'transparent'}`,
                 cursor: 'pointer',
                 fontFamily: 'var(--font-pixel)',
-                fontSize: '12px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                fontWeight: active ? 'bold' : 'normal',
+                fontSize: '0.8125rem',
+                letterSpacing: '0.01em',
+                fontWeight: active ? 600 : 'normal',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                flexShrink: 0,
+                whiteSpace: 'nowrap',
+                borderRadius: 'var(--surface-radius, 0px) var(--surface-radius, 0px) 0 0',
                 transition: 'color 120ms ease, border-color 120ms ease, background 120ms ease',
               }}
               onMouseEnter={(e) => {
@@ -114,9 +161,10 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
                 if (!active)
                   (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-muted)';
               }}
-              title={`Switch to ${m} mode`}
+              title={`Switch to ${meta.label}`}
             >
-              {m}
+              <Icon size="1.15em" strokeWidth={1.75} aria-hidden />
+              <span>{meta.label}</span>
             </button>
           );
         })}

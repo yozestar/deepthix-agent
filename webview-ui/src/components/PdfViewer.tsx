@@ -104,7 +104,7 @@ export function PdfViewer({ base64 }: Props): React.JSX.Element {
           padding: '4px 8px',
           background: 'var(--color-bg-dark)',
           borderBottom: '2px solid var(--color-border)',
-          fontSize: '12px',
+          fontSize: '0.75rem',
         }}
       >
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -208,7 +208,7 @@ function ToolbarButton({
         cursor: disabled ? 'default' : 'pointer',
         opacity: disabled ? 0.4 : 1,
         fontFamily: 'var(--font-pixel)',
-        fontSize: '13px',
+        fontSize: '0.8125rem',
         minWidth: 28,
       }}
     >

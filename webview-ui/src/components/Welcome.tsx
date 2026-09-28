@@ -17,8 +17,8 @@ export function Welcome({ onOpenFolder }: Props): React.JSX.Element {
         fontFamily: 'var(--font-pixel)',
       }}
     >
-      <div style={{ fontSize: '26px', letterSpacing: '0.05em' }}>Deepthix Agent</div>
-      <div style={{ fontSize: '14px', opacity: 0.7, maxWidth: '320px', textAlign: 'center' }}>
+      <div style={{ fontSize: '1.625rem', letterSpacing: '0.05em' }}>Deepthix Agent</div>
+      <div style={{ fontSize: '0.875rem', opacity: 0.7, maxWidth: '320px', textAlign: 'center' }}>
         Open a folder to start your first project. Your agents will live in a pixel-art office,
         scoped to that project.
       </div>
@@ -27,7 +27,7 @@ export function Welcome({ onOpenFolder }: Props): React.JSX.Element {
         onClick={onOpenFolder}
         style={{
           padding: '12px 24px',
-          fontSize: '16px',
+          fontSize: '1rem',
           background: 'var(--color-accent)',
           color: 'var(--color-bg-dark)',
           border: '2px solid var(--color-border)',

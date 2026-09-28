@@ -480,7 +480,7 @@ export function UsagePane(): React.JSX.Element {
         borderTop: '1px solid var(--color-border)',
         padding: '6px 10px 10px',
         fontFamily: 'var(--font-pixel)',
-        fontSize: '12px',
+        fontSize: '0.75rem',
         display: 'flex',
         flexDirection: 'column',
         gap: '6px',
@@ -504,13 +504,13 @@ export function UsagePane(): React.JSX.Element {
         title="Click to collapse / expand"
       >
         <span>Usage</span>
-        <span style={{ fontSize: '10px', opacity: 0.55 }}>{collapsed ? '▸' : '▾'}</span>
+        <span style={{ fontSize: '0.625rem', opacity: 0.55 }}>{collapsed ? '▸' : '▾'}</span>
       </div>
 
       {!collapsed && (
         <>
           {error && (
-            <div style={{ color: 'var(--color-danger)', fontSize: '11px' }}>{error}</div>
+            <div style={{ color: 'var(--color-danger)', fontSize: '0.6875rem' }}>{error}</div>
           )}
 
           {sub && (
@@ -565,7 +565,7 @@ export function UsagePane(): React.JSX.Element {
             </div>
           )}
           {limitsSource === 'oauth' && (
-            <div style={{ fontSize: '9px', opacity: 0.45, lineHeight: 1.4 }}>
+            <div style={{ fontSize: '0.5625rem', opacity: 0.45, lineHeight: 1.4 }}>
               live from claude.ai/api/oauth/usage
             </div>
           )}
@@ -599,7 +599,7 @@ export function UsagePane(): React.JSX.Element {
                 color: 'inherit',
                 border: '1px solid var(--color-border)',
                 fontFamily: 'var(--font-pixel)',
-                fontSize: '9px',
+                fontSize: '0.5625rem',
                 padding: '1px 6px',
                 cursor: 'pointer',
                 opacity: 0.6,
@@ -616,7 +616,7 @@ export function UsagePane(): React.JSX.Element {
                 background: 'var(--color-bg-dark)',
                 border: '1px solid var(--color-border)',
                 fontFamily: 'Menlo, Consolas, monospace',
-                fontSize: 10,
+                fontSize: '0.625rem',
                 lineHeight: 1.4,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-all',
@@ -665,7 +665,7 @@ export function UsagePane(): React.JSX.Element {
           {limitsSource === 'cached' && cachedLimits && (
             <div
               style={{
-                fontSize: '9px',
+                fontSize: '0.5625rem',
                 opacity: 0.55,
                 lineHeight: 1.4,
                 color: 'var(--color-warning, #f59e0b)',
@@ -677,7 +677,7 @@ export function UsagePane(): React.JSX.Element {
           )}
           {limitsSource === 'none' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: '10px', opacity: 0.7, lineHeight: 1.4 }}>
+              <div style={{ fontSize: '0.625rem', opacity: 0.7, lineHeight: 1.4 }}>
                 {oauthLimits?.error
                   ? `live limits unavailable: ${oauthLimits.error}`
                   : 'fetching live limits…'}
@@ -693,7 +693,7 @@ export function UsagePane(): React.JSX.Element {
                   color: 'inherit',
                   border: '1px solid var(--color-border)',
                   fontFamily: 'var(--font-pixel)',
-                  fontSize: '10px',
+                  fontSize: '0.625rem',
                   cursor: 'pointer',
                 }}
               >
@@ -706,13 +706,13 @@ export function UsagePane(): React.JSX.Element {
           {snapshotFresh && snapshot && (
             <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
               {snapshot.context_window && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.85 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6875rem', opacity: 0.85 }}>
                   <span style={{ opacity: 0.7 }}>Context</span>
                   <span style={{ color: pctColor(ctxPct) }}>{ctxPct}% used</span>
                 </div>
               )}
               {totalCostUsd > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', opacity: 0.85 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6875rem', opacity: 0.85 }}>
                   <span style={{ opacity: 0.7 }}>Spent</span>
                   <span>{formatUsd(totalCostUsd)}</span>
                 </div>
@@ -749,7 +749,7 @@ export function UsagePane(): React.JSX.Element {
               color: 'inherit',
               border: '2px solid var(--color-border)',
               fontFamily: 'var(--font-pixel)',
-              fontSize: '11px',
+              fontSize: '0.6875rem',
               cursor: 'pointer',
             }}
           >
@@ -777,7 +777,7 @@ function UsageBar({ label, bucket, now }: UsageBarProps): React.JSX.Element {
         style={{
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: '11px',
+          fontSize: '0.6875rem',
         }}
       >
         <span style={{ opacity: 0.7 }}>{label}</span>
@@ -802,7 +802,7 @@ function UsageBar({ label, bucket, now }: UsageBarProps): React.JSX.Element {
         />
       </div>
       {countdown && (
-        <div style={{ fontSize: '10px', opacity: 0.5 }}>resets {countdown}</div>
+        <div style={{ fontSize: '0.625rem', opacity: 0.5 }}>resets {countdown}</div>
       )}
     </div>
   );

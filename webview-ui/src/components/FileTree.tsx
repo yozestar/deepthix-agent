@@ -41,7 +41,7 @@ export function FileTree({
         flex: 1,
         overflow: 'auto',
         fontFamily: 'var(--font-pixel)',
-        fontSize: '13px',
+        fontSize: '0.8125rem',
       }}
     >
       {!hideHeader && (
@@ -50,7 +50,7 @@ export function FileTree({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            fontSize: '12px',
+            fontSize: '0.75rem',
             opacity: 0.7,
             letterSpacing: '0.1em',
             padding: '4px',
@@ -68,7 +68,7 @@ export function FileTree({
               cursor: 'pointer',
               opacity: 0.6,
               padding: '0 4px',
-              fontSize: '12px',
+              fontSize: '0.75rem',
             }}
             aria-label="Refresh file tree"
             title="Refresh"

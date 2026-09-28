@@ -386,7 +386,7 @@ export function FilesPane({ projectPath, fileTree, openFiles }: Props): React.JS
               border: '2px solid var(--color-border)',
               outline: 'none',
               fontFamily: 'var(--font-pixel)',
-              fontSize: '13px',
+              fontSize: '0.8125rem',
             }}
           />
           <button
@@ -400,7 +400,7 @@ export function FilesPane({ projectPath, fileTree, openFiles }: Props): React.JS
               border: '2px solid var(--color-border)',
               cursor: 'pointer',
               fontFamily: 'var(--font-pixel)',
-              fontSize: '12px',
+              fontSize: '0.75rem',
             }}
             title="Refresh"
             aria-label="Refresh file tree"
@@ -497,7 +497,7 @@ function TabStrip({
       }}
     >
       {openFiles.files.length === 0 && (
-        <span style={{ opacity: 0.55, padding: '0 8px', fontSize: '12px' }}>(no files open)</span>
+        <span style={{ opacity: 0.55, padding: '0 8px', fontSize: '0.75rem' }}>(no files open)</span>
       )}
       {openFiles.files.map((f, i) => {
         const isActive = i === openFiles.activeIndex;
@@ -519,7 +519,7 @@ function TabStrip({
               border: '2px solid var(--color-border)',
               cursor: 'pointer',
               fontFamily: 'var(--font-pixel)',
-              fontSize: '13px',
+              fontSize: '0.8125rem',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
@@ -551,7 +551,7 @@ function TabStrip({
                   onCloseTab(i);
                 }
               }}
-              style={{ opacity: 0.7, padding: '0 2px', fontSize: '14px' }}
+              style={{ opacity: 0.7, padding: '0 2px', fontSize: '0.875rem' }}
               aria-label={`Close ${basename(f.path)}`}
               title="Close"
             >
@@ -623,7 +623,7 @@ function FileContent({
               boxShadow: 'var(--shadow-pixel)',
               cursor: 'pointer',
               fontFamily: 'var(--font-pixel)',
-              fontSize: '13px',
+              fontSize: '0.8125rem',
             }}
           >
             Open anyway
@@ -651,7 +651,7 @@ function FileContent({
             padding: '4px 8px',
             background: 'var(--color-bg-dark)',
             borderBottom: '2px solid var(--color-border)',
-            fontSize: '12px',
+            fontSize: '0.75rem',
             opacity: 0.85,
           }}
         >
@@ -678,7 +678,7 @@ function FileContent({
               cursor: isDirty && !isSaving ? 'pointer' : 'default',
               opacity: isDirty ? 1 : 0.5,
               fontFamily: 'var(--font-pixel)',
-              fontSize: '12px',
+              fontSize: '0.75rem',
             }}
             title="Save (Cmd+S)"
           >
@@ -786,7 +786,7 @@ function EmptyMessage({ children }: { children: React.ReactNode }): React.JSX.El
         opacity: 0.7,
         textAlign: 'center',
         padding: 24,
-        fontSize: '14px',
+        fontSize: '0.875rem',
         lineHeight: 1.5,
         fontFamily: 'var(--font-pixel)',
       }}

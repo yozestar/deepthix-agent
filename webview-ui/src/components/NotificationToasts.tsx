@@ -171,7 +171,7 @@ function Toast({
         boxShadow: 'var(--shadow-pixel)',
         padding: '10px 12px',
         fontFamily: 'var(--font-pixel)',
-        fontSize: '12px',
+        fontSize: '0.75rem',
         cursor: 'pointer',
         pointerEvents: 'auto',
         display: 'flex',
@@ -181,7 +181,7 @@ function Toast({
         opacity: toast.pinned ? 1 : 0.97,
       }}
     >
-      <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: -1 }}>{icon}</span>
+      <span style={{ fontSize: '1.125rem', lineHeight: 1, flexShrink: 0, marginTop: -1 }}>{icon}</span>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <span
@@ -194,7 +194,7 @@ function Toast({
           >
             {toast.title}
           </span>
-          {toast.pinned && <span style={{ fontSize: 10, opacity: 0.7 }}>📌</span>}
+          {toast.pinned && <span style={{ fontSize: '0.625rem', opacity: 0.7 }}>📌</span>}
         </div>
         {toast.body && (
           <span style={{ opacity: 0.9, lineHeight: 1.35, wordBreak: 'break-word' }}>
@@ -202,7 +202,7 @@ function Toast({
           </span>
         )}
         {toast.source && (
-          <span style={{ fontSize: 10, opacity: 0.55 }}>{toast.source}</span>
+          <span style={{ fontSize: '0.625rem', opacity: 0.55 }}>{toast.source}</span>
         )}
       </div>
       <button
@@ -218,7 +218,7 @@ function Toast({
           border: 'none',
           padding: '0 4px',
           cursor: 'pointer',
-          fontSize: 16,
+          fontSize: '1rem',
           lineHeight: 1,
           opacity: 0.7,
         }}

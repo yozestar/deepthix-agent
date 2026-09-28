@@ -13,6 +13,7 @@
 // to sit at the right end of the sub-tab strip is gone; users edit the
 // global font/zoom from the Sidebar's SETTINGS pane.
 
+import { X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useAgentStatus } from '../hooks/useAgentStatus';
@@ -221,7 +222,7 @@ export function SessionsPane({
                 borderTop: `2px solid ${isActive ? 'var(--color-session-active)' : 'transparent'}`,
                 cursor: isEditing ? 'text' : 'pointer',
                 fontFamily: 'var(--font-pixel)',
-                fontSize: '12px',
+                fontSize: '0.75rem',
                 fontWeight: isActive ? 'bold' : 'normal',
                 display: 'flex',
                 alignItems: 'center',
@@ -259,7 +260,7 @@ export function SessionsPane({
                     border: 'none',
                     color: 'inherit',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: '13px',
+                    fontSize: '0.8125rem',
                     width: `${Math.max(60, editingValue.length * 8)}px`,
                     outline: 'none',
                   }}
@@ -274,10 +275,10 @@ export function SessionsPane({
                   e.stopPropagation();
                   void terminals.close(t.id);
                 }}
-                style={{ opacity: 0.7, padding: '0 2px' }}
+                style={{ opacity: 0.7, padding: '0 2px', display: 'inline-flex', alignItems: 'center' }}
                 aria-label={`Close ${t.label}`}
               >
-                ×
+                <X size="0.95em" strokeWidth={2} aria-hidden />
               </span>
             </div>
           );
@@ -411,7 +412,7 @@ export function ProcessPane({ projectPath }: ProcessPaneProps): React.JSX.Elemen
         flex: 1,
         overflow: 'auto',
         padding: '8px',
-        fontSize: '13px',
+        fontSize: '0.8125rem',
         background: 'var(--color-bg)',
         fontFamily: 'var(--font-pixel)',
       }}
@@ -427,7 +428,7 @@ export function ProcessPane({ projectPath }: ProcessPaneProps): React.JSX.Elemen
             border: '2px solid var(--color-border)',
             cursor: 'pointer',
             fontFamily: 'var(--font-pixel)',
-            fontSize: '13px',
+            fontSize: '0.8125rem',
           }}
         >
           ⟳ refresh
@@ -470,7 +471,7 @@ export function ProcessPane({ projectPath }: ProcessPaneProps): React.JSX.Elemen
                     border: '2px solid var(--color-border)',
                     cursor: 'pointer',
                     fontFamily: 'var(--font-pixel)',
-                    fontSize: '12px',
+                    fontSize: '0.75rem',
                   }}
                 >
                   KILL

@@ -158,7 +158,7 @@ export function WorkflowsPane({
               border: '2px solid var(--color-border)',
               boxShadow: 'var(--shadow-pixel)',
               fontFamily: 'var(--font-pixel)',
-              fontSize: 11,
+              fontSize: '0.6875rem',
               cursor: 'pointer',
             }}
           >
@@ -167,9 +167,9 @@ export function WorkflowsPane({
         </div>
         <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
           {loading ? (
-            <div style={{ padding: 12, fontSize: 11, opacity: 0.6 }}>Loading…</div>
+            <div style={{ padding: 12, fontSize: '0.6875rem', opacity: 0.6 }}>Loading…</div>
           ) : workflows.length === 0 ? (
-            <div style={{ padding: 12, fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>
+            <div style={{ padding: 12, fontSize: '0.6875rem', opacity: 0.6, lineHeight: 1.5 }}>
               No workflow yet. Click <strong>+ New</strong> to add one, or have claude
               do it (the catalog file is at <code>$DEEPTHIX_WORKFLOWS_PATH</code>).
             </div>
@@ -189,7 +189,7 @@ export function WorkflowsPane({
             style={{
               padding: '8px 12px',
               borderTop: '1px solid var(--color-border)',
-              fontSize: 9,
+              fontSize: '0.5625rem',
               opacity: 0.5,
               wordBreak: 'break-all',
               lineHeight: 1.4,
@@ -209,7 +209,7 @@ export function WorkflowsPane({
               padding: '6px 10px',
               background: 'var(--color-danger)',
               color: 'var(--color-bg-dark)',
-              fontSize: 12,
+              fontSize: '0.75rem',
             }}
           >
             {error}
@@ -243,11 +243,11 @@ export function WorkflowsPane({
               opacity: 0.7,
             }}
           >
-            <div style={{ fontSize: 32, opacity: 0.55 }}>🧰</div>
-            <div style={{ fontSize: 14, fontWeight: 'bold' }}>
+            <div style={{ fontSize: '2rem', opacity: 0.55 }}>🧰</div>
+            <div style={{ fontSize: '0.875rem', fontWeight: 'bold' }}>
               Pick a workflow on the left
             </div>
-            <div style={{ fontSize: 11, opacity: 0.7, maxWidth: 380, lineHeight: 1.5 }}>
+            <div style={{ fontSize: '0.6875rem', opacity: 0.7, maxWidth: 380, lineHeight: 1.5 }}>
               Workflows are reusable claude prompt recipes — deploy steps, sweep
               scripts, weekly reports, anything you'd otherwise re-type.
             </div>
@@ -294,7 +294,7 @@ function WorkflowListItem({
     >
       <span
         style={{
-          fontSize: 12,
+          fontSize: '0.75rem',
           fontWeight: selected ? 'bold' : 'normal',
           color: selected ? 'var(--color-accent-bright, var(--color-accent))' : 'var(--color-text)',
           overflow: 'hidden',
@@ -307,7 +307,7 @@ function WorkflowListItem({
       {workflow.description && (
         <span
           style={{
-            fontSize: 10,
+            fontSize: '0.625rem',
             opacity: 0.6,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -490,13 +490,13 @@ function WorkflowEditor({
             border: '2px solid var(--color-border)',
             color: 'var(--color-text)',
             fontFamily: 'var(--font-pixel)',
-            fontSize: 14,
+            fontSize: '0.875rem',
             fontWeight: 'bold',
           }}
         />
         <span
           style={{
-            fontSize: 10,
+            fontSize: '0.625rem',
             opacity: 0.55,
             minWidth: 70,
             textAlign: 'right',
@@ -518,7 +518,7 @@ function WorkflowEditor({
             boxShadow: running || !prompt.trim() ? 'none' : 'var(--shadow-pixel)',
             cursor: running || !prompt.trim() ? 'default' : 'pointer',
             fontFamily: 'var(--font-pixel)',
-            fontSize: 12,
+            fontSize: '0.75rem',
             fontWeight: 'bold',
             opacity: running ? 0.5 : 1,
           }}
@@ -536,7 +536,7 @@ function WorkflowEditor({
             border: '2px solid var(--color-border)',
             cursor: 'pointer',
             fontFamily: 'var(--font-pixel)',
-            fontSize: 12,
+            fontSize: '0.75rem',
           }}
         >
           ✗
@@ -557,7 +557,7 @@ function WorkflowEditor({
               border: '2px solid var(--color-border)',
               color: 'var(--color-text)',
               fontFamily: 'var(--font-pixel)',
-              fontSize: 12,
+              fontSize: '0.75rem',
               boxSizing: 'border-box',
             }}
           />
@@ -580,7 +580,7 @@ function WorkflowEditor({
               border: '2px solid var(--color-border)',
               color: 'var(--color-text)',
               fontFamily: 'var(--font-pixel)',
-              fontSize: 12,
+              fontSize: '0.75rem',
               lineHeight: 1.5,
               resize: 'vertical',
               boxSizing: 'border-box',
@@ -594,7 +594,7 @@ function WorkflowEditor({
               padding: '6px 10px',
               border: '2px solid var(--color-danger)',
               color: 'var(--color-danger)',
-              fontSize: 11,
+              fontSize: '0.6875rem',
             }}
           >
             ✗ {runError}
@@ -604,7 +604,7 @@ function WorkflowEditor({
         <div>
           <div
             style={{
-              fontSize: 11,
+              fontSize: '0.6875rem',
               opacity: 0.7,
               marginBottom: 6,
               letterSpacing: '0.05em',
@@ -613,7 +613,7 @@ function WorkflowEditor({
             HISTORY · {runs.length} run{runs.length === 1 ? '' : 's'}
           </div>
           {runs.length === 0 ? (
-            <div style={{ fontSize: 11, opacity: 0.5, padding: '8px 10px' }}>
+            <div style={{ fontSize: '0.6875rem', opacity: 0.5, padding: '8px 10px' }}>
               No runs yet. Hit ▶ Run to fire this workflow.
             </div>
           ) : (
@@ -640,7 +640,7 @@ function RunRow({ run }: { run: WorkflowRun }): React.JSX.Element {
         padding: '6px 10px',
         background: 'var(--color-bg-dark)',
         border: '1px solid var(--color-border)',
-        fontSize: 11,
+        fontSize: '0.6875rem',
       }}
     >
       <StatusBadge status={run.status} />
@@ -652,7 +652,7 @@ function RunRow({ run }: { run: WorkflowRun }): React.JSX.Element {
         <span
           style={{
             marginLeft: 'auto',
-            fontSize: 10,
+            fontSize: '0.625rem',
             opacity: 0.5,
             fontFamily: 'Menlo, Consolas, monospace',
           }}
@@ -682,7 +682,7 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
         background: 'var(--color-bg)',
         border: `1px solid ${color}`,
         color,
-        fontSize: 9,
+        fontSize: '0.5625rem',
         letterSpacing: '0.05em',
         fontWeight: 'bold',
       }}
@@ -705,11 +705,11 @@ function Field({
 }): React.JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: flex ? 1 : undefined, minHeight: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 'bold', letterSpacing: '0.04em', opacity: 0.85 }}>
+      <div style={{ fontSize: '0.6875rem', fontWeight: 'bold', letterSpacing: '0.04em', opacity: 0.85 }}>
         {label}
       </div>
       {hint && (
-        <div style={{ fontSize: 10, opacity: 0.55, marginBottom: 2 }}>{hint}</div>
+        <div style={{ fontSize: '0.625rem', opacity: 0.55, marginBottom: 2 }}>{hint}</div>
       )}
       {children}
     </div>
