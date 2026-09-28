@@ -138,13 +138,16 @@ cd webview-ui && npm run dev   # Webview-only dev (no Tauri shell)
 
 ## Releases
 
-Tagging a `v*` commit triggers `.github/workflows/release.yml`, which builds macOS Apple Silicon, macOS Intel, and Windows x64 in parallel and attaches all artifacts to a draft release. Bump the version in three files (`package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`), then:
+Installers for every platform are built by `.github/workflows/build-installers.yml` (manual trigger: Actions → "Build installers" → Run workflow). It produces one downloadable artifact per platform on the run page — macOS Apple Silicon, macOS Intel, Windows x64, Windows ARM64 — without publishing anything. Installers are unsigned.
+
+Local builds (Windows):
 
 ```bash
-git tag v0.X.Y
-git push origin v0.X.Y
-# ~15 min later, review the draft release on GitHub, click Publish.
+npm run build                                          # host architecture
+npx tauri build --target x86_64-pc-windows-msvc        # Windows x64 from an ARM64 machine
 ```
+
+Bump the version in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` before a build you intend to distribute.
 
 ## Contributing
 

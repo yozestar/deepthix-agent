@@ -1,0 +1,87 @@
+# Build installers for every platform on GitHub-hosted runners.
+#
+# Trigger: manual only (Actions tab → "Build installers" → Run workflow).
+# Output: one downloadable artifact per platform on the workflow run page
+# (no GitHub Release is created, nothing is published):
+#   - macOS Apple Silicon  → .dmg + .app.tar.gz
+#   - macOS Intel          → .dmg
+#   - Windows x64          → -setup.exe (NSIS) + .msi
+#   - Windows ARM64        → -setup.exe (NSIS) + .msi
+#
+# macOS bundles can only be produced on macOS, hence the runners. The
+# installers are unsigned (ad-hoc on macOS): first launch needs
+# "right-click → Open" on macOS / "Run anyway" on Windows SmartScreen.
+#
+# --legacy-peer-deps: @xterm/addon-web-links@0.11 declares a stale peer on
+# @xterm/xterm@^5 while we ship v6.
+
+name: Build installers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            label: macos-apple-silicon
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            label: macos-intel
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: windows-x64
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            label: windows-arm64
+
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - name: Install root deps
+        run: npm install --legacy-peer-deps
+
+      - name: Install webview deps
+        run: npm install --prefix webview-ui --legacy-peer-deps
+
+      - name: Build + bundle
+        run: npx tauri build --target ${{ matrix.target }}
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: elyone-desktop-agent-${{ matrix.label }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
