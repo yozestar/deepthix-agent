@@ -99,7 +99,7 @@ pub struct UpdateScheduleArgs {
 
 fn schedules_path() -> std::io::Result<PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| std::io::Error::other("no home dir"))?;
-    Ok(home.join(".deepthix").join("schedules.json"))
+    Ok(home.join(crate::storage::DATA_DIR_NAME).join("schedules.json"))
 }
 
 fn now_ms() -> u64 {

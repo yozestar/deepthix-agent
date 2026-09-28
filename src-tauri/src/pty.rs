@@ -275,9 +275,8 @@ impl TerminalManager {
         // sessions in the same project collaborate on a single status
         // board (matches the new OverviewPane behaviour).
         let project_id = crate::state::project_id_for_path(&cwd);
-        if let Ok(home) = std::env::var("HOME") {
-            let dashboard_path = std::path::PathBuf::from(home.clone())
-                .join(".deepthix")
+        if let Some(home) = dirs::home_dir().map(|h| h.to_string_lossy().into_owned()) {
+            let dashboard_path = crate::storage::data_dir_in(&home)
                 .join("projects")
                 .join(&project_id)
                 .join("dashboard.html");
@@ -293,15 +292,13 @@ impl TerminalManager {
             cmd.env("DEEPTHIX_DASHBOARD_PATH", dashboard_path_str);
             cmd.env("DEEPTHIX_SESSION_ID", &session_id);
             cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
-            let workflows_path = std::path::PathBuf::from(home.clone())
-                .join(".deepthix")
+            let workflows_path = crate::storage::data_dir_in(&home)
                 .join("workflows.json");
             cmd.env(
                 "DEEPTHIX_WORKFLOWS_PATH",
                 workflows_path.to_string_lossy().into_owned(),
             );
-            let variables_path = std::path::PathBuf::from(home)
-                .join(".deepthix")
+            let variables_path = crate::storage::data_dir_in(&home)
                 .join("variables.json");
             cmd.env(
                 "DEEPTHIX_VARIABLES_PATH",

@@ -72,7 +72,7 @@ impl Notification {
 /// `~/.deepthix/notifications.jsonl` — append-only.
 pub fn notifications_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
-    home.join(".deepthix").join("notifications.jsonl")
+    home.join(crate::storage::DATA_DIR_NAME).join("notifications.jsonl")
 }
 
 /// Stateful holder for the running watcher. Dropped on app shutdown

@@ -401,7 +401,7 @@ function App(): React.JSX.Element {
       />
       {/* Top-right toast stack — driven by `deepthix-notification` events
           from Tauri commands AND the JsonlWatcher on
-          ~/.deepthix/notifications.jsonl (which deepthix-mcp writes to). */}
+          ~/.elyone/notifications.jsonl (which deepthix-mcp writes to). */}
       <NotificationToasts />
       {/* Auto-update banner: silent on launch, only paints itself if a
           newer version is available at the configured updater endpoint. */}

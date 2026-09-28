@@ -366,7 +366,7 @@ interface DashboardProps {
 
 /**
  * Renders an iframe (via `srcdoc` so it inherits no document context)
- * that reflects the contents of `~/.deepthix/projects/<pid>/dashboard.html`.
+ * that reflects the contents of `~/.elyone/projects/<pid>/dashboard.html`.
  * Polls the file's mtime every 2s and re-reads the body only when it
  * changes — so any session in the project can `Write` to the file and
  * have its dashboard appear here within ~2s.

@@ -3,6 +3,7 @@ mod claude_md;
 mod commands;
 mod jsonl_watcher;
 mod log;
+mod migration;
 mod pty;
 mod state;
 mod storage;
@@ -14,10 +15,14 @@ pub fn run() {
     let _log_guard = log::init();
     tracing::info!(target: "deepthix::boot", version = env!("CARGO_PKG_VERSION"), "starting Elyone AI Desktop Agent");
 
+    // Elyone has its own data folder; on the very first launch, seed it
+    // from the legacy Deepthix folder (re-runnable later from Settings).
+    migration::import_on_first_launch();
+
     let projects_path = match storage::deepthix_dir() {
         Ok(dir) => dir.join("projects.json"),
         Err(e) => {
-            tracing::error!(target: "deepthix::boot", error = %e, "failed to resolve ~/.deepthix/");
+            tracing::error!(target: "deepthix::boot", error = %e, "failed to resolve ~/.elyone/");
             std::process::exit(1);
         }
     };
@@ -94,6 +99,8 @@ pub fn run() {
             commands::scrollback::jsonl_mtime_ms,
             commands::conversations::session_previews,
             commands::conversations::search_conversations,
+            migration::legacy_import_status,
+            migration::import_from_deepthix,
             commands::dashboard::dashboard_path,
             commands::dashboard::read_session_dashboard,
             commands::dashboard::write_session_dashboard,

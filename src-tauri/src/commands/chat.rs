@@ -444,9 +444,8 @@ pub fn chat_spawn(
     // (No DEEPTHIX_SESSION_ID at spawn time — the real UUID isn't
     // known until claude emits the system/init event later.)
     let project_id = crate::state::project_id_for_path(&args.cwd);
-    if let Ok(home) = std::env::var("HOME") {
-        let dashboard_path = PathBuf::from(home.clone())
-            .join(".deepthix")
+    if let Some(home) = dirs::home_dir().map(|h| h.to_string_lossy().into_owned()) {
+        let dashboard_path = crate::storage::data_dir_in(&home)
             .join("projects")
             .join(&project_id)
             .join("dashboard.html");
@@ -461,14 +460,14 @@ pub fn chat_spawn(
         // Workflow catalog — claude can Read/Edit/Write this JSON to
         // discover or define workflows the user can re-fire from the
         // WORKFLOW tab.
-        let workflows_path = PathBuf::from(home.clone()).join(".deepthix").join("workflows.json");
+        let workflows_path = crate::storage::data_dir_in(&home).join("workflows.json");
         cmd.env(
             "DEEPTHIX_WORKFLOWS_PATH",
             workflows_path.to_string_lossy().to_string(),
         );
         // Shared variables — small key/value scratchpad both the user
         // (VARIABLES tab) and claude (Read/Write on the JSON) can use.
-        let variables_path = PathBuf::from(home).join(".deepthix").join("variables.json");
+        let variables_path = crate::storage::data_dir_in(&home).join("variables.json");
         cmd.env(
             "DEEPTHIX_VARIABLES_PATH",
             variables_path.to_string_lossy().to_string(),
@@ -1027,9 +1026,8 @@ pub fn chat_interrupt_and_resume(
         cmd.arg("--dangerously-skip-permissions");
     }
     let project_id = crate::state::project_id_for_path(&cwd);
-    if let Ok(home) = std::env::var("HOME") {
-        let dashboard_path = PathBuf::from(home.clone())
-            .join(".deepthix")
+    if let Some(home) = dirs::home_dir().map(|h| h.to_string_lossy().into_owned()) {
+        let dashboard_path = crate::storage::data_dir_in(&home)
             .join("projects")
             .join(&project_id)
             .join("dashboard.html");
@@ -1041,12 +1039,12 @@ pub fn chat_interrupt_and_resume(
             dashboard_path.to_string_lossy().to_string(),
         );
         cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
-        let workflows_path = PathBuf::from(home.clone()).join(".deepthix").join("workflows.json");
+        let workflows_path = crate::storage::data_dir_in(&home).join("workflows.json");
         cmd.env(
             "DEEPTHIX_WORKFLOWS_PATH",
             workflows_path.to_string_lossy().to_string(),
         );
-        let variables_path = PathBuf::from(home).join(".deepthix").join("variables.json");
+        let variables_path = crate::storage::data_dir_in(&home).join("variables.json");
         cmd.env(
             "DEEPTHIX_VARIABLES_PATH",
             variables_path.to_string_lossy().to_string(),
@@ -1197,9 +1195,8 @@ pub fn chat_switch_model(
     // Same env-var injection as chat_spawn — DEEPTHIX_DASHBOARD_PATH
     // etc. so the new child sees the project context.
     let project_id = crate::state::project_id_for_path(&cwd);
-    if let Ok(home) = std::env::var("HOME") {
-        let dashboard_path = PathBuf::from(home.clone())
-            .join(".deepthix")
+    if let Some(home) = dirs::home_dir().map(|h| h.to_string_lossy().into_owned()) {
+        let dashboard_path = crate::storage::data_dir_in(&home)
             .join("projects")
             .join(&project_id)
             .join("dashboard.html");
@@ -1211,12 +1208,12 @@ pub fn chat_switch_model(
             dashboard_path.to_string_lossy().to_string(),
         );
         cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
-        let workflows_path = PathBuf::from(home.clone()).join(".deepthix").join("workflows.json");
+        let workflows_path = crate::storage::data_dir_in(&home).join("workflows.json");
         cmd.env(
             "DEEPTHIX_WORKFLOWS_PATH",
             workflows_path.to_string_lossy().to_string(),
         );
-        let variables_path = PathBuf::from(home).join(".deepthix").join("variables.json");
+        let variables_path = crate::storage::data_dir_in(&home).join("variables.json");
         cmd.env(
             "DEEPTHIX_VARIABLES_PATH",
             variables_path.to_string_lossy().to_string(),
@@ -1699,9 +1696,8 @@ pub fn chat_resume_other_session(
         cmd.arg("--dangerously-skip-permissions");
     }
     let project_id = crate::state::project_id_for_path(&cwd);
-    if let Ok(home) = std::env::var("HOME") {
-        let dashboard_path = PathBuf::from(home.clone())
-            .join(".deepthix")
+    if let Some(home) = dirs::home_dir().map(|h| h.to_string_lossy().into_owned()) {
+        let dashboard_path = crate::storage::data_dir_in(&home)
             .join("projects")
             .join(&project_id)
             .join("dashboard.html");
@@ -1713,12 +1709,12 @@ pub fn chat_resume_other_session(
             dashboard_path.to_string_lossy().to_string(),
         );
         cmd.env("DEEPTHIX_PROJECT_ID", &project_id);
-        let workflows_path = PathBuf::from(home.clone()).join(".deepthix").join("workflows.json");
+        let workflows_path = crate::storage::data_dir_in(&home).join("workflows.json");
         cmd.env(
             "DEEPTHIX_WORKFLOWS_PATH",
             workflows_path.to_string_lossy().to_string(),
         );
-        let variables_path = PathBuf::from(home).join(".deepthix").join("variables.json");
+        let variables_path = crate::storage::data_dir_in(&home).join("variables.json");
         cmd.env(
             "DEEPTHIX_VARIABLES_PATH",
             variables_path.to_string_lossy().to_string(),

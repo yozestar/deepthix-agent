@@ -33,6 +33,13 @@ impl AppState {
         Ok(Self { inner: Mutex::new(inner), persist_path })
     }
 
+    /// Re-read `projects.json` from disk (after an import replaced it).
+    pub fn reload(&self) -> std::io::Result<()> {
+        let fresh = storage::read_json::<ProjectsFile>(&self.persist_path)?.unwrap_or_default();
+        *self.inner.lock().unwrap() = fresh;
+        Ok(())
+    }
+
     /// Snapshot the current state.
     pub fn snapshot(&self) -> ProjectsFile {
         self.inner.lock().unwrap().clone()

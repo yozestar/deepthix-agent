@@ -86,8 +86,11 @@ fn err_result(text: String) -> Value {
     })
 }
 
+/// Must match `storage::DATA_DIR_NAME` in the app crate.
+const DATA_DIR_NAME: &str = ".elyone";
+
 fn deepthix_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".deepthix"))
+    dirs::home_dir().map(|h| h.join(DATA_DIR_NAME))
 }
 
 // ─── Tool implementations ────────────────────────────────────────────────
@@ -391,7 +394,7 @@ fn tool_notify_user(args: &Value) -> Result<Value, String> {
         "ts_ms": ts_ms,
     });
     let home = dirs::home_dir().ok_or("no home dir")?;
-    let path = home.join(".deepthix").join("notifications.jsonl");
+    let path = home.join(DATA_DIR_NAME).join("notifications.jsonl");
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

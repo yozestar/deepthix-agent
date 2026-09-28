@@ -35,16 +35,33 @@ pub fn write_json<T: Serialize>(path: &Path, value: &T) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Returns `~/.deepthix/`, creating it if absent.
+/// App data folder under the home dir. Elyone keeps its own folder so it
+/// can run side by side with Deepthix Agent v2, which owns `~/.deepthix`
+/// (see `migration.rs` for the re-runnable copy from that folder).
+pub const DATA_DIR_NAME: &str = ".elyone";
+/// Legacy Deepthix data folder — only ever READ (import source).
+pub const LEGACY_DATA_DIR_NAME: &str = ".deepthix";
+
+/// `<home>/.elyone` for an explicit home path (no filesystem access).
+pub fn data_dir_in(home: impl AsRef<std::path::Path>) -> PathBuf {
+    home.as_ref().join(DATA_DIR_NAME)
+}
+
+/// `~/.elyone`, or None when the home dir can't be resolved. Uses the OS
+/// profile dir, not `$HOME` (often unset for GUI apps on Windows).
+pub fn data_root() -> Option<PathBuf> {
+    dirs::home_dir().map(data_dir_in)
+}
+
+/// Returns `~/.elyone/`, creating it if absent.
 pub fn deepthix_dir() -> std::io::Result<PathBuf> {
-    let dir = dirs::home_dir()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no home dir"))?
-        .join(".deepthix");
+    let dir = data_root()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no home dir"))?;
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
 
-/// Returns `~/.deepthix/projects/<id>/`, creating it if absent.
+/// Returns `~/.elyone/projects/<id>/`, creating it if absent.
 pub fn project_dir(id: &str) -> std::io::Result<PathBuf> {
     let dir = deepthix_dir()?.join("projects").join(id);
     std::fs::create_dir_all(&dir)?;
@@ -110,7 +127,7 @@ mod tests {
     #[test]
     fn deepthix_dir_is_under_home() {
         let path = deepthix_dir().unwrap();
-        assert!(path.ends_with(".deepthix"), "got {:?}", path);
+        assert!(path.ends_with(".elyone"), "got {:?}", path);
         assert!(path.is_dir());
     }
 

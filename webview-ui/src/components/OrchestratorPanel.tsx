@@ -26,7 +26,7 @@ async function resolveOrchestratorCwd(): Promise<string> {
   if (resolvedOrchestratorCwd) return resolvedOrchestratorCwd;
   const { homeDir } = await import('@tauri-apps/api/path');
   const home = await homeDir();
-  resolvedOrchestratorCwd = `${home.replace(/\/$/, '')}/.deepthix/orchestrator`;
+  resolvedOrchestratorCwd = `${home.replace(/\/$/, '')}/.elyone/orchestrator`;
   return resolvedOrchestratorCwd;
 }
 const STORAGE_KEY_OPEN = 'deepthix.orchestrator.open';

@@ -53,7 +53,7 @@ pub fn init() -> WorkerGuard {
 pub fn log_dir() -> PathBuf {
     dirs::home_dir()
         .expect("home dir")
-        .join(".deepthix")
+        .join(crate::storage::DATA_DIR_NAME)
         .join("logs")
 }
 

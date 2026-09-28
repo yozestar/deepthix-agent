@@ -127,7 +127,7 @@ mod tests {
         let pid = "abc123".to_string();
         let path = dashboard_path(pid.clone(), "ignored".into()).unwrap();
         let normalized = path.replace('\\', "/");
-        assert!(normalized.ends_with("/.deepthix/projects/abc123/dashboard.html"), "got {path}");
+        assert!(normalized.ends_with("/.elyone/projects/abc123/dashboard.html"), "got {path}");
     }
 
     #[test]

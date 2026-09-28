@@ -95,18 +95,13 @@ pub fn inject_into_project(project_root: &Path) -> std::io::Result<bool> {
                     tracing::warn!(target: "deepthix::claude_md", ?path, "marker order corrupted; leaving CLAUDE.md alone");
                     return Ok(false);
                 }
-                let end_line_end = end_idx + END.len();
-                let already = &content[begin_idx..end_line_end];
-                // Compare against the trimmed new block (no trailing newline)
-                // so we don't churn just because of whitespace differences.
-                if already.trim_end() == new_block.trim_end() {
-                    return Ok(false);
-                }
-                let mut out = String::with_capacity(content.len());
-                out.push_str(&content[..begin_idx]);
-                out.push_str(new_block.trim_end());
-                out.push_str(&content[end_line_end..]);
-                out
+                // A block is already there — possibly written by Deepthix
+                // Agent v2, which shares these markers. Leave it untouched:
+                // rewriting it would make the two apps flip-flop the text on
+                // every launch. The block only points at env vars, which
+                // each app sets for its own sessions.
+                let _ = new_block;
+                return Ok(false);
             } else {
                 // File exists but no markers — append with a leading blank
                 // line so we don't fuse with whatever the user had at the
@@ -349,16 +344,9 @@ pub fn ensure_global_brief() -> std::io::Result<bool> {
                     );
                     return Ok(false);
                 }
-                let end_line_end = end_idx + GLOBAL_END.len();
-                let already = &content[begin_idx..end_line_end];
-                if already.trim_end() == new_block.trim_end() {
-                    return Ok(false);
-                }
-                let mut out = String::with_capacity(content.len());
-                out.push_str(&content[..begin_idx]);
-                out.push_str(new_block.trim_end());
-                out.push_str(&content[end_line_end..]);
-                out
+                // Same rule as the project block: never rewrite an existing
+                // brief (Deepthix Agent v2 owns the same markers).
+                return Ok(false);
             } else {
                 let mut out = content;
                 if !out.ends_with('\n') {
@@ -417,20 +405,17 @@ mod tests {
     }
 
     #[test]
-    fn replaces_when_block_outdated() {
+    fn keeps_existing_block_written_by_another_app() {
+        // Deepthix Agent v2 writes the same markers with its own wording;
+        // Elyone must not rewrite it (the two apps would flip-flop).
         let dir = tempdir().unwrap();
         let path = dir.path().join("CLAUDE.md");
-        // Pretend an older version of the block was injected previously.
-        let older = format!(
-            "# Project\n\n{BEGIN}\nOLD CONTENT\n{END}\n\n## Other section\n",
+        let other = format!(
+            "# Project\n\n{BEGIN}\nOTHER APP CONTENT\n{END}\n\n## Other section\n",
         );
-        std::fs::write(&path, &older).unwrap();
-        assert!(inject_into_project(dir.path()).unwrap());
-        let body = std::fs::read_to_string(&path).unwrap();
-        assert!(!body.contains("OLD CONTENT"));
-        assert!(body.contains("DEEPTHIX_DASHBOARD_PATH"));
-        assert!(body.contains("# Project"), "user header preserved");
-        assert!(body.contains("## Other section"), "trailing user content preserved");
+        std::fs::write(&path, &other).unwrap();
+        assert!(!inject_into_project(dir.path()).unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), other);
     }
 
     #[test]

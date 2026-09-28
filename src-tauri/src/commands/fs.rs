@@ -16,6 +16,7 @@ const EXCLUDE_DIRS: &[&str] = &[
     "dist",
     "target",
     ".deepthix",
+    ".elyone",
     ".next",
     ".turbo",
     ".cache",
@@ -154,7 +155,7 @@ fn list_dir_inner(path: &Path) -> std::io::Result<Vec<FileEntry>> {
 pub fn stash_dropped_file(src: PathBuf) -> Result<PathBuf, String> {
     tracing::debug!(target: "deepthix::commands", ?src, "stash_dropped_file");
     let home = dirs::home_dir().ok_or_else(|| "no home dir".to_string())?;
-    let dst_dir = home.join(".deepthix").join("dropped");
+    let dst_dir = home.join(crate::storage::DATA_DIR_NAME).join("dropped");
     std::fs::create_dir_all(&dst_dir)
         .map_err(|e| format!("create dropped dir: {e}"))?;
 
@@ -207,7 +208,7 @@ pub fn stash_paste_as_attachment(content: String) -> Result<PathBuf, String> {
         return Err("paste content is empty".into());
     }
     let home = dirs::home_dir().ok_or_else(|| "no home dir".to_string())?;
-    let dst_dir = home.join(".deepthix").join("dropped");
+    let dst_dir = home.join(crate::storage::DATA_DIR_NAME).join("dropped");
     std::fs::create_dir_all(&dst_dir)
         .map_err(|e| format!("create dropped dir: {e}"))?;
     let id = uuid::Uuid::new_v4().to_string();
@@ -242,7 +243,7 @@ mod tests {
     #[test]
     fn excludes_node_modules_and_git_etc() {
         let dir = tempdir().unwrap();
-        for excluded in &["node_modules", ".git", "dist", "target", ".deepthix"] {
+        for excluded in &["node_modules", ".git", "dist", "target", ".deepthix", ".elyone"] {
             std::fs::create_dir(dir.path().join(excluded)).unwrap();
         }
         std::fs::create_dir(dir.path().join("src")).unwrap();

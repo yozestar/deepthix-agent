@@ -34,6 +34,12 @@ import {
   UI_TEXT_SCALE_MIN,
   UI_TEXT_SCALE_STEP,
 } from '../hooks/useGlobalConfig';
+import {
+  importFromDeepthix,
+  type ImportReport,
+  type ImportStatus,
+  legacyImportStatus,
+} from '../tauri/commands';
 import { resolveTheme, SYSTEM_THEME_ID, THEMES } from '../themes';
 
 interface BoxStyleMeta {
@@ -443,6 +449,10 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
         maxMessagesPerSession={config.maxMessagesPerSession}
         onChange={update}
       />
+
+      {/* DATA section — Elyone's own folder + re-runnable copy from the
+          legacy Deepthix folder while both apps coexist. */}
+      <DataImportSection />
 
       {/* UPDATES section — shows current version + update status, with a
           manual Check button. The UpdaterBanner at the top of the window
@@ -904,6 +914,102 @@ function UpdatesSection(): React.JSX.Element {
   );
 }
 
+/** Elyone data folder + "copy again from Deepthix" (two-step confirm).
+ *  The legacy folder is only read; current Elyone data is backed up first
+ *  and Elyone's own settings (theme, fonts) are kept. */
+function DataImportSection(): React.JSX.Element {
+  const [status, setStatus] = useState<ImportStatus | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [report, setReport] = useState<ImportReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    legacyImportStatus()
+      .then(setStatus)
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  const run = useCallback(async (): Promise<void> => {
+    setConfirming(false);
+    setRunning(true);
+    setError(null);
+    try {
+      const r = await importFromDeepthix();
+      setReport(r);
+      // Every pane caches data loaded at startup — reload the UI so it
+      // re-reads the fresh copy.
+      setTimeout(() => window.location.reload(), 2500);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRunning(false);
+    }
+  }, []);
+
+  const last = status?.last_import_ms
+    ? new Date(status.last_import_ms).toLocaleString('fr-FR')
+    : 'jamais';
+
+  return (
+    <Section
+      title="DONNÉES"
+      subtitle="Elyone garde ses propres données dans ~/.elyone. Tant que tu travailles encore dans Deepthix, tu peux recopier ses données ici autant de fois que nécessaire."
+    >
+      <Row label="Source Deepthix">
+        <code style={{ fontSize: '0.75rem' }}>{status?.legacy_path ?? '…'}</code>
+        {status && !status.legacy_exists && (
+          <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem' }}>introuvable</span>
+        )}
+      </Row>
+      <Row label="Dernière recopie">
+        <span style={{ fontSize: '0.8125rem' }}>{last}</span>
+      </Row>
+      <div style={{ fontSize: '0.75rem', opacity: 0.75, lineHeight: 1.5 }}>
+        Recopie : projets, sessions, variables, workflows, planifications, notes, coach. Non
+        recopiés : journaux, pièces jointes déposées. Tes réglages Elyone (thème, polices) sont
+        conservés, et les données Elyone actuelles sont sauvegardées avant (3 dernières dans
+        ~/.elyone-backups). Deepthix n&apos;est jamais modifié. Ferme les sessions en cours avant
+        de recopier.
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {!confirming ? (
+          <button
+            type="button"
+            className="dt-btn dt-btn--primary"
+            disabled={running || !status?.legacy_exists}
+            onClick={() => setConfirming(true)}
+          >
+            {running ? 'Recopie en cours…' : 'Recopier depuis Deepthix'}
+          </button>
+        ) : (
+          <>
+            <span style={{ fontSize: '0.8125rem' }}>
+              Remplacer les données Elyone par celles de Deepthix ?
+            </span>
+            <button type="button" className="dt-btn dt-btn--primary" onClick={() => void run()}>
+              Oui, recopier
+            </button>
+            <button type="button" className="dt-btn" onClick={() => setConfirming(false)}>
+              Annuler
+            </button>
+          </>
+        )}
+      </div>
+      {report && (
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-status-success)' }}>
+          Recopie terminée : {report.files_copied} fichiers (
+          {Math.round(report.bytes_copied / 1024)} Ko).
+          {report.backup ? ` Sauvegarde : ${report.backup}.` : ''} Rechargement…
+        </div>
+      )}
+      {error && (
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-danger)' }}>Échec : {error}</div>
+      )}
+    </Section>
+  );
+}
+
 function AboutSection(): React.JSX.Element {
   const [version, setVersion] = useState<string>('…');
   useEffect(() => {
@@ -919,12 +1025,12 @@ function AboutSection(): React.JSX.Element {
         <div style={{ marginTop: 6 }}>
           Open source —{' '}
           <a
-            href="https://github.com/deepthix/deepthix-agent"
+            href="https://github.com/yozestar/deepthix-agent"
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: 'var(--color-accent-bright)' }}
           >
-            github.com/deepthix/deepthix-agent
+            github.com/yozestar/deepthix-agent
           </a>
           . MIT licensed.
         </div>

@@ -179,6 +179,34 @@ export interface ConversationHit {
   snippet: string;
 }
 
+/** State of the legacy Deepthix data folder vs Elyone's own folder. */
+export interface ImportStatus {
+  legacy_path: string;
+  legacy_exists: boolean;
+  /** Epoch ms of the last import, null if never imported. */
+  last_import_ms: number | null;
+}
+
+export interface ImportReport {
+  source: string;
+  target: string;
+  files_copied: number;
+  bytes_copied: number;
+  /** Where the previous Elyone data was saved (null on first import). */
+  backup: string | null;
+  at_ms: number;
+}
+
+export async function legacyImportStatus(): Promise<ImportStatus> {
+  return await invoke<ImportStatus>('legacy_import_status');
+}
+
+/** Re-copy ~/.deepthix into ~/.elyone (backs up the current Elyone data
+ *  first, keeps Elyone's own settings). */
+export async function importFromDeepthix(): Promise<ImportReport> {
+  return await invoke<ImportReport>('import_from_deepthix');
+}
+
 /** Search the content of every transcript of the given projects
  *  (accent/case-insensitive, max 50 hits, 3 per conversation). */
 export async function searchConversations(
