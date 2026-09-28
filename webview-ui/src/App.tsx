@@ -13,8 +13,8 @@ import { SettingsPane } from './components/SettingsPane';
 import { Sidebar } from './components/Sidebar';
 import { SkillsPane } from './components/SkillsPane';
 import { TerminalDropTarget } from './components/TerminalDropTarget';
-import { UpdaterBanner } from './components/UpdaterBanner';
 import { type Mode, TopTabs } from './components/TopTabs';
+import { UpdaterBanner } from './components/UpdaterBanner';
 import { UsagePane } from './components/UsagePane';
 import { VariablesPane } from './components/VariablesPane';
 import { VoiceRecorder } from './components/VoiceRecorder';
@@ -155,14 +155,6 @@ function App(): React.JSX.Element {
     void terminals.open(projectId, cwd, 'claude', undefined, { skipPermissions: skipPerms });
   };
 
-  // Same fallback SessionsPane applies: the stored active id when it
-  // belongs to the current project, else that project's first session —
-  // so the sidebar highlights the conversation actually on screen.
-  const projectTerms = terminals.forProject(projects.activeProjectId);
-  const sidebarActiveTermId = projectTerms.some((t) => t.id === terminals.activeId)
-    ? terminals.activeId
-    : (projectTerms[0]?.id ?? null);
-
   // Sidebar → open a session: switch project when needed, focus the chat
   // tab, and make sure the SESSIONS view is showing.
   const onOpenSession = useCallback(
@@ -212,7 +204,6 @@ function App(): React.JSX.Element {
         terminals={terminals.terminals}
         onOpenSettings={onOpenSettings}
         settingsActive={mode === 'settings'}
-        activeTermId={sidebarActiveTermId}
         onOpenSession={onOpenSession}
         onResumeSession={onResumeSession}
         onNewSession={onSpawnAgent}

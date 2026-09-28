@@ -1,16 +1,15 @@
 // Conversation sidebar — messaging-app style left column.
 //
-//   [≡] [ Rechercher une conversation ] [+]
+//   [≡] [ Rechercher… ] [+]
 //   Projets                      + Ajouter
-//   [AB] Project name                 15:23
+//   [AB] Project name        Ctrl+1  15:23
 //        Last message preview…
-//      (ab) Session label   Ctrl+1    15:23
-//           En pause — preview…
 //
-// Every project is listed with its sessions nested underneath (most recent
-// first, 3 visible + expander). Previews come from the tail of each
-// session's JSONL via `session_previews`, polled every
-// SIDEBAR_PREVIEW_POLL_MS. Ctrl+1…9 jumps to the Nth visible session.
+// Projects only: sessions stay in the tab strip of the main pane (user
+// preference — no duplicate session list here). Each row shows the
+// project's latest activity and last message, read from the tail of its
+// sessions' JSONL via `session_previews` (polled every
+// SIDEBAR_PREVIEW_POLL_MS). Ctrl+1…9 jumps to the Nth listed project.
 
 import { Menu, Plus, Search, Settings, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -19,7 +18,6 @@ import {
   CONTENT_SEARCH_DEBOUNCE_MS,
   CONTENT_SEARCH_MIN_CHARS,
   SIDEBAR_PREVIEW_POLL_MS,
-  SIDEBAR_SESSIONS_PER_PROJECT,
 } from '../constants';
 import { avatarColor, formatWhen, initials, matches, splitOnMatch } from '../conversationUtils';
 import { useAgentStatus } from '../hooks/useAgentStatus';
@@ -35,8 +33,6 @@ import type { Project } from '../tauri/types';
 interface Props {
   projects: Project[];
   activeProjectId: string | null;
-  /** Session currently shown in the chat area (terminal entry id). */
-  activeTermId: string | null;
   terminals: TerminalEntry[];
   onSwitchProject: (id: string) => void;
   onOpenSession: (projectId: string, termId: string) => void;
@@ -69,7 +65,6 @@ interface ProjectGroup {
 export function ConversationSidebar({
   projects,
   activeProjectId,
-  activeTermId,
   terminals,
   onSwitchProject,
   onOpenSession,
@@ -84,7 +79,6 @@ export function ConversationSidebar({
   const agentStatus = useAgentStatus();
   const [query, setQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [previews, setPreviews] = useState<Map<string, SessionPreview>>(new Map());
@@ -192,26 +186,11 @@ export function ConversationSidebar({
     return out.sort((a, b) => b.lastMs - a.lastMs);
   }, [projects, claudeSessions, previews, query]);
 
-  // Sessions actually rendered, in display order → Ctrl+1…9 targets.
-  const visibleSessions = useMemo(() => {
-    const list: SessionRow[] = [];
-    for (const g of groups) {
-      const limit =
-        query.trim() || expanded.has(g.project.id) ? g.sessions.length : SIDEBAR_SESSIONS_PER_PROJECT;
-      list.push(...g.sessions.slice(0, limit));
-    }
-    return list;
-  }, [groups, expanded, query]);
-  const shortcutIndex = useMemo(() => {
-    const m = new Map<string, number>();
-    visibleSessions.slice(0, 9).forEach((s, i) => m.set(s.term.id, i + 1));
-    return m;
-  }, [visibleSessions]);
-
-  const visibleRef = useRef(visibleSessions);
+  // Projects in display order → Ctrl+1…9 targets.
+  const visibleRef = useRef(groups);
   useEffect(() => {
-    visibleRef.current = visibleSessions;
-  }, [visibleSessions]);
+    visibleRef.current = groups;
+  }, [groups]);
   useEffect(() => {
     function onKeyDown(ev: KeyboardEvent): void {
       if (!ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey) return;
@@ -224,21 +203,18 @@ export function ConversationSidebar({
         return;
       }
       if (!/^[1-9]$/.test(ev.key)) return;
-      const row = visibleRef.current[Number(ev.key) - 1];
-      if (!row) return;
+      const group = visibleRef.current[Number(ev.key) - 1];
+      if (!group) return;
       ev.preventDefault();
-      onOpenSession(row.term.projectId, row.term.id);
+      onSwitchProject(group.project.id);
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onOpenSession]);
+  }, [onSwitchProject]);
 
-  const statusLabel = useCallback(
-    (t: TerminalEntry): { text: string; working: boolean } => {
-      if (agentStatus.status(t.agentId) === 'working') return { text: 'En cours…', working: true };
-      if (t.id.startsWith('ghost:')) return { text: 'En pause', working: false };
-      return { text: 'Prêt', working: false };
-    },
+  /** True when at least one session of the project is mid-turn. */
+  const isWorking = useCallback(
+    (g: ProjectGroup): boolean => g.sessions.some((s) => agentStatus.status(s.term.agentId) === 'working'),
     [agentStatus],
   );
 
@@ -343,19 +319,18 @@ export function ConversationSidebar({
         {projects.length > 0 && groups.length === 0 && (
           <div className="dt-conv-empty">Aucun résultat pour « {query} ».</div>
         )}
-        {groups.map((g) => {
+        {groups.map((g, index) => {
           const p = g.project;
           const isActiveProject = p.id === activeProjectId;
           const newest = g.sessions[0];
-          const isExpanded = expanded.has(p.id) || !!query.trim();
-          const shown = isExpanded ? g.sessions : g.sessions.slice(0, SIDEBAR_SESSIONS_PER_PROJECT);
-          const hidden = g.sessions.length - shown.length;
+          const working = isWorking(g);
+          const shortcut = index < 9 ? index + 1 : null;
           return (
             <div key={p.id} className="dt-conv-group">
               <div
                 role="button"
                 tabIndex={0}
-                className={`dt-conv-row dt-conv-project${isActiveProject ? ' is-current' : ''}`}
+                className={`dt-conv-row dt-conv-project${isActiveProject ? ' is-active' : ''}`}
                 onClick={() => editingId !== p.id && onSwitchProject(p.id)}
                 onDoubleClick={() => {
                   setEditingId(p.id);
@@ -393,10 +368,13 @@ export function ConversationSidebar({
                     ) : (
                       <span className="dt-conv-title">{p.name}</span>
                     )}
+                    {shortcut && <kbd className="dt-conv-kbd">Ctrl+{shortcut}</kbd>}
                     <span className="dt-conv-time">{formatWhen(g.lastMs)}</span>
                   </span>
                   <span className="dt-conv-sub">
-                    {newest?.preview?.last_text || (g.sessions.length === 0 ? 'Aucune session' : newest?.term.label)}
+                    {working && <span className="dt-conv-status is-working">En cours… </span>}
+                    {newest?.preview?.last_text ||
+                      (g.sessions.length === 0 ? 'Aucune session' : newest?.term.label)}
                   </span>
                 </span>
                 <button
@@ -412,55 +390,6 @@ export function ConversationSidebar({
                   <X size="0.9em" strokeWidth={2} aria-hidden />
                 </button>
               </div>
-
-              {shown.map((s) => {
-                const isActive = s.term.id === activeTermId && isActiveProject;
-                const st = statusLabel(s.term);
-                const shortcut = shortcutIndex.get(s.term.id);
-                return (
-                  <div
-                    key={s.term.id}
-                    role="button"
-                    tabIndex={0}
-                    className={`dt-conv-row dt-conv-session${isActive ? ' is-active' : ''}`}
-                    onClick={() => onOpenSession(p.id, s.term.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') onOpenSession(p.id, s.term.id);
-                    }}
-                    title={s.term.label}
-                  >
-                    <span
-                      className="dt-conv-avatar dt-conv-avatar--sm"
-                      style={{ background: avatarColor(p.id) }}
-                      aria-hidden
-                    >
-                      {initials(s.term.label || p.name)}
-                    </span>
-                    <span className="dt-conv-text">
-                      <span className="dt-conv-line">
-                        <span className="dt-conv-title dt-conv-title--sm">{s.term.label}</span>
-                        {shortcut && <kbd className="dt-conv-kbd">Ctrl+{shortcut}</kbd>}
-                        <span className="dt-conv-time">{formatWhen(s.lastMs)}</span>
-                      </span>
-                      <span className="dt-conv-sub">
-                        <span className={st.working ? 'dt-conv-status is-working' : 'dt-conv-status'}>
-                          {st.text}
-                        </span>
-                        {s.preview?.last_text ? ` — ${s.preview.last_text}` : ''}
-                      </span>
-                    </span>
-                  </div>
-                );
-              })}
-              {hidden > 0 && (
-                <button
-                  type="button"
-                  className="dt-conv-more"
-                  onClick={() => setExpanded((prev) => new Set(prev).add(p.id))}
-                >
-                  {hidden} autre{hidden > 1 ? 's' : ''} session{hidden > 1 ? 's' : ''}…
-                </button>
-              )}
             </div>
           );
         })}

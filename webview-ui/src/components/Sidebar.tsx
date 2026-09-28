@@ -19,8 +19,6 @@ interface Props {
   onOpenSettings: () => void;
   /** True when the parent's mode is `'settings'` (highlights the button). */
   settingsActive: boolean;
-  /** Terminal entry id of the session shown in the chat area. */
-  activeTermId: string | null;
   /** Open a session: switch project if needed, focus its chat. */
   onOpenSession: (projectId: string, termId: string) => void;
   /** Reopen a transcript found by content search that has no session entry. */
@@ -34,7 +32,6 @@ export function Sidebar({
   terminals,
   onOpenSettings,
   settingsActive,
-  activeTermId,
   onOpenSession,
   onResumeSession,
   onNewSession,
@@ -100,7 +97,6 @@ export function Sidebar({
         <ConversationSidebar
           projects={projects.projects}
           activeProjectId={projects.activeProjectId}
-          activeTermId={activeTermId}
           terminals={terminals}
           onSwitchProject={(id) => void projects.switchProject(id)}
           onOpenSession={onOpenSession}

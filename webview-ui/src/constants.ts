@@ -221,8 +221,6 @@ export const AVATAR_COLORS = [
   '#3D5A80',
   '#C98F00',
 ] as const;
-/** Sessions listed under a project before the "N more" expander. */
-export const SIDEBAR_SESSIONS_PER_PROJECT = 3;
 /** How often the sidebar refreshes last-message previews. */
 export const SIDEBAR_PREVIEW_POLL_MS = 15_000;
 /** Content search (all transcripts) kicks in from this many characters. */
