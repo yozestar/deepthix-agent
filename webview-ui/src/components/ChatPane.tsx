@@ -18,6 +18,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { LONG_USER_MESSAGE_CHARS } from '../constants';
 import {
   computeTurnFooters,
   contextFromRecord,
@@ -25,13 +26,13 @@ import {
   type TurnInfo,
 } from '../conversationUtils';
 import {
+  chatForkAtUuid,
   chatInterruptAndResume,
   chatKill,
   chatLoadHistory,
   chatResumeOtherSession,
   chatSendUserText,
   chatSendUserWithAttachments,
-  chatForkAtUuid,
   chatSetSessionId,
   chatSpawn,
   chatSwitchModel,
@@ -3426,19 +3427,39 @@ function BubbleImpl({
       className={`dt-chat-msg dt-bubble dt-bubble--${align}`}
       aria-label={label}
       title={typeof ts === 'number' ? new Date(ts).toLocaleString() : undefined}
-      style={{
-        alignSelf: align === 'right' ? 'flex-end' : 'flex-start',
-        maxWidth: align === 'right' ? '75%' : 'min(88%, 860px)',
-        background: bg,
-        color: fg,
-        border: align === 'right' ? 'none' : '1px solid var(--color-border)',
-        borderRadius: 'calc(var(--surface-radius, 0px) + 6px)',
-        padding: '10px 16px',
-        fontSize: '0.9375rem',
-        lineHeight: 1.6,
-        whiteSpace: markdown ? 'normal' : 'pre-wrap',
-        wordBreak: 'break-word',
-      }}
+      style={
+        align === 'left'
+          ? {
+              // Agent replies read like a document: full width of the
+              // conversation, no bubble. A narrow chat column turned long
+              // answers (plans, lists, code) into endless vertical text.
+              alignSelf: 'stretch',
+              maxWidth: '100%',
+              background: 'transparent',
+              color: fg,
+              border: 'none',
+              padding: '4px 4px',
+              fontSize: '0.9375rem',
+              lineHeight: 1.6,
+              whiteSpace: markdown ? 'normal' : 'pre-wrap',
+              wordBreak: 'break-word',
+            }
+          : {
+              alignSelf: 'flex-end',
+              // Short user messages stay a compact right-hand bubble; long
+              // ones (pasted specs, logs) get the full width too.
+              maxWidth: body.length > LONG_USER_MESSAGE_CHARS ? '100%' : '75%',
+              background: bg,
+              color: fg,
+              border: 'none',
+              borderRadius: 'calc(var(--surface-radius, 0px) + 6px)',
+              padding: '10px 16px',
+              fontSize: '0.9375rem',
+              lineHeight: 1.6,
+              whiteSpace: markdown ? 'normal' : 'pre-wrap',
+              wordBreak: 'break-word',
+            }
+      }
     >
       <div
         className="dt-bubble-actions"

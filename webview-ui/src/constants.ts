@@ -227,3 +227,5 @@ export const SIDEBAR_PREVIEW_POLL_MS = 15_000;
 export const CONTENT_SEARCH_MIN_CHARS = 3;
 /** Typing pause before the content search runs. */
 export const CONTENT_SEARCH_DEBOUNCE_MS = 350;
+/** User messages longer than this render full width instead of a bubble. */
+export const LONG_USER_MESSAGE_CHARS = 600;
