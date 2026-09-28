@@ -137,7 +137,7 @@ export function UpdaterBanner(): React.JSX.Element | null {
         left: 0,
         right: 0,
         background: 'var(--color-accent)',
-        color: 'var(--color-bg-dark)',
+        color: 'var(--color-on-accent)',
         padding: '6px 12px',
         fontFamily: 'var(--font-pixel)',
         fontSize: '0.75rem',

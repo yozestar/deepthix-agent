@@ -99,7 +99,7 @@ function MemoryColumn({
             style={{
               padding: '6px 14px',
               background: disabled || saving ? 'transparent' : 'var(--color-accent)',
-              color: disabled || saving ? 'inherit' : 'var(--color-bg-dark)',
+              color: disabled || saving ? 'inherit' : 'var(--color-on-accent)',
               border: '2px solid var(--color-border)',
               boxShadow: disabled || saving ? 'none' : 'var(--shadow-pixel)',
               cursor: disabled || saving ? 'default' : 'pointer',

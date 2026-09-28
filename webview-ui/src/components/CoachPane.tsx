@@ -710,7 +710,7 @@ export function CoachPane({ sessions, onHide }: Props): React.JSX.Element {
                 fontSize: '0.625rem',
                 padding: '1px 6px',
                 background: state.enabled ? 'var(--color-accent)' : 'transparent',
-                color: state.enabled ? 'var(--color-bg-dark)' : 'var(--color-text-muted)',
+                color: state.enabled ? 'var(--color-on-accent)' : 'var(--color-text-muted)',
                 border: `1px solid ${state.enabled ? 'var(--color-accent)' : 'var(--color-border)'}`,
                 fontWeight: 'bold',
                 letterSpacing: '0.05em',
@@ -815,7 +815,7 @@ export function CoachPane({ sessions, onHide }: Props): React.JSX.Element {
           style={{
             padding: '6px 10px',
             background: 'var(--color-danger)',
-            color: 'var(--color-bg-dark)',
+            color: 'var(--color-on-accent)',
             fontSize: '0.75rem',
           }}
         >
@@ -914,7 +914,7 @@ function ToggleSwitch({
           right: enabled ? undefined : 6,
           fontFamily: 'var(--font-pixel)',
           fontSize: '0.5rem',
-          color: enabled ? 'var(--color-bg-dark)' : 'var(--color-text)',
+          color: enabled ? 'var(--color-on-accent)' : 'var(--color-text)',
           opacity: 0.85,
           letterSpacing: '0.05em',
           pointerEvents: 'none',
@@ -930,7 +930,7 @@ function headerBtn(danger: boolean): React.CSSProperties {
   return {
     padding: '4px 12px',
     background: danger ? 'var(--color-danger)' : 'var(--color-accent)',
-    color: 'var(--color-bg-dark)',
+    color: 'var(--color-on-accent)',
     border: '2px solid var(--color-border)',
     boxShadow: 'var(--shadow-pixel)',
     fontFamily: 'var(--font-pixel)',
@@ -1000,7 +1000,7 @@ function WatchingPlaceholder({
         style={{
           padding: '8px 18px',
           background: busy || sessions === 0 ? 'transparent' : 'var(--color-accent)',
-          color: busy || sessions === 0 ? 'inherit' : 'var(--color-bg-dark)',
+          color: busy || sessions === 0 ? 'inherit' : 'var(--color-on-accent)',
           border: '2px solid var(--color-border)',
           boxShadow: busy || sessions === 0 ? 'none' : 'var(--shadow-pixel)',
           cursor: busy || sessions === 0 ? 'default' : 'pointer',
@@ -1815,7 +1815,7 @@ function cardBtn(primary: boolean, busy: boolean): React.CSSProperties {
   return {
     padding: '4px 12px',
     background: primary && !busy ? 'var(--color-accent)' : 'transparent',
-    color: primary && !busy ? 'var(--color-bg-dark)' : 'inherit',
+    color: primary && !busy ? 'var(--color-on-accent)' : 'inherit',
     border: '2px solid var(--color-border)',
     boxShadow: primary && !busy ? 'var(--shadow-pixel)' : 'none',
     cursor: busy ? 'default' : 'pointer',

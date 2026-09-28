@@ -150,6 +150,23 @@ export async function jsonlMtimeMs(
   return await invoke<JsonlStat>('jsonl_mtime_ms', { projectCwd, sessionId });
 }
 
+/** Latest human-readable message of a session (sidebar preview). */
+export interface SessionPreview {
+  session_id: string;
+  /** Transcript mtime, 0 when the file doesn't exist yet. */
+  mtime_ms: number;
+  /** 'user' | 'assistant' | '' when nothing readable was found. */
+  last_role: string;
+  last_text: string;
+}
+
+/** Batch preview lookup — reads only the tail of each transcript. */
+export async function sessionPreviews(
+  items: { cwd: string; session_id: string }[],
+): Promise<SessionPreview[]> {
+  return await invoke<SessionPreview[]>('session_previews', { items });
+}
+
 /** Absolute path to the per-session dashboard HTML file (used in placeholder). */
 export async function dashboardPath(projectId: string, sessionId: string): Promise<string> {
   log('dashboardPath', { projectId, sessionId });

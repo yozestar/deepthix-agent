@@ -18,6 +18,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { computeTurnFooters, type TurnInfo } from '../conversationUtils';
 import {
   chatInterruptAndResume,
   chatKill,
@@ -68,6 +69,8 @@ interface Props {
    *  messages are dropped from the tree whenever a new one arrives.
    *  Defaults to 100 if not provided. */
   maxMessages?: number;
+  /** Human session name (sidebar label) shown in the chat header. */
+  sessionLabel?: string;
 }
 
 // ─── Message model ──────────────────────────────────────────────────────
@@ -569,6 +572,7 @@ function ChatPaneImpl({
   onSessionReady,
   onActivateGhost,
   maxMessages,
+  sessionLabel,
 }: Props): React.JSX.Element {
   // Lazy-spawn flag: bindTermId === "ghost:<sid>" means the parent
   // registered this session at startup WITHOUT spawning claude (saves
@@ -1605,8 +1609,8 @@ function ChatPaneImpl({
   }, []);
 
   const headerLabel = useMemo(
-    () => (sessionId ? `claude · ${sessionId.slice(0, 8)}` : 'claude · starting…'),
-    [sessionId],
+    () => sessionLabel || (sessionId ? `Session ${sessionId.slice(0, 8)}` : 'Nouvelle session'),
+    [sessionId, sessionLabel],
   );
 
   /** Friendly model label for the header — strips the
@@ -1636,6 +1640,12 @@ function ChatPaneImpl({
     for (const id of started) if (!finished.has(id)) out.add(id);
     return out;
   }, [messages]);
+
+  // Per-turn footers ("Terminé · 33 s · 2 outils · 13:51"), keyed by the
+  // index of the last message of each turn. A turn = everything from a
+  // user message up to (not including) the next user message; only turns
+  // that got an assistant reply get a footer.
+  const turnFooters = useMemo(() => computeTurnFooters(messages), [messages]);
 
   // Seed the textarea up/down history with EVERY user message in the
   // current transcript — without this, ↑/↓ did nothing until the user
@@ -1720,7 +1730,7 @@ function ChatPaneImpl({
             style={{
               padding: '2px 8px',
               background: currentModel ? 'var(--color-accent)' : 'transparent',
-              color: currentModel ? 'var(--color-bg-dark)' : 'inherit',
+              color: currentModel ? 'var(--color-on-accent)' : 'inherit',
               border: '2px solid var(--color-border)',
               fontFamily: 'var(--font-pixel)',
               fontSize: '0.625rem',
@@ -1870,7 +1880,7 @@ function ChatPaneImpl({
             style={{
               padding: '8px 10px',
               background: 'var(--color-danger)',
-              color: 'var(--color-bg-dark)',
+              color: 'var(--color-on-accent)',
               fontSize: '0.75rem',
               border: '2px solid var(--color-border)',
             }}
@@ -1880,7 +1890,7 @@ function ChatPaneImpl({
         )}
         {messages.length === 0 && !error && (
           <div style={{ opacity: 0.55, padding: '24px', textAlign: 'center', fontSize: '0.8125rem' }}>
-            Type a message and hit ⏎ to start.
+            Écris un message et appuie sur ⏎ pour commencer.
           </div>
         )}
         {messages.map((m, i, arr) => {
@@ -1902,6 +1912,12 @@ function ChatPaneImpl({
                 termId={termId}
                 onRewindUser={handleRewindUser}
               />
+              {turnFooters.has(i) && (
+                <TurnFooter
+                  info={turnFooters.get(i)!}
+                  inProgress={busy && i === arr.length - 1}
+                />
+              )}
             </React.Fragment>
           );
         })}
@@ -2393,7 +2409,7 @@ function ChatInput({
                 padding: '6px 10px',
                 background:
                   i === selectedIdx ? 'var(--color-accent)' : 'transparent',
-                color: i === selectedIdx ? 'var(--color-bg-dark)' : 'inherit',
+                color: i === selectedIdx ? 'var(--color-on-accent)' : 'inherit',
                 border: 'none',
                 cursor: 'pointer',
                 fontFamily: 'var(--font-pixel)',
@@ -2516,7 +2532,7 @@ function ChatInput({
           placeholder={
             spawning
               ? 'Spawning claude…'
-              : 'Message claude (⏎ send, ⇧⏎ newline, ↑/↓ history, / for commands)'
+              : "Écrire à l'agent…  (⏎ envoyer · ⇧⏎ nouvelle ligne · ↑/↓ historique · / commandes)"
           }
           disabled={spawning}
           rows={6}
@@ -2542,7 +2558,7 @@ function ChatInput({
           style={{
             padding: '4px 16px',
             background: canSend && input.trim() ? 'var(--color-accent)' : 'transparent',
-            color: canSend && input.trim() ? 'var(--color-bg-dark)' : 'inherit',
+            color: canSend && input.trim() ? 'var(--color-on-accent)' : 'inherit',
             border: '2px solid var(--color-border)',
             boxShadow: canSend && input.trim() ? 'var(--shadow-pixel)' : 'none',
             cursor: canSend && input.trim() ? 'pointer' : 'default',
@@ -2565,7 +2581,7 @@ function ChatInput({
             style={{
               padding: '4px 12px',
               background: 'var(--color-danger)',
-              color: 'var(--color-bg-dark)',
+              color: 'var(--color-on-accent)',
               border: '2px solid var(--color-border)',
               boxShadow: 'var(--shadow-pixel)',
               cursor: 'pointer',
@@ -2703,7 +2719,7 @@ function MicButton({ disabled }: { disabled: boolean }): React.JSX.Element {
       style={{
         padding: '4px 10px',
         background: holding ? 'var(--color-danger)' : 'transparent',
-        color: holding ? 'var(--color-bg-dark)' : 'inherit',
+        color: holding ? 'var(--color-on-accent)' : 'inherit',
         border: '2px solid var(--color-border)',
         boxShadow: holding ? 'var(--shadow-pixel)' : 'none',
         cursor: disabled ? 'default' : 'pointer',
@@ -3009,7 +3025,7 @@ function ResumePickerPopup({
                           fontSize: '0.625rem',
                           padding: '1px 6px',
                           background: 'var(--color-accent)',
-                          color: 'var(--color-bg-dark)',
+                          color: 'var(--color-on-accent)',
                           fontWeight: 'bold',
                         }}
                       >
@@ -3064,7 +3080,7 @@ function MessageBubbleImpl({
         <Bubble
           align="right"
           bg="var(--color-accent)"
-          fg="var(--color-bg-dark)"
+          fg="var(--color-on-accent)"
           label="you"
           body={m.text}
           markdown={false}
@@ -3127,7 +3143,7 @@ function MessageBubbleImpl({
             padding: '4px 10px',
             border: '2px solid var(--color-border)',
             background: m.ok ? 'var(--color-bg-dark)' : 'var(--color-danger)',
-            color: m.ok ? 'inherit' : 'var(--color-bg-dark)',
+            color: m.ok ? 'inherit' : 'var(--color-on-accent)',
           }}
         >
           turn ended · {(m.durationMs / 1000).toFixed(1)}s · ${m.costUsd.toFixed(4)}
@@ -3142,7 +3158,7 @@ function MessageBubbleImpl({
             fontSize: '0.75rem',
             padding: '6px 10px',
             background: 'var(--color-danger)',
-            color: 'var(--color-bg-dark)',
+            color: 'var(--color-on-accent)',
             border: '2px solid var(--color-border)',
           }}
         >
@@ -3213,7 +3229,7 @@ function QuickRepliesImpl({
           marginLeft: 8,
           padding: '4px 8px',
           background: 'var(--color-danger)',
-          color: 'var(--color-bg-dark)',
+          color: 'var(--color-on-accent)',
           border: '2px solid var(--color-border)',
           fontSize: '0.6875rem',
           maxWidth: '92%',
@@ -3248,7 +3264,7 @@ function QuickRepliesImpl({
             fontSize: '0.6875rem',
             fontFamily: 'var(--font-pixel)',
             background: 'var(--color-accent)',
-            color: 'var(--color-bg-dark)',
+            color: 'var(--color-on-accent)',
             border: '2px solid var(--color-border)',
             cursor: 'pointer',
             maxWidth: 360,
@@ -3359,40 +3375,35 @@ function BubbleImpl({
    *  see ChatPane.handleRewindUser. */
   onRewind?: () => void;
 }): React.JSX.Element {
+  // Chat-app bubble: no "claude · 14:52" chrome line — the turn footer
+  // carries time/duration. User bubbles keep a hover-only rewind action.
   return (
     <div
-      className="dt-chat-msg"
+      className={`dt-chat-msg dt-bubble dt-bubble--${align}`}
+      aria-label={label}
+      title={typeof ts === 'number' ? new Date(ts).toLocaleString() : undefined}
       style={{
         alignSelf: align === 'right' ? 'flex-end' : 'flex-start',
-        maxWidth: '85%',
+        maxWidth: align === 'right' ? '75%' : 'min(88%, 860px)',
         background: bg,
         color: fg,
-        border: '2px solid var(--color-border)',
-        boxShadow: 'var(--shadow-pixel)',
-        padding: '8px 10px',
-        fontSize: '0.8125rem',
-        lineHeight: 1.45,
+        border: align === 'right' ? 'none' : '1px solid var(--color-border)',
+        borderRadius: 'calc(var(--surface-radius, 0px) + 6px)',
+        padding: '10px 16px',
+        fontSize: '0.9375rem',
+        lineHeight: 1.6,
         whiteSpace: markdown ? 'normal' : 'pre-wrap',
         wordBreak: 'break-word',
       }}
     >
       <div
+        className="dt-bubble-actions"
         style={{
-          fontSize: '0.625rem',
-          opacity: 0.6,
-          marginBottom: 4,
-          display: 'flex',
-          gap: 8,
-          alignItems: 'baseline',
-          justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
+          fontSize: '0.6875rem',
+          display: onRewind ? 'flex' : 'none',
+          justifyContent: 'flex-end',
         }}
       >
-        <span>{label}</span>
-        {typeof ts === 'number' && (
-          <span title={new Date(ts).toLocaleString()} style={{ opacity: 0.7 }}>
-            {formatTime(ts)}
-          </span>
-        )}
         {onRewind && (
           <button
             type="button"
@@ -3433,6 +3444,37 @@ function formatTime(ts: number): string {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
+}
+
+function formatDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min ${String(s % 60).padStart(2, '0')} s`;
+  return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+}
+
+/** Plain-language turn summary under the last bubble of each turn. */
+function TurnFooter({ info, inProgress }: { info: TurnInfo; inProgress: boolean }): React.JSX.Element {
+  const parts = [
+    inProgress ? 'En cours…' : 'Terminé',
+    formatDuration(info.durationMs),
+    info.tools > 0 ? `${info.tools} outil${info.tools > 1 ? 's' : ''}` : null,
+    formatTime(info.endTs),
+  ].filter(Boolean);
+  return (
+    <div
+      style={{
+        alignSelf: 'flex-start',
+        fontSize: '0.75rem',
+        color: 'var(--color-text-muted)',
+        padding: '0 4px 6px',
+        fontFamily: 'var(--font-pixel)',
+      }}
+    >
+      {parts.join(' · ')}
+    </div>
+  );
 }
 
 function formatTokenCount(n: number): string {
@@ -3831,7 +3873,7 @@ function ToolBubbleImpl({
             alignItems: 'center',
             justifyContent: 'center',
             background: style.accent,
-            color: 'var(--color-bg-dark)',
+            color: 'var(--color-on-accent)',
             fontWeight: 'bold',
             fontSize: '0.6875rem',
             flexShrink: 0,
@@ -3919,7 +3961,7 @@ function ToolBubbleImpl({
               marginTop: !isResult && !isAskUser && inputPreview ? 6 : 0,
               padding: '6px 8px',
               background: m.result.isError ? 'var(--color-danger)' : 'var(--color-bg)',
-              color: m.result.isError ? 'var(--color-bg-dark)' : 'var(--color-text)',
+              color: m.result.isError ? 'var(--color-on-accent)' : 'var(--color-text)',
               border: '1px solid var(--color-border)',
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
@@ -4238,7 +4280,7 @@ function QuestionBlock({
             fontSize: '0.625rem',
             padding: '2px 6px',
             background: 'var(--color-accent)',
-            color: 'var(--color-bg-dark)',
+            color: 'var(--color-on-accent)',
             fontFamily: 'Menlo, Consolas, monospace',
             fontWeight: 'bold',
             letterSpacing: '0.5px',
@@ -4272,7 +4314,7 @@ function QuestionBlock({
                 cursor: disabled ? 'default' : 'pointer',
                 padding: '6px 10px',
                 background: active ? 'var(--color-accent)' : 'var(--color-bg-dark)',
-                color: active ? 'var(--color-bg-dark)' : 'var(--color-text)',
+                color: active ? 'var(--color-on-accent)' : 'var(--color-text)',
                 border: '1px solid var(--color-border)',
                 fontFamily: 'var(--font-pixel)',
                 fontSize: '0.6875rem',

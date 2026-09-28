@@ -155,6 +155,26 @@ function App(): React.JSX.Element {
     void terminals.open(projectId, cwd, 'claude', undefined, { skipPermissions: skipPerms });
   };
 
+  // Same fallback SessionsPane applies: the stored active id when it
+  // belongs to the current project, else that project's first session —
+  // so the sidebar highlights the conversation actually on screen.
+  const projectTerms = terminals.forProject(projects.activeProjectId);
+  const sidebarActiveTermId = projectTerms.some((t) => t.id === terminals.activeId)
+    ? terminals.activeId
+    : (projectTerms[0]?.id ?? null);
+
+  // Sidebar → open a session: switch project when needed, focus the chat
+  // tab, and make sure the SESSIONS view is showing.
+  const onOpenSession = useCallback(
+    (projectId: string, termId: string): void => {
+      if (projectId !== projects.activeProjectId) void projects.switchProject(projectId);
+      terminals.setActive(termId);
+      setMode('sessions');
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projects.activeProjectId, projects.switchProject, terminals.setActive],
+  );
+
   const onOpenSettings = useCallback((): void => {
     console.debug('[Deepthix][App] open settings');
     setMode('settings');
@@ -174,6 +194,9 @@ function App(): React.JSX.Element {
         terminals={terminals.terminals}
         onOpenSettings={onOpenSettings}
         settingsActive={mode === 'settings'}
+        activeTermId={sidebarActiveTermId}
+        onOpenSession={onOpenSession}
+        onNewSession={onSpawnAgent}
       />
       <div
         style={{
@@ -269,7 +292,7 @@ function App(): React.JSX.Element {
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 6,
-                    color: 'var(--color-bg-dark)',
+                    color: 'var(--color-on-accent)',
                     border: '2px solid var(--color-border)',
                     boxShadow: 'var(--shadow-pixel)',
                     fontFamily: 'var(--font-pixel)',

@@ -249,7 +249,7 @@ export function SchedulesPane({ terminals }: Props): React.JSX.Element {
           style={{
             padding: '6px 10px',
             background: 'var(--color-danger)',
-            color: 'var(--color-bg-dark)',
+            color: 'var(--color-on-accent)',
             border: '2px solid var(--color-border)',
             fontSize: '0.75rem',
           }}
@@ -524,7 +524,7 @@ function PixelButton({
     : primary
       ? 'var(--color-accent)'
       : 'transparent';
-  const fg = primary || danger ? 'var(--color-bg-dark)' : 'inherit';
+  const fg = primary || danger ? 'var(--color-on-accent)' : 'inherit';
   return (
     <button
       type="button"

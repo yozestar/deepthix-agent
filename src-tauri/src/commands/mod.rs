@@ -1,6 +1,7 @@
 pub mod chat;
 pub mod chrome;
 pub mod config;
+pub mod conversations;
 pub mod dashboard;
 pub mod fs;
 pub mod layout;

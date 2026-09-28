@@ -299,7 +299,7 @@ function SessionPill({
         gap: '6px',
         padding: '4px 8px 4px 4px',
         background: isActive ? 'var(--color-accent)' : 'var(--color-bg-dark)',
-        color: isActive ? 'var(--color-bg-dark)' : 'inherit',
+        color: isActive ? 'var(--color-on-accent)' : 'inherit',
         border: '2px solid var(--color-border)',
         boxShadow: 'var(--shadow-pixel)',
         cursor: 'pointer',

@@ -150,7 +150,7 @@ export function VariablesPane(): React.JSX.Element {
             style={{
               padding: '6px 12px',
               background: 'var(--color-accent)',
-              color: 'var(--color-bg-dark)',
+              color: 'var(--color-on-accent)',
               border: '2px solid var(--color-border)',
               boxShadow: 'var(--shadow-pixel)',
               fontFamily: 'var(--font-pixel)',
@@ -168,7 +168,7 @@ export function VariablesPane(): React.JSX.Element {
           style={{
             padding: '6px 16px',
             background: 'var(--color-danger)',
-            color: 'var(--color-bg-dark)',
+            color: 'var(--color-on-accent)',
             fontSize: '0.75rem',
           }}
         >
@@ -267,7 +267,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }): React.JSX.Element {
         style={{
           padding: '8px 18px',
           background: 'var(--color-accent)',
-          color: 'var(--color-bg-dark)',
+          color: 'var(--color-on-accent)',
           border: '2px solid var(--color-border)',
           boxShadow: 'var(--shadow-pixel)',
           fontFamily: 'var(--font-pixel)',
@@ -381,7 +381,7 @@ function DraftRow({
           style={{
             padding: '3px 8px',
             background: 'var(--color-accent)',
-            color: 'var(--color-bg-dark)',
+            color: 'var(--color-on-accent)',
             border: '1px solid var(--color-border)',
             fontFamily: 'var(--font-pixel)',
             fontSize: '0.625rem',

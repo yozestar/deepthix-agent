@@ -208,3 +208,20 @@ export const TERMINAL_FONT_FAMILY_PRESETS: ReadonlyArray<{ label: string; value:
   // Project pixel font
   { label: 'Pixel (project)', value: 'var(--font-pixel), Menlo, monospace' },
 ];
+
+// ── Conversation sidebar ─────────────────────────────────────
+/** Avatar fills for projects without a custom avatar, picked by a stable
+ *  hash of the project id. Elyone-leaning palette (blues first, one green,
+ *  one amber) — sober, no rainbow. */
+export const AVATAR_COLORS = [
+  '#0066DA',
+  '#005895',
+  '#0A84C6',
+  '#00A06B',
+  '#3D5A80',
+  '#C98F00',
+] as const;
+/** Sessions listed under a project before the "N more" expander. */
+export const SIDEBAR_SESSIONS_PER_PROJECT = 3;
+/** How often the sidebar refreshes last-message previews. */
+export const SIDEBAR_PREVIEW_POLL_MS = 15_000;

@@ -113,7 +113,7 @@ const pixelFont = {
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Require font-family values to reference FS Pixel Sans or var(--font-pixel).',
+      description: 'Require font-family values to reference a font token (var(--font-pixel|--font-title|--font-mono)).',
     },
     schema: [],
     messages: {
@@ -126,7 +126,13 @@ const pixelFont = {
         if (!isFontFamilyProperty(node)) return;
         const value = node.value;
         if (value.type !== 'Literal' || typeof value.value !== 'string') return;
-        if (value.value.includes('FS Pixel Sans') || value.value.includes('var(--font-pixel)')) {
+        if (
+          value.value.includes('FS Pixel Sans') ||
+          value.value.includes('var(--font-pixel)') ||
+          // Brand title face and code face are design tokens too.
+          value.value.includes('var(--font-title)') ||
+          value.value.includes('var(--font-mono)')
+        ) {
           return;
         }
         context.report({ node: value, messageId: 'found' });

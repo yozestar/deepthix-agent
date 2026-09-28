@@ -1,0 +1,88 @@
+// Pure helpers for the conversation sidebar and chat turn footers. Kept
+// free of React / Tauri imports so they can be unit-tested under node.
+
+import { AVATAR_COLORS } from './constants';
+
+/** Two-letter initials: first letters of the first two words, else the
+ *  first two characters. */
+export function initials(name: string): string {
+  const words = name
+    .replace(/[_\-.]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  return (words[0] ?? '?').slice(0, 2).toUpperCase();
+}
+
+/** Stable palette pick from an id (djb2 hash). */
+export function avatarColor(id: string): string {
+  let h = 5381;
+  for (let i = 0; i < id.length; i++) h = ((h << 5) + h + id.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+
+/** "15:23" today, "hier", "ven." within a week, else "12/09". */
+export function formatWhen(ms: number, now: number = Date.now()): string {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const today = new Date(now);
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  if (ms >= startOfToday) {
+    return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  }
+  const dayMs = 86_400_000;
+  if (ms >= startOfToday - dayMs) return 'hier';
+  if (ms >= startOfToday - 6 * dayMs) return d.toLocaleDateString('fr-FR', { weekday: 'short' });
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+}
+
+/** Case- and accent-insensitive "contains". */
+export function matches(haystack: string, needle: string): boolean {
+  const norm = (s: string): string =>
+    s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return norm(haystack).includes(norm(needle));
+}
+
+export interface TurnInfo {
+  /** Wall time from the user message to the last message of the turn. */
+  durationMs: number;
+  /** Tool calls made during the turn (results not counted). */
+  tools: number;
+  /** Timestamp of the last message of the turn. */
+  endTs: number;
+}
+
+/** Map "index of the last message of a turn" → footer info. Exported for
+ *  tests. A turn starts at a user message; turns without any assistant
+ *  output (e.g. still waiting) get no footer. */
+export function computeTurnFooters(
+  messages: ReadonlyArray<{ kind: string; ts: number; tool?: string }>,
+): Map<number, TurnInfo> {
+  const out = new Map<number, TurnInfo>();
+  let start = -1;
+  const close = (end: number): void => {
+    if (start < 0 || end <= start) return;
+    let tools = 0;
+    let replied = false;
+    for (let j = start + 1; j <= end; j++) {
+      const m = messages[j];
+      if (m.kind === 'assistant_text') replied = true;
+      if (m.kind === 'tool_use' && m.tool !== '(result)') tools++;
+    }
+    if (!replied && tools === 0) return;
+    out.set(end, {
+      durationMs: Math.max(0, messages[end].ts - messages[start].ts),
+      tools,
+      endTs: messages[end].ts,
+    });
+  };
+  messages.forEach((m, i) => {
+    if (m.kind === 'user') {
+      close(i - 1);
+      start = i;
+    }
+  });
+  close(messages.length - 1);
+  return out;
+}
+

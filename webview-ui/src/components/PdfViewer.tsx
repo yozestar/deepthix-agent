@@ -202,7 +202,7 @@ function ToolbarButton({
       style={{
         padding: '2px 10px',
         background: disabled ? 'transparent' : 'var(--color-accent)',
-        color: disabled ? 'inherit' : 'var(--color-bg-dark)',
+        color: disabled ? 'inherit' : 'var(--color-on-accent)',
         border: '2px solid var(--color-border)',
         boxShadow: disabled ? 'none' : 'var(--shadow-pixel)',
         cursor: disabled ? 'default' : 'pointer',

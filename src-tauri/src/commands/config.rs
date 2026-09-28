@@ -132,6 +132,7 @@ mod tests {
             max_active_sessions: None,
             max_messages_per_session: None,
             ui_font: None,
+            ui_text_scale: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         assert!(json.contains("terminal_font_size"));

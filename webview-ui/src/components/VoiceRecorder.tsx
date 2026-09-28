@@ -377,7 +377,7 @@ export function VoiceRecorder({
         left: '50%',
         transform: 'translateX(-50%)',
         background: bg,
-        color: 'var(--color-bg-dark)',
+        color: 'var(--color-on-accent)',
         padding: '10px 18px',
         border: '2px solid var(--color-border)',
         borderLeft: `4px solid ${state.kind === 'recording' ? 'var(--color-bg-dark)' : 'var(--color-bg-dark)'}`,

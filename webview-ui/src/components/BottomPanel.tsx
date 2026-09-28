@@ -323,6 +323,7 @@ export function SessionsPane({
                     : undefined
                 }
                 bindTermId={t.id}
+                sessionLabel={t.label}
                 agentId={t.agentId}
                 maxMessages={globalConfig.maxMessagesPerSession}
                 onSessionReady={({ termId, sessionId }) => {
@@ -467,7 +468,7 @@ export function ProcessPane({ projectPath }: ProcessPaneProps): React.JSX.Elemen
                   style={{
                     padding: '2px 8px',
                     background: 'var(--color-danger)',
-                    color: 'var(--color-bg-dark)',
+                    color: 'var(--color-on-accent)',
                     border: '2px solid var(--color-border)',
                     cursor: 'pointer',
                     fontFamily: 'var(--font-pixel)',

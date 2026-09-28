@@ -29,7 +29,7 @@ export function Welcome({ onOpenFolder }: Props): React.JSX.Element {
           padding: '12px 24px',
           fontSize: '1rem',
           background: 'var(--color-accent)',
-          color: 'var(--color-bg-dark)',
+          color: 'var(--color-on-accent)',
           border: '2px solid var(--color-border)',
           boxShadow: 'var(--shadow-pixel)',
           cursor: 'pointer',

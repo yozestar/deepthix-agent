@@ -2,11 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { UseProjectsResult } from '../hooks/useProjects';
 import type { TerminalEntry } from '../hooks/useTerminals';
-import { ProjectList } from './ProjectList';
+import { ConversationSidebar } from './ConversationSidebar';
 
-const MIN_WIDTH = 160;
-const DEFAULT_WIDTH = 220;
-const STORAGE_KEY = 'deepthix.sidebarWidth';
+const MIN_WIDTH = 240;
+// Wider than the old projects-only column: rows now carry an avatar, a
+// timestamp and a one-line preview. New storage key so the old 220px
+// value doesn't squeeze the new layout.
+const DEFAULT_WIDTH = 320;
+const STORAGE_KEY = 'elyone.sidebarWidth';
 
 interface Props {
   projects: UseProjectsResult;
@@ -16,6 +19,12 @@ interface Props {
   onOpenSettings: () => void;
   /** True when the parent's mode is `'settings'` (highlights the button). */
   settingsActive: boolean;
+  /** Terminal entry id of the session shown in the chat area. */
+  activeTermId: string | null;
+  /** Open a session: switch project if needed, focus its chat. */
+  onOpenSession: (projectId: string, termId: string) => void;
+  /** New session in the active project. */
+  onNewSession: () => void;
 }
 
 export function Sidebar({
@@ -23,6 +32,9 @@ export function Sidebar({
   terminals,
   onOpenSettings,
   settingsActive,
+  activeTermId,
+  onOpenSession,
+  onNewSession,
 }: Props): React.JSX.Element {
   const [width, setWidth] = useState<number>(() => {
     const stored = Number(localStorage.getItem(STORAGE_KEY));
@@ -71,25 +83,28 @@ export function Sidebar({
       <div
         style={{
           width: `${width}px`,
-          background: 'var(--color-bg)',
+          background: 'var(--color-sidebar-bg)',
           display: 'flex',
           flexDirection: 'column',
           fontFamily: 'var(--font-pixel)',
-          borderRight: '1px solid var(--color-border)',
+          borderRight: '1px solid var(--color-sidebar-border)',
         }}
       >
         {/* Left sidebar is now PROJECTS-only per user request — the
             FileTree and Usage blocks moved to the top-menu tabs (FILES
             / USAGE) so the whole left column is the scrollable project
             switcher. */}
-        <ProjectList
+        <ConversationSidebar
           projects={projects.projects}
           activeProjectId={projects.activeProjectId}
-          onSwitch={(id) => void projects.switchProject(id)}
-          onRemove={(id) => void projects.removeProject(id)}
-          onRename={(id, name) => void projects.renameProject(id, name)}
-          onOpenFolder={() => void projects.openAndAddProject()}
+          activeTermId={activeTermId}
           terminals={terminals}
+          onSwitchProject={(id) => void projects.switchProject(id)}
+          onOpenSession={onOpenSession}
+          onRemoveProject={(id) => void projects.removeProject(id)}
+          onRenameProject={(id, name) => void projects.renameProject(id, name)}
+          onAddProject={() => void projects.openAndAddProject()}
+          onNewSession={onNewSession}
           onOpenSettings={onOpenSettings}
           settingsActive={settingsActive}
         />

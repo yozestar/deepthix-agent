@@ -92,6 +92,7 @@ pub fn run() {
             commands::scrollback::load_terminal_scrollback,
             commands::scrollback::clear_terminal_scrollback,
             commands::scrollback::jsonl_mtime_ms,
+            commands::conversations::session_previews,
             commands::dashboard::dashboard_path,
             commands::dashboard::read_session_dashboard,
             commands::dashboard::write_session_dashboard,

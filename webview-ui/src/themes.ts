@@ -15,10 +15,83 @@ export interface Theme {
 /** Pseudo-theme: follows the OS light/dark setting live, resolving to
  *  the two "Moderne" palettes below. */
 export const SYSTEM_THEME_ID = 'system';
-const SYSTEM_DARK_ID = 'moderne-sombre';
-const SYSTEM_LIGHT_ID = 'moderne-clair';
+const SYSTEM_DARK_ID = 'elyone-sombre';
+const SYSTEM_LIGHT_ID = 'elyone-clair';
 
 export const THEMES: Theme[] = [
+  {
+    // Elyone brand charter (ELYONE Global Product Design System v1.0):
+    // light neutral surfaces, blue dominates (#005895 structure, #0066DA
+    // actions), green only validates, yellow only accents. Default theme.
+    id: 'elyone-clair',
+    name: 'Elyone clair',
+    scheme: 'light',
+    colors: {
+      'color-bg': '#F5F7FA',
+      'color-bg-dark': '#FFFFFF',
+      'color-bg-session': '#F8FAFC',
+      'color-bg-thumb': '#EEF2F6',
+      'color-border': '#DCE3EA',
+      'color-accent': '#0066DA',
+      'color-accent-bright': '#005895',
+      'color-on-accent': '#FFFFFF',
+      'color-session-active': '#00B009',
+      'color-text': '#1E293B',
+      'color-text-muted': '#64748B',
+      'color-btn-bg': '#F1F5F9',
+      'color-btn-hover': '#E8EEF5',
+      'color-active-bg': '#E6F0FB',
+      'color-danger': '#D92D20',
+      'color-warning': '#E0A800',
+      'color-status-success': '#00B009',
+      'color-status-active': '#0066DA',
+      'color-status-permission': '#8A6A00',
+      'color-sidebar-bg': '#005895',
+      'color-sidebar-text': '#FFFFFF',
+      'color-sidebar-muted': 'rgba(255, 255, 255, 0.72)',
+      'color-sidebar-hover': 'rgba(0, 102, 218, 0.75)',
+      'color-sidebar-active': '#0066DA',
+      'color-sidebar-active-text': '#FFFFFF',
+      'color-sidebar-border': 'rgba(255, 255, 255, 0.14)',
+      'color-sidebar-input': 'rgba(255, 255, 255, 0.12)',
+      'shadow-hard': '2px 2px 0px #DCE3EA',
+    },
+  },
+  {
+    // Elyone charter dark mode (§8): premium navy, not black.
+    id: 'elyone-sombre',
+    name: 'Elyone sombre',
+    colors: {
+      'color-bg': '#071626',
+      'color-bg-dark': '#0D2238',
+      'color-bg-session': '#0A1E33',
+      'color-bg-thumb': '#10294A',
+      'color-border': '#1D3551',
+      'color-accent': '#0066DA',
+      'color-accent-bright': '#1F7BE8',
+      'color-on-accent': '#FFFFFF',
+      'color-session-active': '#00BD02',
+      'color-text': '#FFFFFF',
+      'color-text-muted': '#94A3B8',
+      'color-btn-bg': '#0D2238',
+      'color-btn-hover': '#132C47',
+      'color-active-bg': 'rgba(0, 102, 218, 0.22)',
+      'color-danger': '#F04438',
+      'color-warning': '#FFCB01',
+      'color-status-success': '#00BD02',
+      'color-status-active': '#3D8BFF',
+      'color-status-permission': '#FFCB01',
+      'color-sidebar-bg': '#04111F',
+      'color-sidebar-text': '#FFFFFF',
+      'color-sidebar-muted': '#B8C5D3',
+      'color-sidebar-hover': 'rgba(0, 102, 218, 0.28)',
+      'color-sidebar-active': '#0066DA',
+      'color-sidebar-active-text': '#FFFFFF',
+      'color-sidebar-border': 'rgba(255, 255, 255, 0.08)',
+      'color-sidebar-input': 'rgba(255, 255, 255, 0.07)',
+      'shadow-hard': '2px 2px 0px #04111F',
+    },
+  },
   {
     // Calm slate palette, low glare, soft blue accent. Default for new
     // installs — made for long reading sessions.
@@ -293,7 +366,7 @@ export const THEMES: Theme[] = [
   },
 ];
 
-export const DEFAULT_THEME_ID = 'moderne-sombre';
+export const DEFAULT_THEME_ID = 'elyone-clair';
 
 /** Every CSS variable any theme writes — cleared before applying the next
  *  theme so a key one theme sets (e.g. status-permission) doesn't leak

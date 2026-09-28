@@ -154,7 +154,7 @@ export function WorkflowsPane({
             style={{
               padding: '2px 10px',
               background: 'var(--color-accent)',
-              color: 'var(--color-bg-dark)',
+              color: 'var(--color-on-accent)',
               border: '2px solid var(--color-border)',
               boxShadow: 'var(--shadow-pixel)',
               fontFamily: 'var(--font-pixel)',
@@ -208,7 +208,7 @@ export function WorkflowsPane({
             style={{
               padding: '6px 10px',
               background: 'var(--color-danger)',
-              color: 'var(--color-bg-dark)',
+              color: 'var(--color-on-accent)',
               fontSize: '0.75rem',
             }}
           >
@@ -513,7 +513,7 @@ function WorkflowEditor({
           style={{
             padding: '6px 14px',
             background: running || !prompt.trim() ? 'transparent' : 'var(--color-accent)',
-            color: running || !prompt.trim() ? 'inherit' : 'var(--color-bg-dark)',
+            color: running || !prompt.trim() ? 'inherit' : 'var(--color-on-accent)',
             border: '2px solid var(--color-border)',
             boxShadow: running || !prompt.trim() ? 'none' : 'var(--shadow-pixel)',
             cursor: running || !prompt.trim() ? 'default' : 'pointer',

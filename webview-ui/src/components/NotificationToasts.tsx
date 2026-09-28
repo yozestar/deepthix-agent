@@ -238,19 +238,19 @@ function kindPalette(kind: NotificationRecord['kind']): {
     case 'success':
       return {
         bg: 'var(--color-success, #34d399)',
-        fg: 'var(--color-bg-dark)',
+        fg: 'var(--color-on-accent)',
         border: 'var(--color-border)',
       };
     case 'warn':
       return {
         bg: 'var(--color-warning, #f59e0b)',
-        fg: 'var(--color-bg-dark)',
+        fg: 'var(--color-on-accent)',
         border: 'var(--color-border)',
       };
     case 'error':
       return {
         bg: 'var(--color-danger)',
-        fg: 'var(--color-bg-dark)',
+        fg: 'var(--color-on-accent)',
         border: 'var(--color-border)',
       };
     case 'info':

@@ -245,7 +245,7 @@ export function TerminalDropTarget({
         left: '50%',
         transform: 'translateX(-50%)',
         background: isError ? 'var(--color-danger)' : 'var(--color-accent)',
-        color: 'var(--color-bg-dark)',
+        color: 'var(--color-on-accent)',
         padding: '8px 16px',
         border: '2px solid var(--color-border)',
         boxShadow: 'var(--shadow-pixel)',

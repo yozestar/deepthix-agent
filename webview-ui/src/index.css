@@ -31,6 +31,22 @@
    * canonical secondary colour. */
   --color-session-active: #00d4aa;
 
+  /* Text drawn on accent / danger / success fills (buttons, user bubble,
+   * active rows). Legacy themes keep their dark-on-accent look; Elyone
+   * themes set white per the brand charter. */
+  --color-on-accent: var(--color-bg-dark);
+
+  /* Sidebar chrome. Default to the neutral surfaces; Elyone themes paint
+   * the sidebar in brand blue. */
+  --color-sidebar-bg: var(--color-bg);
+  --color-sidebar-text: var(--color-text);
+  --color-sidebar-muted: var(--color-text-muted);
+  --color-sidebar-hover: var(--color-btn-hover);
+  --color-sidebar-active: var(--color-active-bg);
+  --color-sidebar-active-text: var(--color-text);
+  --color-sidebar-border: var(--color-border);
+  --color-sidebar-input: var(--color-bg-dark);
+
   /* Text */
   --color-text: rgba(255, 255, 255, 0.9);
   --color-text-muted: rgba(255, 255, 255, 0.5);
@@ -58,6 +74,9 @@
    * hard pixel shadow. */
   --shadow-hard: 2px 2px 0px #0a0a14;
   --shadow-pixel: var(--shadow-hard);
+
+  /* Titles / brand face (Elyone charter: Nunito Bold for headings). */
+  --font-title: 'Nunito', 'Inter', 'Segoe UI', sans-serif;
 
   /* Monospace stack for code blocks / inline code (never the UI font). */
   --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, Menlo, monospace;
@@ -269,7 +288,7 @@
 }
 .dt-btn--primary {
   background: var(--color-accent);
-  color: var(--color-bg-dark);
+  color: var(--color-on-accent);
   box-shadow: var(--shadow-pixel);
 }
 .dt-btn--primary:hover:not(:disabled) {
@@ -277,7 +296,7 @@
 }
 .dt-btn--danger {
   background: var(--color-danger);
-  color: var(--color-bg-dark);
+  color: var(--color-on-accent);
   box-shadow: var(--shadow-pixel);
 }
 
@@ -376,7 +395,7 @@
 }
 /* Background + blur — only on neutral surfaces. Match the inline
  * `background:` (with or without space) so we don't catch accent
- * buttons that merely set `color: var(--color-bg-dark)`. */
+ * buttons that merely set `color: var(--color-on-accent)`. */
 :root[data-box-style='glass'] [style*='background:var(--color-bg-dark)'],
 :root[data-box-style='glass'] [style*='background: var(--color-bg-dark)'] {
   background: color-mix(in srgb, var(--color-bg-dark) 60%, transparent) !important;

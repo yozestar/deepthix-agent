@@ -158,7 +158,7 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
                     textAlign: 'left',
                     padding: '6px 8px',
                     background: selected ? 'var(--color-accent)' : 'var(--color-bg-dark)',
-                    color: selected ? 'var(--color-bg-dark)' : 'inherit',
+                    color: selected ? 'var(--color-on-accent)' : 'inherit',
                     border: '2px solid var(--color-border)',
                     cursor: 'pointer',
                     display: 'flex',
@@ -189,7 +189,7 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
                 style={{
                   padding: '6px 8px',
                   background: 'var(--color-accent)',
-                  color: 'var(--color-bg-dark)',
+                  color: 'var(--color-on-accent)',
                   border: '2px solid var(--color-border)',
                   fontFamily: 'var(--font-pixel)',
                   fontSize: '0.6875rem',
@@ -686,7 +686,7 @@ function ReadingPreview(): React.JSX.Element {
           maxWidth: '80%',
           padding: '8px 12px',
           background: 'var(--color-accent)',
-          color: 'var(--color-bg-dark)',
+          color: 'var(--color-on-accent)',
           borderRadius: 'var(--surface-radius, 0px)',
           fontSize: '0.875rem',
         }}

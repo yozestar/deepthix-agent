@@ -1,0 +1,364 @@
+/* ──────────────────────────────────────────────────────────────────────
+ * Conversation sidebar (ConversationSidebar.tsx). Colours come from the
+ * --color-sidebar-* tokens so Elyone themes paint it brand blue while the
+ * legacy themes keep their neutral surfaces.
+ * ────────────────────────────────────────────────────────────────────── */
+.dt-conv {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-sidebar-bg);
+  color: var(--color-sidebar-text);
+  font-family: var(--font-pixel);
+}
+.dt-conv-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 6px;
+  font-size: 0.8125rem;
+  color: var(--color-sidebar-muted);
+}
+.dt-conv-brand strong {
+  font-family: var(--font-title) !important;
+  font-weight: 800;
+  font-size: 0.9375rem;
+  color: var(--color-sidebar-text);
+  margin-right: 2px;
+}
+.dt-conv-brand-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 26px;
+  background: #ffffff;
+  border-radius: 7px;
+  flex-shrink: 0;
+}
+.dt-conv-brand-tile img {
+  width: 28px;
+  height: auto;
+}
+.dt-conv-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 10px;
+}
+.dt-conv-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: none;
+  background: var(--color-sidebar-input);
+  color: var(--color-sidebar-text);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms ease;
+}
+.dt-conv-iconbtn:hover:not(:disabled),
+.dt-conv-iconbtn.is-active {
+  background: var(--color-sidebar-hover);
+}
+.dt-conv-iconbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.dt-conv-search {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--color-sidebar-input);
+  color: var(--color-sidebar-muted);
+  cursor: text;
+}
+.dt-conv-search:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--color-sidebar-text) 35%, transparent);
+}
+.dt-conv .dt-conv-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none !important;
+  outline: none !important;
+  color: var(--color-sidebar-text);
+  font-size: 0.8125rem;
+  padding: 0;
+}
+.dt-conv-search input::placeholder {
+  color: var(--color-sidebar-muted);
+}
+.dt-conv-clear {
+  display: inline-flex;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.dt-conv-menu {
+  position: absolute;
+  top: 40px;
+  left: 0;
+  z-index: 20;
+  min-width: 190px;
+  padding: 6px;
+  background: var(--color-bg-dark);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.dt-conv-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+.dt-conv-menu button:hover {
+  background: var(--color-btn-hover);
+}
+.dt-conv-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-sidebar-muted);
+}
+.dt-conv-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-sidebar-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+.dt-conv-link:hover {
+  color: var(--color-sidebar-text);
+  background: var(--color-sidebar-hover);
+}
+.dt-conv-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 8px 12px;
+  scrollbar-color: color-mix(in srgb, var(--color-sidebar-text) 25%, transparent) transparent;
+}
+.dt-conv-empty {
+  padding: 16px 8px;
+  font-size: 0.8125rem;
+  color: var(--color-sidebar-muted);
+}
+.dt-conv-group {
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--color-sidebar-border);
+}
+.dt-conv-group:last-child {
+  border-bottom: none;
+}
+.dt-conv-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.dt-conv-row:hover {
+  background: var(--color-sidebar-hover);
+}
+.dt-conv-row.is-active {
+  background: var(--color-sidebar-active);
+  color: var(--color-sidebar-active-text);
+}
+.dt-conv-session {
+  padding-left: 22px;
+}
+.dt-conv-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  color: #ffffff;
+  font-family: var(--font-title) !important;
+  font-weight: 800;
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.dt-conv-avatar--sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  font-size: 0.625rem;
+  opacity: 0.85;
+}
+.dt-conv-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dt-conv-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.dt-conv-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-title) !important;
+  font-weight: 800;
+  font-size: 0.9375rem;
+}
+.dt-conv-title--sm {
+  font-weight: 700;
+  font-size: 0.8125rem;
+}
+.dt-conv-time {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--color-sidebar-muted);
+}
+.dt-conv-row.is-active .dt-conv-time,
+.dt-conv-row.is-active .dt-conv-sub {
+  color: color-mix(in srgb, var(--color-sidebar-active-text) 82%, transparent);
+}
+.dt-conv-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  color: var(--color-sidebar-muted);
+}
+.dt-conv-status.is-working {
+  color: var(--color-sidebar-text);
+  font-weight: 600;
+}
+.dt-conv-status.is-working::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 999px;
+  background: var(--color-status-success);
+  vertical-align: 1px;
+  animation: pixel-pulse 1.5s ease-in-out infinite;
+}
+.dt-conv-kbd {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--color-sidebar-border);
+  font-family: var(--font-pixel) !important;
+  font-size: 0.6875rem;
+  color: var(--color-sidebar-muted);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.dt-conv-row:hover .dt-conv-kbd,
+.dt-conv-row.is-active .dt-conv-kbd {
+  opacity: 1;
+}
+.dt-conv-remove {
+  display: inline-flex;
+  border: none;
+  background: transparent;
+  color: var(--color-sidebar-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 6px;
+  opacity: 0;
+}
+.dt-conv-row:hover .dt-conv-remove {
+  opacity: 1;
+}
+.dt-conv-remove:hover {
+  color: var(--color-sidebar-text);
+}
+.dt-conv .dt-conv-rename {
+  flex: 1;
+  min-width: 0;
+  background: var(--color-sidebar-input);
+  border: none !important;
+  color: var(--color-sidebar-text);
+  font-size: 0.875rem;
+  padding: 2px 6px;
+  outline: none;
+}
+.dt-conv-more {
+  display: block;
+  margin: 2px 0 0 60px;
+  border: none;
+  background: transparent;
+  color: var(--color-sidebar-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.dt-conv-more:hover {
+  color: var(--color-sidebar-text);
+  text-decoration: underline;
+}
+
+/* ── Chat bubbles (ChatPane Bubble) ─────────────────────────────────── */
+.dt-bubble {
+  position: relative;
+}
+/* Rewind action floats over the bubble corner, only on hover, so the
+ * conversation reads like a chat instead of a log. */
+.dt-bubble .dt-bubble-actions {
+  position: absolute;
+  top: -12px;
+  right: 10px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.dt-bubble:hover .dt-bubble-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.dt-bubble .dt-bubble-actions button {
+  background: var(--color-bg-dark) !important;
+  color: var(--color-text) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 999px;
+  padding: 1px 8px !important;
+  opacity: 1 !important;
+}
