@@ -249,7 +249,16 @@ fn predict_jsonl_path(project_cwd: &Path, session_id: &str) -> PathBuf {
     // tool_read_transcript to work on Windows projects with `_` or
     // spaces in the path.
     let raw = project_cwd.to_string_lossy();
-    let hash: String = raw
+    // Same verbatim-prefix strip as jsonl_watcher: persisted project and
+    // session cwds are canonicalized (`\\?\C:\…`), but Claude Code hashes
+    // the user-facing path. Without this the sidecar looked for
+    // `----C--…` and read_session_transcript found nothing on Windows.
+    let trimmed = raw
+        .strip_prefix(r"\\?\UNC\")
+        .map(|s| format!(r"\\{}", s))
+        .or_else(|| raw.strip_prefix(r"\\?\").map(|s| s.to_string()))
+        .unwrap_or_else(|| raw.to_string());
+    let hash: String = trimmed
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' {
@@ -718,5 +727,28 @@ fn main() {
             let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
             let _ = stdout.flush();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn predict_jsonl_path_strips_verbatim_prefix() {
+        // Persisted cwds look like `\\?\C:\Claude\claude_agent`; the
+        // transcript dir is hashed from the user-facing form.
+        let with = predict_jsonl_path(Path::new(r"\\?\C:\Claude\claude_agent"), "abc");
+        let without = predict_jsonl_path(Path::new(r"C:\Claude\claude_agent"), "abc");
+        assert_eq!(with, without);
+        let s = with.to_string_lossy().replace('\\', "/");
+        assert!(s.contains("/C--Claude-claude-agent/abc.jsonl"), "got {s}");
+    }
+
+    #[test]
+    fn predict_jsonl_path_handles_unc_verbatim() {
+        let with = predict_jsonl_path(Path::new(r"\\?\UNC\server\share\proj"), "abc");
+        let without = predict_jsonl_path(Path::new(r"\\server\share\proj"), "abc");
+        assert_eq!(with, without);
     }
 }
