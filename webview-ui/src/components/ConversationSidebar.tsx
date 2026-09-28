@@ -15,11 +15,21 @@
 import { Menu, Plus, Search, Settings, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { SIDEBAR_PREVIEW_POLL_MS, SIDEBAR_SESSIONS_PER_PROJECT } from '../constants';
-import { avatarColor, formatWhen, initials, matches } from '../conversationUtils';
+import {
+  CONTENT_SEARCH_DEBOUNCE_MS,
+  CONTENT_SEARCH_MIN_CHARS,
+  SIDEBAR_PREVIEW_POLL_MS,
+  SIDEBAR_SESSIONS_PER_PROJECT,
+} from '../constants';
+import { avatarColor, formatWhen, initials, matches, splitOnMatch } from '../conversationUtils';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { TerminalEntry } from '../hooks/useTerminals';
-import { type SessionPreview, sessionPreviews } from '../tauri/commands';
+import {
+  type ConversationHit,
+  searchConversations,
+  type SessionPreview,
+  sessionPreviews,
+} from '../tauri/commands';
 import type { Project } from '../tauri/types';
 
 interface Props {
@@ -30,6 +40,8 @@ interface Props {
   terminals: TerminalEntry[];
   onSwitchProject: (id: string) => void;
   onOpenSession: (projectId: string, termId: string) => void;
+  /** Open a transcript that has no session entry yet (content-search hit). */
+  onResumeSession: (projectId: string, sessionId: string) => void;
   onRemoveProject: (id: string) => void;
   onRenameProject: (id: string, name: string) => void;
   onAddProject: () => void;
@@ -61,6 +73,7 @@ export function ConversationSidebar({
   terminals,
   onSwitchProject,
   onOpenSession,
+  onResumeSession,
   onRemoveProject,
   onRenameProject,
   onAddProject,
@@ -76,6 +89,38 @@ export function ConversationSidebar({
   const [editingValue, setEditingValue] = useState('');
   const [previews, setPreviews] = useState<Map<string, SessionPreview>>(new Map());
   const searchRef = useRef<HTMLInputElement>(null);
+  // Content search (Rust, every transcript of every project).
+  const [hits, setHits] = useState<ConversationHit[]>([]);
+  const [searching, setSearching] = useState(false);
+  const projectsRef = useRef(projects);
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < CONTENT_SEARCH_MIN_CHARS) {
+      setHits([]);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(() => {
+      const list = projectsRef.current.map((p) => ({ project_id: p.id, cwd: p.path }));
+      searchConversations(list, q)
+        .then((out) => {
+          if (!cancelled) setHits(out);
+        })
+        .catch((e) => console.error('[Elyone][ConversationSidebar] search failed', e))
+        .finally(() => {
+          if (!cancelled) setSearching(false);
+        });
+    }, CONTENT_SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
 
   const claudeSessions = useMemo(
     () => terminals.filter((t) => t.kind === 'claude' && t.sessionId),
@@ -419,6 +464,70 @@ export function ConversationSidebar({
             </div>
           );
         })}
+
+        {query.trim().length >= CONTENT_SEARCH_MIN_CHARS && (
+          <div className="dt-conv-hits">
+            <div className="dt-conv-section dt-conv-section--inline">
+              <span>Dans les conversations</span>
+              <span>{searching ? 'Recherche…' : `${hits.length}${hits.length >= 50 ? '+' : ''}`}</span>
+            </div>
+            {!searching && hits.length === 0 && (
+              <div className="dt-conv-empty">Aucun passage ne contient « {query.trim()} ».</div>
+            )}
+            {hits.map((h, i) => {
+              const project = projects.find((p) => p.id === h.project_id);
+              const term = claudeSessions.find(
+                (t) => t.sessionId === h.session_id && t.projectId === h.project_id,
+              );
+              const parts = splitOnMatch(h.snippet, query);
+              const open = (): void => {
+                if (term) onOpenSession(h.project_id, term.id);
+                else onResumeSession(h.project_id, h.session_id);
+              };
+              return (
+                <div
+                  key={`${h.session_id}-${i}`}
+                  role="button"
+                  tabIndex={0}
+                  className="dt-conv-row dt-conv-hit"
+                  onClick={open}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') open();
+                  }}
+                  title={term ? 'Ouvrir la session' : 'Rouvrir cette conversation dans une nouvelle session'}
+                >
+                  <span
+                    className="dt-conv-avatar dt-conv-avatar--sm"
+                    style={{ background: avatarColor(h.project_id) }}
+                    aria-hidden
+                  >
+                    {initials(project?.name ?? '?')}
+                  </span>
+                  <span className="dt-conv-text">
+                    <span className="dt-conv-line">
+                      <span className="dt-conv-title dt-conv-title--sm">
+                        {project?.name ?? 'Projet'} · {term?.label ?? 'Ancienne conversation'}
+                      </span>
+                      <span className="dt-conv-time">{formatWhen(h.mtime_ms)}</span>
+                    </span>
+                    <span className="dt-conv-snippet">
+                      {h.role === 'user' ? 'Toi : ' : ''}
+                      {parts ? (
+                        <>
+                          {parts[0]}
+                          <mark>{parts[1]}</mark>
+                          {parts[2]}
+                        </>
+                      ) : (
+                        h.snippet
+                      )}
+                    </span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

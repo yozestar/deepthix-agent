@@ -175,6 +175,24 @@ function App(): React.JSX.Element {
     [projects.activeProjectId, projects.switchProject, terminals.setActive],
   );
 
+  // Content-search hit on a transcript with no session entry yet: open it
+  // as a new session tab resuming that conversation.
+  const onResumeSession = useCallback(
+    (projectId: string, sessionId: string): void => {
+      const project = projects.projects.find((p) => p.id === projectId);
+      if (!project) return;
+      if (projectId !== projects.activeProjectId) void projects.switchProject(projectId);
+      setMode('sessions');
+      void terminals
+        .open(projectId, project.path, 'claude', 'Conversation retrouvée', { resumeSessionId: sessionId })
+        .then((entry) => {
+          if (entry) terminals.setActive(entry.id);
+        });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projects.projects, projects.activeProjectId, projects.switchProject, terminals.open, terminals.setActive],
+  );
+
   const onOpenSettings = useCallback((): void => {
     console.debug('[Deepthix][App] open settings');
     setMode('settings');
@@ -196,6 +214,7 @@ function App(): React.JSX.Element {
         settingsActive={mode === 'settings'}
         activeTermId={sidebarActiveTermId}
         onOpenSession={onOpenSession}
+        onResumeSession={onResumeSession}
         onNewSession={onSpawnAgent}
       />
       <div

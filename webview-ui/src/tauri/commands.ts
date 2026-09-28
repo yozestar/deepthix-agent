@@ -167,6 +167,27 @@ export async function sessionPreviews(
   return await invoke<SessionPreview[]>('session_previews', { items });
 }
 
+/** One full-text match inside a transcript. */
+export interface ConversationHit {
+  project_id: string;
+  session_id: string;
+  /** Transcript mtime (hits are sorted newest conversation first). */
+  mtime_ms: number;
+  /** 'user' | 'assistant' */
+  role: string;
+  /** One-line excerpt around the match. */
+  snippet: string;
+}
+
+/** Search the content of every transcript of the given projects
+ *  (accent/case-insensitive, max 50 hits, 3 per conversation). */
+export async function searchConversations(
+  projects: { project_id: string; cwd: string }[],
+  query: string,
+): Promise<ConversationHit[]> {
+  return await invoke<ConversationHit[]>('search_conversations', { projects, query });
+}
+
 /** Absolute path to the per-session dashboard HTML file (used in placeholder). */
 export async function dashboardPath(projectId: string, sessionId: string): Promise<string> {
   log('dashboardPath', { projectId, sessionId });

@@ -23,6 +23,8 @@ interface Props {
   activeTermId: string | null;
   /** Open a session: switch project if needed, focus its chat. */
   onOpenSession: (projectId: string, termId: string) => void;
+  /** Reopen a transcript found by content search that has no session entry. */
+  onResumeSession: (projectId: string, sessionId: string) => void;
   /** New session in the active project. */
   onNewSession: () => void;
 }
@@ -34,6 +36,7 @@ export function Sidebar({
   settingsActive,
   activeTermId,
   onOpenSession,
+  onResumeSession,
   onNewSession,
 }: Props): React.JSX.Element {
   const [width, setWidth] = useState<number>(() => {
@@ -101,6 +104,7 @@ export function Sidebar({
           terminals={terminals}
           onSwitchProject={(id) => void projects.switchProject(id)}
           onOpenSession={onOpenSession}
+          onResumeSession={onResumeSession}
           onRemoveProject={(id) => void projects.removeProject(id)}
           onRenameProject={(id, name) => void projects.renameProject(id, name)}
           onAddProject={() => void projects.openAndAddProject()}

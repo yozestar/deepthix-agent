@@ -122,3 +122,38 @@ export function contextFromRecord(
   if (tokens <= 0) return null;
   return { tokens, model: typeof msg?.model === 'string' ? (msg.model as string) : null };
 }
+
+/** Lowercase + strip accents one char at a time, so indices in the folded
+ *  string match indices in the original (unlike a whole-string NFD pass). */
+function foldChars(s: string): string {
+  let out = '';
+  for (const ch of s) out += (ch.normalize('NFD')[0] ?? ch).toLowerCase();
+  return out;
+}
+
+/** [before, match, after] split of `text` on the first accent/case-
+ *  insensitive occurrence of `query`; null when absent. */
+export function splitOnMatch(text: string, query: string): [string, string, string] | null {
+  const q = foldChars(query.trim());
+  if (!q) return null;
+  const chars = [...text];
+  const folded = [...foldChars(text)];
+  const qc = [...q];
+  for (let i = 0; i + qc.length <= folded.length; i++) {
+    let ok = true;
+    for (let j = 0; j < qc.length; j++) {
+      if (folded[i + j] !== qc[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      return [
+        chars.slice(0, i).join(''),
+        chars.slice(i, i + qc.length).join(''),
+        chars.slice(i + qc.length).join(''),
+      ];
+    }
+  }
+  return null;
+}

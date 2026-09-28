@@ -146,10 +146,227 @@ pub fn session_previews(items: Vec<PreviewRequest>) -> Vec<SessionPreview> {
         .collect()
 }
 
+// ── Full-text search across transcripts ─────────────────────────────────
+
+/// Max hits returned overall / per session.
+const SEARCH_MAX_HITS: usize = 50;
+const SEARCH_MAX_PER_SESSION: usize = 3;
+/// Characters of context kept before / after the match in a snippet.
+const SNIPPET_BEFORE: usize = 50;
+const SNIPPET_AFTER: usize = 110;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchProject {
+    pub project_id: String,
+    pub cwd: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct SearchHit {
+    pub project_id: String,
+    pub session_id: String,
+    /// Transcript mtime (sort key: newest conversations first).
+    pub mtime_ms: u64,
+    /// "user" | "assistant".
+    pub role: String,
+    /// Single-line excerpt around the match (may start/end with "…").
+    pub snippet: String,
+}
+
+/// Lowercase + strip the accents that matter in French so "emission"
+/// finds "Émission". Keeps a 1:1 char mapping so match offsets computed on
+/// the folded text are valid on the original.
+fn fold(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            let l = c.to_lowercase().next().unwrap_or(c);
+            match l {
+                'à' | 'â' | 'ä' | 'á' | 'ã' => 'a',
+                'é' | 'è' | 'ê' | 'ë' => 'e',
+                'î' | 'ï' | 'í' => 'i',
+                'ô' | 'ö' | 'ó' | 'õ' => 'o',
+                'ù' | 'û' | 'ü' | 'ú' => 'u',
+                'ç' => 'c',
+                'ÿ' => 'y',
+                other => other,
+            }
+        })
+        .collect()
+}
+
+/// Excerpt of `text` around the first occurrence of the folded query.
+fn snippet_around(text: &str, folded_query: &str) -> Option<String> {
+    let flat: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let chars: Vec<char> = flat.chars().collect();
+    let folded: Vec<char> = fold(&flat).chars().collect();
+    let q: Vec<char> = folded_query.chars().collect();
+    if q.is_empty() || q.len() > folded.len() {
+        return None;
+    }
+    let pos = (0..=folded.len() - q.len()).find(|&i| folded[i..i + q.len()] == q[..])?;
+    let start = pos.saturating_sub(SNIPPET_BEFORE);
+    let end = (pos + q.len() + SNIPPET_AFTER).min(chars.len());
+    let mut out: String = chars[start..end].iter().collect();
+    if start > 0 {
+        out = format!("…{}", out.trim_start());
+    }
+    if end < chars.len() {
+        out = format!("{}…", out.trim_end());
+    }
+    Some(out)
+}
+
+/// Readable text of a user/assistant record (no tool results, sidechains
+/// or meta / slash-command wrappers).
+fn record_text(v: &serde_json::Value) -> Option<(String, String)> {
+    let kind = v.get("type")?.as_str()?;
+    if kind != "user" && kind != "assistant" {
+        return None;
+    }
+    if v.get("isSidechain").and_then(|b| b.as_bool()).unwrap_or(false)
+        || v.get("isMeta").and_then(|b| b.as_bool()).unwrap_or(false)
+    {
+        return None;
+    }
+    let content = v.get("message")?.get("content")?;
+    let text = match content {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(blocks) => blocks
+            .iter()
+            .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("text"))
+            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => return None,
+    };
+    if text.trim().is_empty() || text.trim_start().starts_with('<') {
+        return None;
+    }
+    Some((kind.to_string(), text))
+}
+
+fn file_mtime_ms(path: &Path) -> u64 {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Search every transcript of the given projects, newest first.
+pub fn search_transcripts(projects: &[SearchProject], query: &str) -> Vec<SearchHit> {
+    let folded_query = fold(query.trim());
+    if folded_query.chars().count() < 2 {
+        return vec![];
+    }
+    // (mtime, project_id, path) for every transcript, newest first.
+    let mut files: Vec<(u64, String, std::path::PathBuf)> = Vec::new();
+    for p in projects {
+        let probe = crate::jsonl_watcher::predict_jsonl_path(Path::new(&p.cwd), "probe");
+        let Some(dir) = probe.parent() else { continue };
+        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.extension().and_then(|x| x.to_str()) == Some("jsonl") {
+                files.push((file_mtime_ms(&path), p.project_id.clone(), path));
+            }
+        }
+    }
+    files.sort_by(|a, b| b.0.cmp(&a.0));
+
+    let mut hits = Vec::new();
+    for (mtime_ms, project_id, path) in files {
+        if hits.len() >= SEARCH_MAX_HITS {
+            break;
+        }
+        let Ok(raw) = std::fs::read_to_string(&path) else { continue };
+        let session_id = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let mut per_session = 0;
+        // Newest lines first so each session shows its latest mentions.
+        for line in raw.lines().rev() {
+            if per_session >= SEARCH_MAX_PER_SESSION || hits.len() >= SEARCH_MAX_HITS {
+                break;
+            }
+            // Cheap pre-filter before JSON parsing.
+            if !fold(line).contains(&folded_query) {
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+            let Some((role, text)) = record_text(&v) else { continue };
+            if let Some(snippet) = snippet_around(&text, &folded_query) {
+                hits.push(SearchHit {
+                    project_id: project_id.clone(),
+                    session_id: session_id.clone(),
+                    mtime_ms,
+                    role,
+                    snippet,
+                });
+                per_session += 1;
+            }
+        }
+    }
+    hits
+}
+
+/// Full-text search across all transcripts of the given projects. Runs on
+/// a blocking worker so large histories never freeze the UI thread.
+#[tauri::command]
+pub async fn search_conversations(
+    projects: Vec<SearchProject>,
+    query: String,
+) -> Result<Vec<SearchHit>, String> {
+    tauri::async_runtime::spawn_blocking(move || search_transcripts(&projects, &query))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn fold_strips_french_accents() {
+        assert_eq!(fold("Émission Ça"), "emission ca");
+    }
+
+    #[test]
+    fn snippet_around_finds_accent_insensitive_match() {
+        let text = "Bonjour.\n\nLes émissions FE02 sont suspendues jusqu'à nouvel ordre.";
+        let s = snippet_around(text, &fold("EMISSIONS")).unwrap();
+        assert!(s.contains("émissions FE02"), "{s}");
+        assert!(!s.contains('\n'));
+        assert!(snippet_around(text, "hubspot").is_none());
+    }
+
+    #[test]
+    fn search_transcripts_finds_hits_and_skips_tool_results() {
+        let cwd = format!("C:\\dt-search-test-{}", std::process::id());
+        let path = crate::jsonl_watcher::predict_jsonl_path(Path::new(&cwd), "sess-1");
+        let dir = path.parent().unwrap().to_path_buf();
+        // Guard: only ever touch a throwaway dir named after this test.
+        assert!(dir.to_string_lossy().contains("dt-search-test-"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut f = std::fs::File::create(&path).unwrap();
+        writeln!(f, r#"{{"type":"user","message":{{"content":"Relance les émissions FE02"}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"user","message":{{"content":[{{"type":"tool_result","content":"emissions in tool output"}}]}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"Émissions relancées."}}]}}}}"#).unwrap();
+        drop(f);
+        let hits = search_transcripts(
+            &[SearchProject { project_id: "p".into(), cwd: cwd.clone() }],
+            "emissions",
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        assert_eq!(hits[0].role, "assistant"); // newest line first
+        assert_eq!(hits[0].session_id, "sess-1");
+        assert!(hits.iter().all(|h| !h.snippet.contains("tool output")));
+    }
 
     #[test]
     fn clean_preview_strips_markdown_and_truncates() {

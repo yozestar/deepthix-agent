@@ -225,3 +225,7 @@ export const AVATAR_COLORS = [
 export const SIDEBAR_SESSIONS_PER_PROJECT = 3;
 /** How often the sidebar refreshes last-message previews. */
 export const SIDEBAR_PREVIEW_POLL_MS = 15_000;
+/** Content search (all transcripts) kicks in from this many characters. */
+export const CONTENT_SEARCH_MIN_CHARS = 3;
+/** Typing pause before the content search runs. */
+export const CONTENT_SEARCH_DEBOUNCE_MS = 350;

@@ -73,3 +73,9 @@ test('contextFromRecord sums prompt + cache + output, skips sidechains', async (
   assert.equal(contextFromRecord({ ...rec, parent_tool_use_id: 'toolu_1' }), null);
   assert.equal(contextFromRecord({ type: 'user' }), null);
 });
+
+test('splitOnMatch is accent/case-insensitive and keeps original text', async () => {
+  const { splitOnMatch } = await import('../src/conversationUtils.ts');
+  assert.deepEqual(splitOnMatch('Les Émissions FE02', 'emissions'), ['Les ', 'Émissions', ' FE02']);
+  assert.equal(splitOnMatch('Odoo', 'hubspot'), null);
+});
