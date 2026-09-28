@@ -17,7 +17,7 @@ export function Welcome({ onOpenFolder }: Props): React.JSX.Element {
         fontFamily: 'var(--font-pixel)',
       }}
     >
-      <div style={{ fontSize: '1.625rem', letterSpacing: '0.05em' }}>Deepthix Agent</div>
+      <div style={{ fontSize: '1.625rem', letterSpacing: '0.05em' }}>Elyone AI Desktop Agent</div>
       <div style={{ fontSize: '0.875rem', opacity: 0.7, maxWidth: '320px', textAlign: 'center' }}>
         Open a folder to start your first project. Your agents will live in a pixel-art office,
         scoped to that project.

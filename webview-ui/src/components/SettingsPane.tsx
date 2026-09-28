@@ -913,7 +913,7 @@ function AboutSection(): React.JSX.Element {
     <Section title="ABOUT" subtitle="">
       <div style={{ fontSize: '0.8125rem', lineHeight: 1.6, opacity: 0.85 }}>
         <div>
-          <strong>Deepthix Agent</strong>
+          <strong>Elyone AI Desktop Agent</strong>
           <span style={{ opacity: 0.6, marginLeft: 6 }}>v{version}</span>
         </div>
         <div style={{ marginTop: 6 }}>
@@ -949,7 +949,7 @@ function SessionsSection({
     >
       <NumberRow
         label="Max active sessions"
-        hint={`Hard cap on concurrent chat sessions Deepthix will spawn. ${MAX_ACTIVE_SESSIONS_MIN}-${MAX_ACTIVE_SESSIONS_MAX}, default ${MAX_ACTIVE_SESSIONS_DEFAULT}.`}
+        hint={`Hard cap on concurrent chat sessions the app will spawn. ${MAX_ACTIVE_SESSIONS_MIN}-${MAX_ACTIVE_SESSIONS_MAX}, default ${MAX_ACTIVE_SESSIONS_DEFAULT}.`}
         value={maxActiveSessions}
         min={MAX_ACTIVE_SESSIONS_MIN}
         max={MAX_ACTIVE_SESSIONS_MAX}

@@ -13,6 +13,6 @@
         and explain what happens to the audio (local-only).
     -->
     <key>NSMicrophoneUsageDescription</key>
-    <string>Deepthix Agent records short voice clips when you press ⌘M, transcribes them locally with whisper.cpp, and types the transcript into the active claude session. Audio never leaves your Mac.</string>
+    <string>Elyone AI Desktop Agent records short voice clips when you press ⌘M, transcribes them locally with whisper.cpp, and types the transcript into the active claude session. Audio never leaves your Mac.</string>
 </dict>
 </plist>

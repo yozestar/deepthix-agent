@@ -12,7 +12,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _log_guard = log::init();
-    tracing::info!(target: "deepthix::boot", version = env!("CARGO_PKG_VERSION"), "starting Deepthix Agent");
+    tracing::info!(target: "deepthix::boot", version = env!("CARGO_PKG_VERSION"), "starting Elyone AI Desktop Agent");
 
     let projects_path = match storage::deepthix_dir() {
         Ok(dir) => dir.join("projects.json"),

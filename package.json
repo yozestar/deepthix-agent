@@ -1,6 +1,6 @@
 {
-  "name": "deepthix-agent",
-  "displayName": "Deepthix Agent",
+  "name": "elyone-desktop-agent",
+  "displayName": "Elyone AI Desktop Agent",
   "description": "Standalone macOS app for running and watching Claude Code agents in a pixel art office.",
   "version": "0.5.8",
   "license": "MIT",

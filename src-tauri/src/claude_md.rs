@@ -25,7 +25,7 @@ const END: &str = "<!-- DEEPTHIX_DASHBOARD_END -->";
 fn block() -> String {
     let body = r#"## Deepthix Dashboard
 
-This project is being run inside the Deepthix Agent. The OVERVIEW pane shows
+This project is being run inside the Elyone AI Desktop Agent. The OVERVIEW pane shows
 ONE shared HTML iframe per project — every session in this project writes to
 the same `dashboard.html`. Treat it as the project's status board: any session
 that does meaningful work updates it so the user (and the other sessions) get
@@ -138,9 +138,9 @@ const GLOBAL_BEGIN: &str = "<!-- DEEPTHIX_AGENT_BRIEF_BEGIN -->";
 const GLOBAL_END: &str = "<!-- DEEPTHIX_AGENT_BRIEF_END -->";
 
 fn global_brief() -> String {
-    let body = r#"## Deepthix Agent — environment hooks
+    let body = r#"## Elyone AI Desktop Agent — environment hooks
 
-You are running inside the Deepthix Agent desktop app. The app injects
+You are running inside the Elyone AI Desktop Agent desktop app. The app injects
 several environment variables into every session and a few JSON files
 on disk that you can use to coordinate with the user across sessions.
 
@@ -208,7 +208,7 @@ variables file first — they may have already pinned the answer.
 
 ### Sub-tasks: use `deepthix__run_subtask`, NOT `Task` / `Agent`
 
-The built-in `Task` and `Agent` tools are broken in Deepthix Agent's
+The built-in `Task` and `Agent` tools are broken in Elyone AI Desktop Agent's
 chat-mode (claude-code's `--print --input-format stream-json`):
 the sub-agent dispatches but its `tool_result` is never delivered
 back, so you wait forever and the parent keeps re-trying. Issues
@@ -233,7 +233,7 @@ Hard limits on the MCP tool:
 
 ### Asking the user a question
 
-**Do NOT call the `AskUserQuestion` tool in Deepthix Agent.** The
+**Do NOT call the `AskUserQuestion` tool in Elyone AI Desktop Agent.** The
 chat surface runs you in `--print --input-format stream-json` mode,
 where `AskUserQuestion` auto-cancels immediately (claude-code issues
 #24594, #29618) — by the time the UI renders the prompt, you have

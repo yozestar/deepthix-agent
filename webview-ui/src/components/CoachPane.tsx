@@ -49,7 +49,7 @@ const COACH_PROMPT_PREFIX = `You are a coaching agent watching multiple claude s
 <memory>Exact text appended to CLAUDE.md when accepted. Skip the block if it isn't memory-worthy.</memory>
 </proposal>
 
-2. <schedule> — a recurring or one-shot job. Accepting creates a Deepthix schedule against the first claude session in the project; the prompt you write is what the schedule will fire each tick.
+2. <schedule> — a recurring or one-shot job. Accepting creates a schedule against the first claude session in the project; the prompt you write is what the schedule will fire each tick.
 
 <schedule>
 <title>Short name — what the schedule does</title>

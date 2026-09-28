@@ -105,7 +105,7 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
           fontWeight: 'bold',
           color: 'var(--color-text)',
         }}
-        title={projectName ?? 'Deepthix Agent'}
+        title={projectName ?? 'Elyone AI Desktop Agent'}
       >
         <FolderOpen
           size="1.05em"
@@ -114,7 +114,7 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
           aria-hidden
         />
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {projectName ?? 'Deepthix Agent'}
+          {projectName ?? 'Elyone AI Desktop Agent'}
         </span>
       </div>
 

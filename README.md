@@ -1,47 +1,26 @@
-# Deepthix Agent
+# Elyone AI Desktop Agent
 
-Standalone desktop client for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — orchestrates multiple sessions, saves your reusable prompts, watches your activity with a Sonnet coach, and persists shared state across conversations. macOS + Windows. Open source, MIT.
+Desktop workspace to run and follow several AI agent sessions side by side: conversation-style sidebar with every project and session, persisted history, reusable workflows, shared variables and per-project dashboards. Windows + macOS.
 
-> Built because the bare `claude` TUI loses sessions on reload, can't keep state between runs, and forces you to retype the same prompts every day. Deepthix Agent puts a real desktop UI around it — sub-tabs for sessions, history that survives, and a coach that actually proposes things you should be saving.
+Internal Elyone tool. Visual identity follows the ELYONE Global Product Design System (brand blue, light theme by default, navy dark mode).
 
 ## Status
 
-Active development. Latest tag: see [Releases](https://github.com/deepthix/deepthix-agent/releases). Architecture overview in [`CLAUDE.md`](CLAUDE.md).
+Active development on the `local-deploy` branch. Architecture overview in [`CLAUDE.md`](CLAUDE.md).
 
-## Download
+## Install
 
-Pre-built installers ship on the [Releases page](https://github.com/deepthix/deepthix-agent/releases/latest).
+Installers are built from source (see *Quick start* and *Releases* below). On Windows, SmartScreen may warn on first launch → "More info" → "Run anyway".
 
-| Platform                           | Asset                                                                                                                       |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **macOS — Apple Silicon (M1+)**    | [`Deepthix.Agent_*_aarch64.dmg`](https://github.com/deepthix/deepthix-agent/releases/latest)                                |
-| **macOS — Intel**                  | [`Deepthix.Agent_*_x64.dmg`](https://github.com/deepthix/deepthix-agent/releases/latest)                                    |
-| **Windows x64 (NSIS installer)**   | [`Deepthix.Agent_*_x64-setup.exe`](https://github.com/deepthix/deepthix-agent/releases/latest)                              |
-| **Windows x64 (MSI installer)**    | [`Deepthix.Agent_*_x64_en-US.msi`](https://github.com/deepthix/deepthix-agent/releases/latest)                              |
-
-The app isn't notarized by Apple yet, so first launch needs a one-time bypass:
-
-- **macOS** (the .dmg shows "is damaged and can't be opened"): in Terminal:
-
-  ```bash
-  xattr -cr ~/Downloads/Deepthix.Agent_*_aarch64.dmg
-  # or for Intel:
-  xattr -cr ~/Downloads/Deepthix.Agent_*_x64.dmg
-  ```
-
-  Then double-click the .dmg, drag the app into `/Applications`, launch normally. The app is ad-hoc-signed; removing the quarantine attribute is enough — no developer warning afterwards.
-
-- **Windows**: SmartScreen will warn → "More info" → "Run anyway".
-
-After install, [Claude Code](https://docs.anthropic.com/en/docs/claude-code) must be on your `PATH` (`brew install anthropic/anthropic/claude` on macOS, follow the docs for Windows). For voice transcription you also need `whisper-cpp` and `ffmpeg` — `brew install whisper-cpp ffmpeg` on macOS, then `whisper --model small --download-only` to grab the default model.
+The agent CLI must be on your `PATH`. For voice transcription you also need `whisper-cpp` and `ffmpeg`.
 
 ## Quick start (dev)
 
 ```bash
-git clone https://github.com/deepthix/deepthix-agent.git
-cd deepthix-agent
+git clone https://github.com/yozestar/deepthix-agent.git elyone-desktop-agent
+cd elyone-desktop-agent
 npm install
-cd webview-ui && npm install && cd ..
+cd webview-ui && npm install --legacy-peer-deps && cd ..
 npm run dev
 ```
 
@@ -62,7 +41,7 @@ npm run dev
 A second claude session running in the background that reviews every active session in every project every 10 min. State lives at `~/.deepthix/coach.json`; messages persist at `~/.deepthix/coach-messages.json`. The coach can emit three card types:
 
 - **`<proposal>`** — a memory rule worth pinning to your project's `CLAUDE.md`. Click Yes → appended automatically.
-- **`<schedule>`** — a recurring or one-shot job. Click Yes → a Deepthix schedule is created against the project's first claude session.
+- **`<schedule>`** — a recurring or one-shot job. Click Yes → a schedule is created against the project's first claude session.
 - **`<workflow>`** — a saved prompt recipe. Click Yes → added to your workflow catalog (see below) and runnable in one click.
 
 The coach also has direct tool access — when it spots something worth pinning to the project dashboard, it writes it itself via `$DEEPTHIX_DASHBOARD_PATH`.
@@ -173,6 +152,6 @@ Personal project, public API not stable yet. PRs welcome on bugs you actually hi
 
 ## License + attribution
 
-[MIT](LICENSE) — same as the upstream project.
+[MIT](LICENSE) — same as the upstream projects.
 
-This codebase is a fork of [pixel-agents](https://github.com/pablodelucca/pixel-agents) by [@pablodelucca](https://github.com/pablodelucca). The original is a VS Code extension that visualises claude code agents in a pixel art office; Deepthix Agent reuses the JSONL parsing primitives, the asset pipeline, and several utility components, then rebuilds the surface as a standalone Tauri desktop app focused on multi-session orchestration. Full credit + thanks to the original author.
+This codebase started as a fork of **Deepthix Agent**, itself a fork of [pixel-agents](https://github.com/pablodelucca/pixel-agents) by [@pablodelucca](https://github.com/pablodelucca) (a VS Code extension that visualises agents in a pixel-art office). It reuses the JSONL parsing primitives, the asset pipeline and several utility components, rebuilt as a standalone Tauri desktop app. The original MIT copyright notice is kept in [LICENSE](LICENSE). Full credit and thanks to the original authors.
