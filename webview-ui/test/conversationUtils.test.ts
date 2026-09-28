@@ -49,3 +49,27 @@ test('computeTurnFooters: one footer per answered turn, tools counted', () => {
   assert.deepEqual([...f.keys()], [4]);
   assert.deepEqual(f.get(4), { durationMs: 33_000, tools: 1, endTs: 34_000 });
 });
+
+test('contextWindowForModel: haiku/older 200k, current 1M', async () => {
+  const { contextWindowForModel } = await import('../src/conversationUtils.ts');
+  assert.equal(contextWindowForModel('claude-haiku-4-5-20251001'), 200_000);
+  assert.equal(contextWindowForModel('claude-opus-4-1'), 200_000);
+  assert.equal(contextWindowForModel('claude-opus-5-5[1m]'), 1_000_000);
+  assert.equal(contextWindowForModel('claude-fable-5-1'), 1_000_000);
+  assert.equal(contextWindowForModel(null), 1_000_000);
+});
+
+test('contextFromRecord sums prompt + cache + output, skips sidechains', async () => {
+  const { contextFromRecord } = await import('../src/conversationUtils.ts');
+  const rec = {
+    type: 'assistant',
+    message: {
+      model: 'claude-opus-5-5',
+      usage: { input_tokens: 4, cache_read_input_tokens: 182000, cache_creation_input_tokens: 2000, output_tokens: 400 },
+    },
+  };
+  assert.deepEqual(contextFromRecord(rec), { tokens: 184404, model: 'claude-opus-5-5' });
+  assert.equal(contextFromRecord({ ...rec, isSidechain: true }), null);
+  assert.equal(contextFromRecord({ ...rec, parent_tool_use_id: 'toolu_1' }), null);
+  assert.equal(contextFromRecord({ type: 'user' }), null);
+});

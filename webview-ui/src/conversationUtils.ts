@@ -86,3 +86,39 @@ export function computeTurnFooters(
   return out;
 }
 
+
+// ── Context gauge ──────────────────────────────────────────────────────
+// Same rule as pixel-agents (contextWindowForModel): Haiku and the older
+// model lines run a 200k window, every current model 1M. Transcripts state
+// usage but never the limit, so the window is inferred from the model id.
+export const LARGE_CONTEXT_WINDOW = 1_000_000;
+export const SMALL_CONTEXT_WINDOW = 200_000;
+const SMALL_CONTEXT_MODEL_PATTERN = /haiku|claude-[123]|-4-[01]\b/i;
+
+export function contextWindowForModel(model: string | null | undefined): number {
+  if (model && SMALL_CONTEXT_MODEL_PATTERN.test(model)) return SMALL_CONTEXT_WINDOW;
+  return LARGE_CONTEXT_WINDOW;
+}
+
+/** Context occupancy carried by one assistant record: the newest turn's
+ *  prompt (incl. cache reads/writes) + its output. A snapshot, not a
+ *  running total — it drops when a session is compacted or cleared.
+ *  Sub-agent records (sidechain / parent_tool_use_id) don't count: they
+ *  live in their own context. */
+export function contextFromRecord(
+  obj: Record<string, unknown>,
+): { tokens: number; model: string | null } | null {
+  if (obj.type !== 'assistant') return null;
+  if (obj.isSidechain === true || obj.parent_tool_use_id) return null;
+  const msg = obj.message as Record<string, unknown> | undefined;
+  const usage = msg?.usage as Record<string, unknown> | undefined;
+  if (!usage) return null;
+  const n = (k: string): number => (typeof usage[k] === 'number' ? (usage[k] as number) : 0);
+  const tokens =
+    n('input_tokens') +
+    n('cache_read_input_tokens') +
+    n('cache_creation_input_tokens') +
+    n('output_tokens');
+  if (tokens <= 0) return null;
+  return { tokens, model: typeof msg?.model === 'string' ? (msg.model as string) : null };
+}

@@ -18,7 +18,12 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { computeTurnFooters, type TurnInfo } from '../conversationUtils';
+import {
+  computeTurnFooters,
+  contextFromRecord,
+  contextWindowForModel,
+  type TurnInfo,
+} from '../conversationUtils';
 import {
   chatInterruptAndResume,
   chatKill,
@@ -297,7 +302,8 @@ type ParseAction =
   | { kind: 'set_model'; model: string }
   | { kind: 'set_slash_commands'; commands: string[] }
   | { kind: 'turn_end'; ok: boolean; durationMs: number; costUsd: number }
-  | { kind: 'live_usage'; outputTokens: number };
+  | { kind: 'live_usage'; outputTokens: number }
+  | { kind: 'context_usage'; tokens: number; model: string | null };
 
 type ParseResult = ParseAction[];
 
@@ -442,6 +448,10 @@ function parseLine(line: string, ctx: ParseContext): ParseResult {
       }
     }
     case 'assistant': {
+      const ctxUsage = contextFromRecord(obj);
+      const ctxActions: ParseAction[] = ctxUsage
+        ? [{ kind: 'context_usage', tokens: ctxUsage.tokens, model: ctxUsage.model }]
+        : [];
       // Final consolidated assistant event arrives AFTER message_stop.
       // - Text blocks: skip (we already streamed them via text_delta).
       // - tool_use blocks: PATCH the corresponding bubble's input
@@ -451,9 +461,9 @@ function parseLine(line: string, ctx: ParseContext): ParseResult {
       const msg = obj.message as Record<string, unknown> | undefined;
       const messageId = (msg?.id as string) ?? null;
       const content = msg?.content as Array<Record<string, unknown>> | undefined;
-      if (!Array.isArray(content)) return [];
+      if (!Array.isArray(content)) return ctxActions;
       const wasStreamed = messageId ? ctx.streamedMessageIds.has(messageId) : false;
-      const actions: ParseAction[] = [];
+      const actions: ParseAction[] = [...ctxActions];
       content.forEach((block, idx) => {
         const key = messageId ? blockKey(messageId, idx) : uid();
         if (block.type === 'text') {
@@ -585,6 +595,11 @@ function ChatPaneImpl({
   const [termId, setTermId] = useState<string | null>(bindTermId ?? null);
   const [sessionId, setSessionId] = useState<string | null>(resumeSessionId ?? null);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
+  // Context-window occupancy of the newest main-chain turn (gauge in the
+  // header). Seeded from the transcript tail, then updated live.
+  const [contextUsage, setContextUsage] = useState<{ tokens: number; model: string | null } | null>(
+    null,
+  );
   const [currentEffort, setCurrentEffort] = useState<string | null>(null);
   const [showModelPicker, setShowModelPicker] = useState(false);
   // /resume → opens a picker listing resumable sessions for cwd.
@@ -671,6 +686,18 @@ function ChatPaneImpl({
         const restored: Message[] = [];
         for (const line of lines) {
           for (const m of parseHistoryRecord(line)) restored.push(m);
+        }
+        // Seed the context gauge from the newest main-chain assistant record.
+        for (let k = lines.length - 1; k >= 0; k--) {
+          try {
+            const ctx = contextFromRecord(JSON.parse(lines[k]) as Record<string, unknown>);
+            if (ctx) {
+              setContextUsage((cur) => cur ?? ctx);
+              break;
+            }
+          } catch {
+            // Malformed line — keep scanning.
+          }
         }
         if (restored.length > 0) {
           setMessages((prev) => [...restored, ...prev]);
@@ -772,6 +799,10 @@ function ChatPaneImpl({
             });
             setBusy(false);
             setLiveUsage(null);
+            break;
+          }
+          case 'context_usage': {
+            setContextUsage({ tokens: a.tokens, model: a.model });
             break;
           }
           case 'live_usage': {
@@ -1758,6 +1789,12 @@ function ChatPaneImpl({
               </span>
             )}
           </button>
+          {contextUsage && (
+            <ContextGauge
+              tokens={contextUsage.tokens}
+              windowTokens={contextWindowForModel(contextUsage.model ?? currentModel)}
+            />
+          )}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {busy ? (
@@ -2020,6 +2057,13 @@ interface ModelChoice {
 }
 
 const MODEL_CHOICES: ModelChoice[] = [
+  {
+    // Alias listed first by `claude --help` (v2.1.280) for the latest
+    // model family; resolves to the newest Fable release.
+    id: 'fable',
+    label: 'Fable',
+    tagline: 'Latest model family — alias resolved by the CLI to the newest release',
+  },
   {
     id: 'opus',
     label: 'Opus',
@@ -3452,6 +3496,42 @@ function formatDuration(ms: number): string {
   const m = Math.floor(s / 60);
   if (m < 60) return `${m} min ${String(s % 60).padStart(2, '0')} s`;
   return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+}
+
+/** "Contexte 18 %" chip + mini bar: how full the session's working memory
+ *  is. Amber from 70 %, red from 90 % — time to /compact or start fresh. */
+function ContextGauge({ tokens, windowTokens }: { tokens: number; windowTokens: number }): React.JSX.Element {
+  const pct = Math.min(100, Math.round((tokens / windowTokens) * 100));
+  const color =
+    pct >= 90 ? 'var(--color-danger)' : pct >= 70 ? 'var(--color-warning)' : 'var(--color-accent)';
+  return (
+    <span
+      title={`Mémoire de travail de la session : ${formatTokenCount(tokens)} / ${formatTokenCount(windowTokens)} tokens`}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        fontSize: '0.6875rem',
+        color: pct >= 70 ? color : 'var(--color-text-muted)',
+        fontFamily: 'var(--font-pixel)',
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 44,
+          height: 6,
+          borderRadius: 999,
+          background: 'var(--color-bg-thumb)',
+          overflow: 'hidden',
+          display: 'inline-block',
+        }}
+      >
+        <span style={{ display: 'block', width: `${Math.max(pct, 2)}%`, height: '100%', background: color }} />
+      </span>
+      Contexte {pct} %
+    </span>
+  );
 }
 
 /** Plain-language turn summary under the last bubble of each turn. */
