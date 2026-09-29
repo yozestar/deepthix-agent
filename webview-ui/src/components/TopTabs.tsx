@@ -21,6 +21,8 @@ import {
   Workflow,
 } from 'lucide-react';
 
+import { PlanUsageGauge } from './PlanUsageGauge';
+
 export type Mode =
   | 'overview'
   | 'sessions'
@@ -117,6 +119,9 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
           {projectName ?? 'Elyone AI Desktop Agent'}
         </span>
       </div>
+
+      {/* Plan consumption (5 h session + weekly) — click opens Usage. */}
+      <PlanUsageGauge onOpenUsage={() => onChangeMode('usage')} />
 
       {/* Right: mode tabs. Active tab gets an underline-style accent
           instead of full-fill — calmer chrome. */}

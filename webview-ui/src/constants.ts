@@ -231,3 +231,7 @@ export const CONTENT_SEARCH_DEBOUNCE_MS = 350;
 export const LONG_USER_MESSAGE_CHARS = 600;
 /** Mouse travel before a tab press turns into a drag (vs a click). */
 export const TAB_DRAG_THRESHOLD_PX = 6;
+/** Header plan-usage gauge refresh period. */
+export const PLAN_USAGE_POLL_MS = 30_000;
+/** Minimum gap between two calls to the (rate-limited) OAuth usage endpoint. */
+export const PLAN_USAGE_OAUTH_MIN_INTERVAL_MS = 120_000;

@@ -724,3 +724,69 @@
 .dt-tab.drop-after::after {
   right: -5px;
 }
+
+/* ── Header plan-usage gauge (PlanUsageGauge.tsx) ────────────────────── */
+.dt-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: var(--font-pixel);
+  transition: background 120ms ease;
+}
+.dt-usage:hover {
+  background: var(--color-btn-hover);
+}
+.dt-usage.is-stale {
+  opacity: 0.7;
+}
+.dt-usage-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+}
+.dt-usage-label {
+  white-space: nowrap;
+}
+.dt-usage-bar {
+  display: inline-block;
+  width: 54px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-bg-thumb);
+  overflow: hidden;
+}
+.dt-usage-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-accent);
+}
+.dt-usage-pct {
+  min-width: 34px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.dt-usage-meter.is-warn .dt-usage-bar > span {
+  background: var(--color-warning);
+}
+.dt-usage-meter.is-warn .dt-usage-pct {
+  color: var(--color-warning);
+}
+.dt-usage-meter.is-high .dt-usage-bar > span {
+  background: var(--color-danger);
+}
+.dt-usage-meter.is-high .dt-usage-pct {
+  color: var(--color-danger);
+}
+.dt-usage-stale {
+  font-size: 0.6875rem;
+}
