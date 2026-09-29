@@ -415,7 +415,20 @@ fn read_keychain_tokens() -> Option<CachedToken> {
         return None;
     }
     let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    parse_oauth_blob(&raw)
+}
+
+/// Windows / Linux: Claude Code keeps the same OAuth blob in
+/// `~/.claude/.credentials.json` instead of the macOS Keychain.
+fn read_credentials_file() -> Option<CachedToken> {
+    let path = dirs::home_dir()?.join(".claude").join(".credentials.json");
+    let raw = std::fs::read_to_string(path).ok()?;
+    parse_oauth_blob(&raw)
+}
+
+/// Parse `{ "claudeAiOauth": { accessToken, refreshToken, expiresAt } }`.
+fn parse_oauth_blob(raw: &str) -> Option<CachedToken> {
+    let parsed: serde_json::Value = serde_json::from_str(raw).ok()?;
     let oauth = parsed.get("claudeAiOauth")?;
     Some(CachedToken {
         access_token: oauth.get("accessToken")?.as_str()?.to_string(),
@@ -539,6 +552,24 @@ fn current_access_token() -> Result<String, String> {
         }
     }
 
+    // Windows / Linux: read Claude Code's credentials file. NEVER refresh
+    // from here: the OAuth refresh rotates the refresh token, which would
+    // invalidate the one Claude Code keeps in that file and log the CLI
+    // out. Claude Code refreshes the file itself whenever it runs, so an
+    // expired token just means "no reading until the next refresh".
+    #[cfg(not(target_os = "macos"))]
+    {
+        let file = read_credentials_file()
+            .ok_or_else(|| "no claude credentials in ~/.claude/.credentials.json".to_string())?;
+        if file.expires_at_ms > now + cushion_ms {
+            let token = file.access_token.clone();
+            *TOKEN_CACHE.lock().unwrap() = Some(file);
+            return Ok(token);
+        }
+        return Err("claude oauth token expired — waiting for Claude Code to refresh it".to_string());
+    }
+
+    #[allow(unreachable_code)]
     let keychain = read_keychain_tokens().ok_or_else(|| "no claude credentials in keychain".to_string())?;
     if keychain.expires_at_ms > now + cushion_ms {
         // Keychain token is fresh — cache + use it.
@@ -836,6 +867,17 @@ pub fn read_claude_daily_activity() -> Result<ClaudeActivity, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_oauth_blob_reads_the_credentials_shape() {
+        let raw = r#"{"mcpOAuth":{},"claudeAiOauth":{"accessToken":"a","refreshToken":"r","expiresAt":123,"scopes":[]}}"#;
+        let t = parse_oauth_blob(raw).expect("parsed");
+        assert_eq!(t.access_token, "a");
+        assert_eq!(t.refresh_token, "r");
+        assert_eq!(t.expires_at_ms, 123);
+        assert!(parse_oauth_blob("{}").is_none());
+        assert!(parse_oauth_blob("not json").is_none());
+    }
 
     #[test]
     fn aggregates_usage_from_jsonl() {

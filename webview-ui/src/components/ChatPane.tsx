@@ -13,7 +13,7 @@
 // reads a `{"type":"user","message":{...}}` line on stdin and produces
 // the matching response.
 
-import { Mic, SendHorizontal } from 'lucide-react';
+import { Brain, Mic, SendHorizontal } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -3527,7 +3527,7 @@ function ContextGauge({ tokens, windowTokens }: { tokens: number; windowTokens: 
     pct >= 90 ? 'var(--color-danger)' : pct >= 70 ? 'var(--color-warning)' : 'var(--color-accent)';
   return (
     <span
-      title={`Mémoire de travail de la session : ${formatTokenCount(tokens)} / ${formatTokenCount(windowTokens)} tokens`}
+      title={`Mémoire de travail de CETTE session (pas ta consommation Claude) : ${formatTokenCount(tokens)} / ${formatTokenCount(windowTokens)} tokens. Plus la conversation est longue, plus elle se remplit.`}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -3550,7 +3550,8 @@ function ContextGauge({ tokens, windowTokens }: { tokens: number; windowTokens: 
       >
         <span style={{ display: 'block', width: `${Math.max(pct, 2)}%`, height: '100%', background: color }} />
       </span>
-      Contexte {pct} %
+      <Brain size="1.1em" strokeWidth={1.75} aria-hidden />
+      Mémoire session {pct} %
     </span>
   );
 }

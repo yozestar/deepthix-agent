@@ -38,6 +38,13 @@ interface Props {
   onToggleSkipPermissions: (value: boolean) => void;
 }
 
+/** Name shown for a tab; unnamed sessions fall back to their short id,
+ *  like the chat header does. */
+function tabLabel(t: TerminalEntry): string {
+  if (t.label.trim()) return t.label;
+  return t.sessionId ? `Session ${t.sessionId.slice(0, 8)}` : 'Nouvelle session';
+}
+
 /** Tab title shown for an on-disk conversation that has no name yet. */
 function titleFromFirstMessage(text: string): string {
   const flat = text.replace(/\s+/g, ' ').trim();
@@ -246,7 +253,7 @@ export function SessionTabs({
                 if (editingId === t.id) return;
                 if (e.key === 'Enter' || e.key === ' ') terminals.setActive(t.id);
               }}
-              title={`${t.label}\n(glisser pour déplacer · double-clic pour renommer)`}
+              title={`${tabLabel(t)}\n(glisser pour déplacer · double-clic pour renommer)`}
             >
               {t.kind === 'claude' ? (
                 <span
@@ -254,7 +261,7 @@ export function SessionTabs({
                   style={{ background: avatarColor(t.sessionId ?? t.id) }}
                   aria-hidden
                 >
-                  {initials(t.label)}
+                  {initials(tabLabel(t))}
                 </span>
               ) : (
                 <span className="dt-tab-avatar dt-tab-avatar--shell" aria-hidden>
@@ -276,7 +283,7 @@ export function SessionTabs({
                     }}
                   />
                 ) : (
-                  <span className="dt-tab-title">{t.label}</span>
+                  <span className="dt-tab-title">{tabLabel(t)}</span>
                 )}
                 <span className="dt-tab-sub">
                   <span className={st.working ? 'dt-conv-status is-working' : undefined}>{st.text}</span>
@@ -290,7 +297,7 @@ export function SessionTabs({
                   e.stopPropagation();
                   void terminals.close(t.id);
                 }}
-                aria-label={`Fermer ${t.label}`}
+                aria-label={`Fermer ${tabLabel(t)}`}
                 title="Fermer (Ctrl+W) — rouvrable depuis l'historique"
               >
                 <X size="0.9em" strokeWidth={2} aria-hidden />

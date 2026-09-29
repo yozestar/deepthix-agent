@@ -426,7 +426,7 @@ export function useTerminals(): UseTerminalsResult {
     if (entry?.kind === 'claude' && entry.sessionId && projectId) {
       const item: ClosedSession = {
         session_id: entry.sessionId,
-        label: entry.label,
+        label: entry.label.trim() || `Session ${entry.sessionId.slice(0, 8)}`,
         cwd: entry.cwd,
         skip_permissions: entry.skipPermissions,
         notes: entry.notes || null,

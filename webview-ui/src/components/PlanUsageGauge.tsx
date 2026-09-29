@@ -1,7 +1,7 @@
 // Header gauge: plan consumption for the 5-hour session window and the
 // weekly limit. Blue under 60 %, amber from 60 %, red from 85 % (same
-// thresholds as the Usage tab). Click opens the Usage tab. Hidden when no
-// reading has ever been obtained.
+// thresholds as the Usage tab). Click opens the Usage tab. When no
+// reading is available it says so instead of disappearing.
 
 import { Gauge } from 'lucide-react';
 
@@ -44,7 +44,20 @@ function Meter({ label, bucket, now }: { label: string; bucket?: RateLimitBucket
 
 export function PlanUsageGauge({ onOpenUsage }: { onOpenUsage: () => void }): React.JSX.Element | null {
   const usage = usePlanUsage();
-  if (usage.source === 'none' || (!usage.fiveHour && !usage.sevenDay)) return null;
+  if (usage.source === 'none' || (!usage.fiveHour && !usage.sevenDay)) {
+    // Stay visible so the user knows where the gauge lives.
+    return (
+      <button
+        type="button"
+        className="dt-usage is-stale"
+        onClick={onOpenUsage}
+        title="Aucune mesure de consommation reçue pour l'instant (cliquer pour le détail)"
+      >
+        <Gauge size="1.05em" strokeWidth={1.75} aria-hidden />
+        <span className="dt-usage-label">Consommation indisponible</span>
+      </button>
+    );
+  }
   const now = usage.checkedAt;
   const stale = usage.source === 'cache' && now - usage.observedAt > 15 * 60_000;
   return (
