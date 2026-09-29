@@ -13,19 +13,17 @@
 // to sit at the right end of the sub-tab strip is gone; users edit the
 // global font/zoom from the Sidebar's SETTINGS pane.
 
-import { X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { GlobalConfig } from '../hooks/useGlobalConfig';
-import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
+import type { UseTerminalsResult } from '../hooks/useTerminals';
 import {
   killProcess as cmdKillProcess,
   listProcesses as cmdListProcesses,
   type ProcessInfo,
 } from '../tauri/commands';
 import { ChatPane } from './ChatPane';
-import { StatusDot } from './StatusDot';
+import { SessionTabs } from './SessionTabs';
 import { TerminalTab } from './TerminalTab';
 
 const MIN_HEIGHT = 160;
@@ -47,6 +45,13 @@ interface SessionsPaneProps {
   globalConfig: GlobalConfig;
   /** Mutator for the global config — also wired into TerminalTab keyboard shortcuts. */
   updateGlobalConfig: (partial: Partial<GlobalConfig>) => void;
+  /** Active project folder (history panel lists its conversations). */
+  projectPath: string | null;
+  /** New session in the active project. */
+  onNewSession: (skipPermissions: boolean) => void;
+  /** Persisted "skip permissions" preference for new sessions. */
+  skipPermissions: boolean;
+  onToggleSkipPermissions: (value: boolean) => void;
 }
 
 /**
@@ -60,16 +65,15 @@ export function SessionsPane({
   projectId,
   globalConfig,
   updateGlobalConfig,
+  projectPath,
+  onNewSession,
+  skipPermissions,
+  onToggleSkipPermissions,
 }: SessionsPaneProps): React.JSX.Element | null {
   const visible = terminals.forProject(projectId);
   const effectiveActive: string | null = visible.some((t) => t.id === terminals.activeId)
     ? terminals.activeId
     : (visible[0]?.id ?? null);
-
-  const agentStatus = useAgentStatus();
-
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingValue, setEditingValue] = useState('');
 
   // Clamp the persisted height to the current viewport — without this,
   // a value saved on a big monitor (e.g. 720px) overflows past the
@@ -148,9 +152,28 @@ export function SessionsPane({
     };
   }, []);
 
-  // When there are no visible sessions, hide the panel entirely so the
-  // tamagotchi gets the whole main area.
-  if (visible.length === 0) return null;
+  // No open session: keep the tab strip (new session + history) and show
+  // a short hint instead of an empty pane.
+  if (visible.length === 0) {
+    return (
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--color-bg)' }}>
+        <SessionTabs
+          terminals={terminals}
+          projectId={projectId}
+          projectPath={projectPath}
+          visible={visible}
+          activeId={effectiveActive}
+          onNewSession={onNewSession}
+          skipPermissions={skipPermissions}
+          onToggleSkipPermissions={onToggleSkipPermissions}
+        />
+        <div className="dt-sessions-empty">
+          <strong>Aucune session ouverte</strong>
+          <span>Crée une session avec « + Session », ou rouvre une conversation depuis « Historique ».</span>
+        </div>
+      </div>
+    );
+  }
 
   // PERF: only MOUNT a claude ChatPane once its tab has actually been
   // viewed. Before this, BottomPanel mounted EVERY terminal across
@@ -185,105 +208,17 @@ export function SessionsPane({
       }}
     >
 
-      {/* Per-session sub-tab strip */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          background: 'var(--color-bg-dark)',
-          borderBottom: '2px solid var(--color-border)',
-          padding: '0 4px',
-          gap: '2px',
-          minHeight: '32px',
-          flexShrink: 0,
-        }}
-      >
-        {visible.map((t: TerminalEntry) => {
-          const isActive = t.id === effectiveActive;
-          const isEditing = editingId === t.id;
-          const status = t.kind === 'claude' ? agentStatus.status(t.agentId) : 'absent';
-          return (
-            <div
-              key={t.id}
-              onClick={() => !isEditing && terminals.setActive(t.id)}
-              onDoubleClick={() => {
-                setEditingId(t.id);
-                setEditingValue(t.label);
-              }}
-              style={{
-                padding: '5px 12px',
-                background: isActive ? 'var(--color-bg)' : 'transparent',
-                // Use --color-session-active (not --color-accent) so the
-                // active sub-tab reads as a wayfinding indicator, not as
-                // a CTA. Prevents visual confusion between "the pane I'm
-                // in" and "the button to click".
-                color: isActive ? 'var(--color-session-active)' : 'var(--color-text-muted)',
-                border: 'none',
-                borderTop: `2px solid ${isActive ? 'var(--color-session-active)' : 'transparent'}`,
-                cursor: isEditing ? 'text' : 'pointer',
-                fontFamily: 'var(--font-pixel)',
-                fontSize: '0.75rem',
-                fontWeight: isActive ? 'bold' : 'normal',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                transition: 'color 120ms ease, border-color 120ms ease, background 120ms ease',
-              }}
-              title="Double-click to rename"
-            >
-              {/* Status dot before each label (Phase 11). Hidden for shells
-                  since their `status` is always 'absent'. */}
-              {t.kind === 'claude' && (
-                <StatusDot
-                  status={status}
-                  title={`${t.label} — ${status}`}
-                />
-              )}
-              {isEditing ? (
-                <input
-                  autoFocus
-                  value={editingValue}
-                  onChange={(e) => setEditingValue(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  onBlur={() => {
-                    terminals.rename(t.id, editingValue);
-                    setEditingId(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      terminals.rename(t.id, editingValue);
-                      setEditingId(null);
-                    } else if (e.key === 'Escape') setEditingId(null);
-                  }}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'inherit',
-                    fontFamily: 'var(--font-pixel)',
-                    fontSize: '0.8125rem',
-                    width: `${Math.max(60, editingValue.length * 8)}px`,
-                    outline: 'none',
-                  }}
-                />
-              ) : (
-                <span>{t.label}</span>
-              )}
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void terminals.close(t.id);
-                }}
-                style={{ opacity: 0.7, padding: '0 2px', display: 'inline-flex', alignItems: 'center' }}
-                aria-label={`Close ${t.label}`}
-              >
-                <X size="0.95em" strokeWidth={2} aria-hidden />
-              </span>
-            </div>
-          );
-        })}
-      </div>
+      {/* Card-style session tabs + new session + history */}
+      <SessionTabs
+        terminals={terminals}
+        projectId={projectId}
+        projectPath={projectPath}
+        visible={visible}
+        activeId={effectiveActive}
+        onNewSession={onNewSession}
+        skipPermissions={skipPermissions}
+        onToggleSkipPermissions={onToggleSkipPermissions}
+      />
 
       {/* xterm content (one node per terminal, hidden via display:none for inactive). */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>

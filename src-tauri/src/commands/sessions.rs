@@ -69,9 +69,80 @@ pub fn load_sessions(project_id: String) -> Result<Vec<PersistedSession>, String
     Ok(dedup_sessions(value.unwrap_or_default()))
 }
 
+// ─── Closed sessions ─────────────────────────────────────────────────────
+// A closed tab keeps its conversation on disk (the claude JSONL is never
+// deleted); this list remembers its name / notes so it can be reopened
+// from the tab strip's history panel.
+
+/// Max closed sessions remembered per project (oldest dropped first).
+const MAX_CLOSED_SESSIONS: usize = 200;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClosedSession {
+    pub session_id: String,
+    pub label: String,
+    pub cwd: PathBuf,
+    #[serde(default)]
+    pub skip_permissions: bool,
+    #[serde(default)]
+    pub notes: Option<String>,
+    pub closed_at_ms: u64,
+}
+
+/// Newest first, one entry per session id, capped.
+fn normalize_closed(mut list: Vec<ClosedSession>) -> Vec<ClosedSession> {
+    list.sort_by(|a, b| b.closed_at_ms.cmp(&a.closed_at_ms));
+    let mut seen = std::collections::HashSet::new();
+    list.retain(|s| seen.insert(s.session_id.clone()));
+    list.truncate(MAX_CLOSED_SESSIONS);
+    list
+}
+
+#[tauri::command]
+pub fn save_closed_sessions(project_id: String, sessions: Vec<ClosedSession>) -> Result<(), String> {
+    let cleaned = normalize_closed(sessions);
+    tracing::debug!(target: "deepthix::commands", %project_id, count = cleaned.len(), "save_closed_sessions");
+    let dir = storage::project_dir(&project_id).map_err(|e| e.to_string())?;
+    storage::write_json(&dir.join("closed-sessions.json"), &cleaned).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn load_closed_sessions(project_id: String) -> Result<Vec<ClosedSession>, String> {
+    let dir = storage::project_dir(&project_id).map_err(|e| e.to_string())?;
+    let value = storage::read_json::<Vec<ClosedSession>>(&dir.join("closed-sessions.json"))
+        .map_err(|e| e.to_string())?;
+    Ok(normalize_closed(value.unwrap_or_default()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn closed(id: &str, at: u64) -> ClosedSession {
+        ClosedSession {
+            session_id: id.into(),
+            label: id.into(),
+            cwd: PathBuf::from("/tmp"),
+            skip_permissions: false,
+            notes: None,
+            closed_at_ms: at,
+        }
+    }
+
+    #[test]
+    fn normalize_closed_sorts_newest_first_and_dedups() {
+        let out = normalize_closed(vec![closed("a", 1), closed("b", 3), closed("a", 5)]);
+        let ids: Vec<(&str, u64)> = out.iter().map(|s| (s.session_id.as_str(), s.closed_at_ms)).collect();
+        assert_eq!(ids, vec![("a", 5), ("b", 3)]);
+    }
+
+    #[test]
+    fn normalize_closed_caps_the_list() {
+        let many: Vec<ClosedSession> = (0..250).map(|i| closed(&format!("s{i}"), i)).collect();
+        let out = normalize_closed(many);
+        assert_eq!(out.len(), MAX_CLOSED_SESSIONS);
+        assert_eq!(out[0].session_id, "s249");
+    }
 
     fn mk(id: &str, label: &str) -> PersistedSession {
         PersistedSession {

@@ -390,3 +390,316 @@
   border-radius: 3px;
   padding: 0 2px;
 }
+
+/* ── Session tab strip (SessionTabs.tsx) ─────────────────────────────── */
+.dt-tabs {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  font-family: var(--font-pixel);
+}
+.dt-tabs-scroll {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+.dt-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+  max-width: 240px;
+  padding: 6px 8px 6px 6px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.dt-tab:hover {
+  background: var(--color-btn-hover);
+  color: var(--color-text);
+}
+.dt-tab.is-active {
+  background: var(--color-bg-dark);
+  border-color: var(--color-accent);
+  color: var(--color-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+.dt-tab-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: #ffffff;
+  font-family: var(--font-title) !important;
+  font-weight: 800;
+  font-size: 0.6875rem;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+.dt-tab.is-active .dt-tab-avatar,
+.dt-tab:hover .dt-tab-avatar {
+  opacity: 1;
+}
+.dt-tab-avatar--shell,
+.dt-tab-avatar--muted {
+  background: var(--color-bg-thumb);
+  color: var(--color-text-muted);
+}
+.dt-tab-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.dt-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-title) !important;
+  font-weight: 700;
+  font-size: 0.8125rem;
+}
+.dt-tab-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+}
+.dt-tab .dt-conv-status.is-working {
+  color: var(--color-status-success);
+}
+.dt-tab .dt-tab-rename {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--color-accent) !important;
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  padding: 1px 4px;
+  outline: none;
+}
+.dt-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+.dt-tab:hover .dt-tab-close,
+.dt-tab.is-active .dt-tab-close,
+.dt-history-row:hover .dt-tab-close,
+.dt-tab-close.is-visible {
+  opacity: 1;
+}
+.dt-tab-close:hover {
+  background: var(--color-btn-hover);
+  color: var(--color-text);
+}
+.dt-tabs-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.dt-tabs-split {
+  position: relative;
+  display: flex;
+}
+.dt-tabs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-dark);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dt-tabs-btn:hover:not(:disabled),
+.dt-tabs-btn.is-on {
+  background: var(--color-btn-hover);
+}
+.dt-tabs-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.dt-tabs-btn--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+  border-radius: 10px 0 0 10px;
+}
+.dt-tabs-btn--primary:hover:not(:disabled) {
+  background: var(--color-accent-bright);
+}
+.dt-tabs-btn--chevron {
+  padding: 0 8px;
+  border-radius: 0 10px 10px 0;
+  border-left: 1px solid color-mix(in srgb, var(--color-on-accent) 35%, transparent);
+}
+.dt-tabs-badge {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 0.6875rem;
+  text-align: center;
+}
+.dt-tabs-menu {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  z-index: 30;
+  width: 280px;
+  padding: 8px;
+  background: var(--color-bg-dark);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.dt-tabs-menu-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.dt-tabs-menu-row small {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+}
+
+/* ── History panel ──────────────────────────────────────────────────── */
+.dt-history {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 10px;
+  z-index: 30;
+  width: 420px;
+  max-height: 65vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-dark);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+.dt-history-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.dt-history-head strong {
+  font-family: var(--font-title) !important;
+  font-size: 0.9375rem;
+}
+.dt-history-head input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+}
+.dt-history-body {
+  overflow-y: auto;
+  padding: 4px 8px 10px;
+}
+.dt-history-section {
+  padding: 10px 6px 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.dt-history-empty {
+  padding: 6px 8px 8px;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+.dt-history-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.dt-history-row:hover {
+  background: var(--color-btn-hover);
+}
+.dt-history-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.dt-history-line .dt-tab-title {
+  flex: 1;
+  min-width: 0;
+}
+.dt-history-when {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+}
+
+/* Empty state when a project has no open session. */
+.dt-sessions-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+  padding: 24px;
+}
+.dt-sessions-empty strong {
+  font-family: var(--font-title) !important;
+  font-size: 1.125rem;
+  color: var(--color-text);
+}

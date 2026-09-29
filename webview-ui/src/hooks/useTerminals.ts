@@ -4,10 +4,13 @@ import {
   chatKill as cmdChatKill,
   chatSpawn as cmdChatSpawn,
   clearTerminalScrollback as cmdClearTerminalScrollback,
+  type ClosedSession,
   jsonlMtimeMs as cmdJsonlMtimeMs,
   killTerminal as cmdKillTerminal,
+  loadClosedSessions as cmdLoadClosedSessions,
   loadSessions as cmdLoadSessions,
   type PersistedSession,
+  saveClosedSessions as cmdSaveClosedSessions,
   saveSessions as cmdSaveSessions,
   spawnTerminal as cmdSpawnTerminal,
   type TerminalKind,
@@ -77,6 +80,16 @@ export interface UseTerminalsResult {
    *  entry's id from ghost:<sid> to the real chat-<uuid> returned by
    *  chat_spawn so subsequent re-mounts don't re-spawn. */
   activateGhost: (ghostId: string, realTermId: string, sessionId: string | null) => void;
+  /** Closed sessions of a project, newest first (reopenable). */
+  closedForProject: (projectId: string | null) => ClosedSession[];
+  /** Reopen a closed session as a lazy tab (same name, notes, history). */
+  reopen: (projectId: string, sessionId: string) => void;
+  /** Reopen the most recently closed session of the project, if any. */
+  reopenLastClosed: (projectId: string) => void;
+  /** Open an on-disk conversation that was never a tab here. */
+  openTranscript: (projectId: string, cwd: string, sessionId: string, label: string) => void;
+  /** Drop a closed session from the list (its conversation file stays). */
+  forgetClosed: (projectId: string, sessionId: string) => void;
 }
 
 function dispatchWebviewMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -89,6 +102,24 @@ export function useTerminals(): UseTerminalsResult {
   const [activeId, setActive] = useState<string | null>(null);
 
   const nextAgentIdRef = useRef(1);
+
+  // Closed sessions per project (history panel). Mirrored in a ref so
+  // callbacks read the latest list without re-subscribing.
+  const [closed, setClosed] = useState<Record<string, ClosedSession[]>>({});
+  const closedRef = useRef<Record<string, ClosedSession[]>>({});
+  const updateClosed = useCallback(
+    (projectId: string, fn: (list: ClosedSession[]) => ClosedSession[], persist = true): void => {
+      const next = fn(closedRef.current[projectId] ?? []);
+      closedRef.current = { ...closedRef.current, [projectId]: next };
+      setClosed(closedRef.current);
+      if (persist) {
+        void cmdSaveClosedSessions(projectId, next).catch((e) => {
+          console.error('[Elyone][useTerminals] saveClosedSessions failed', e);
+        });
+      }
+    },
+    [],
+  );
 
   const terminalsRef = useRef<TerminalEntry[]>([]);
   useEffect(() => {
@@ -309,8 +340,43 @@ export function useTerminals(): UseTerminalsResult {
     [persistProjectSessions],
   );
 
+  /** Register a lazy "ghost:" tab for an existing conversation: history
+   *  loads from the transcript, claude only spawns on the first send. */
+  const registerGhost = useCallback(
+    (
+      projectId: string,
+      s: { session_id: string; label: string; cwd: string; skip_permissions: boolean; notes?: string | null },
+    ): string => {
+      const ghostId = `ghost:${s.session_id}`;
+      if (terminalsRef.current.some((t) => t.id === ghostId)) return ghostId;
+      const agentId = nextAgentIdRef.current++;
+      const entry: TerminalEntry = {
+        id: ghostId,
+        label: s.label,
+        cwd: s.cwd,
+        kind: 'claude',
+        agentId,
+        sessionId: s.session_id,
+        projectId,
+        skipPermissions: s.skip_permissions,
+        notes: s.notes ?? '',
+      };
+      setTerminals((prev) => [...prev, entry]);
+      terminalsRef.current = [...terminalsRef.current, entry];
+      dispatchWebviewMessage({ type: 'agentCreated', id: agentId, terminalId: ghostId, name: entry.label });
+      return ghostId;
+    },
+    [],
+  );
+
   const resumeProject = useCallback(
     async (projectId: string): Promise<void> => {
+      // Closed-session list (history panel) — independent of open tabs.
+      if (!(projectId in closedRef.current)) {
+        void cmdLoadClosedSessions(projectId)
+          .then((list) => updateClosed(projectId, () => list, false))
+          .catch((e) => console.error('[Elyone][useTerminals] loadClosedSessions failed', e));
+      }
       // Skip if we already have terminals for this project (avoids double-load
       // when an effect fires after the user has already opened sessions manually).
       const already = terminalsRef.current.some((t) => t.projectId === projectId);
@@ -333,32 +399,9 @@ export function useTerminals(): UseTerminalsResult {
       // actually sends a message (ChatPane sees the ghost: prefix,
       // flips sessionExitedRef so send() takes the auto-respawn path,
       // and the first send triggers a real chat_spawn).
-      for (const s of saved) {
-        const ghostId = `ghost:${s.session_id}`;
-        if (terminalsRef.current.some((t) => t.id === ghostId)) continue;
-        const agentId = nextAgentIdRef.current++;
-        const entry: TerminalEntry = {
-          id: ghostId,
-          label: s.label,
-          cwd: s.cwd,
-          kind: 'claude',
-          agentId,
-          sessionId: s.session_id,
-          projectId,
-          skipPermissions: s.skip_permissions,
-          notes: s.notes ?? '',
-        };
-        setTerminals((prev) => [...prev, entry]);
-        terminalsRef.current = [...terminalsRef.current, entry];
-        dispatchWebviewMessage({
-          type: 'agentCreated',
-          id: agentId,
-          terminalId: ghostId,
-          name: entry.label,
-        });
-      }
+      for (const s of saved) registerGhost(projectId, s);
     },
-    [],
+    [registerGhost, updateClosed],
   );
 
   const close = useCallback(async (id: string): Promise<void> => {
@@ -376,6 +419,19 @@ export function useTerminals(): UseTerminalsResult {
       console.error('[Deepthix][useTerminals] kill failed', e);
     }
     const projectId = entry?.projectId;
+    // Remember the session so it can be reopened from the history panel.
+    // Its conversation file is never deleted.
+    if (entry?.kind === 'claude' && entry.sessionId && projectId) {
+      const item: ClosedSession = {
+        session_id: entry.sessionId,
+        label: entry.label,
+        cwd: entry.cwd,
+        skip_permissions: entry.skipPermissions,
+        notes: entry.notes || null,
+        closed_at_ms: Date.now(),
+      };
+      updateClosed(projectId, (list) => [item, ...list.filter((c) => c.session_id !== item.session_id)]);
+    }
     setTerminals((prev) => prev.filter((t) => t.id !== id));
     terminalsRef.current = terminalsRef.current.filter((t) => t.id !== id);
     setActive((prev) => (prev === id ? null : prev));
@@ -391,7 +447,63 @@ export function useTerminals(): UseTerminalsResult {
         });
       }
     }
-  }, [persistProjectSessions]);
+  }, [persistProjectSessions, updateClosed]);
+
+  const closedForProject = useCallback(
+    (projectId: string | null): ClosedSession[] => (projectId ? (closed[projectId] ?? []) : []),
+    [closed],
+  );
+
+  /** Focus an already-open tab for this conversation, if any. */
+  const focusExisting = useCallback((sessionId: string): boolean => {
+    const open = terminalsRef.current.find((t) => t.sessionId === sessionId);
+    if (open) setActive(open.id);
+    return !!open;
+  }, []);
+
+  const reopen = useCallback(
+    (projectId: string, sessionId: string): void => {
+      const item = (closedRef.current[projectId] ?? []).find((c) => c.session_id === sessionId);
+      if (!item) return;
+      if (!focusExisting(sessionId)) {
+        const ghostId = registerGhost(projectId, item);
+        persistProjectSessions(projectId);
+        setActive(ghostId);
+      }
+      updateClosed(projectId, (list) => list.filter((c) => c.session_id !== sessionId));
+    },
+    [focusExisting, registerGhost, persistProjectSessions, updateClosed],
+  );
+
+  const reopenLastClosed = useCallback(
+    (projectId: string): void => {
+      const last = (closedRef.current[projectId] ?? [])[0];
+      if (last) reopen(projectId, last.session_id);
+    },
+    [reopen],
+  );
+
+  const openTranscript = useCallback(
+    (projectId: string, cwd: string, sessionId: string, label: string): void => {
+      if (focusExisting(sessionId)) return;
+      const ghostId = registerGhost(projectId, {
+        session_id: sessionId,
+        label,
+        cwd,
+        skip_permissions: false,
+      });
+      persistProjectSessions(projectId);
+      setActive(ghostId);
+    },
+    [focusExisting, registerGhost, persistProjectSessions],
+  );
+
+  const forgetClosed = useCallback(
+    (projectId: string, sessionId: string): void => {
+      updateClosed(projectId, (list) => list.filter((c) => c.session_id !== sessionId));
+    },
+    [updateClosed],
+  );
 
   const forProject = useCallback(
     (projectId: string | null): TerminalEntry[] => {
@@ -507,6 +619,11 @@ export function useTerminals(): UseTerminalsResult {
       updateNotes,
       setSessionId,
       activateGhost,
+      closedForProject,
+      reopen,
+      reopenLastClosed,
+      openTranscript,
+      forgetClosed,
     }),
     [
       terminals,
@@ -519,6 +636,11 @@ export function useTerminals(): UseTerminalsResult {
       updateNotes,
       setSessionId,
       activateGhost,
+      closedForProject,
+      reopen,
+      reopenLastClosed,
+      openTranscript,
+      forgetClosed,
     ],
   );
 }

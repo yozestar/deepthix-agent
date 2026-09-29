@@ -1,4 +1,3 @@
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ProcessPane, SessionsPane } from './components/BottomPanel';
@@ -147,13 +146,16 @@ function App(): React.JSX.Element {
     localStorage.setItem(SKIP_PERMS_KEY, String(skipPerms));
   }, [skipPerms]);
 
-  const onSpawnAgent = (): void => {
+  const spawnSession = (skipPermissions: boolean): void => {
     const projectId = projects.activeProjectId;
     const cwd = projects.activeProject?.path;
     if (!projectId || !cwd) return;
-    console.debug('[Deepthix][App] spawn session', { projectId, cwd, skipPerms });
-    void terminals.open(projectId, cwd, 'claude', undefined, { skipPermissions: skipPerms });
+    console.debug('[Deepthix][App] spawn session', { projectId, cwd, skipPermissions });
+    void terminals.open(projectId, cwd, 'claude', undefined, { skipPermissions }).then((entry) => {
+      if (entry) terminals.setActive(entry.id);
+    });
   };
+  const onSpawnAgent = (): void => spawnSession(skipPerms);
 
   // Sidebar → open a session: switch project when needed, focus the chat
   // tab, and make sure the SESSIONS view is showing.
@@ -254,66 +256,11 @@ function App(): React.JSX.Element {
                 projectId={projects.activeProjectId}
                 globalConfig={globalConfig.config}
                 updateGlobalConfig={globalConfig.update}
+                projectPath={projects.activeProject?.path ?? null}
+                onNewSession={(skip) => spawnSession(skip)}
+                skipPermissions={skipPerms}
+                onToggleSkipPermissions={setSkipPerms}
               />
-              {/* + Session button + skip-perms toggle — floating overlay
-                  in the top-right corner of the SESSIONS view so the
-                  chat below can use the full height. */}
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 6,
-                  right: 12,
-                  display: 'flex',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 8,
-                  zIndex: 6,
-                }}
-              >
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    background: 'var(--color-bg-dark)',
-                    border: '2px solid var(--color-border)',
-                    boxShadow: 'var(--shadow-pixel)',
-                    padding: '4px 8px',
-                    fontFamily: 'var(--font-pixel)',
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                  }}
-                  title="Pass --dangerously-skip-permissions to new sessions"
-                >
-                  <input
-                    type="checkbox"
-                    checked={skipPerms}
-                    onChange={(e) => setSkipPerms(e.target.checked)}
-                  />
-                  skip perms
-                </label>
-                <button
-                  type="button"
-                  onClick={onSpawnAgent}
-                  style={{
-                    padding: '6px 12px',
-                    background: 'var(--color-accent)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    color: 'var(--color-on-accent)',
-                    border: '2px solid var(--color-border)',
-                    boxShadow: 'var(--shadow-pixel)',
-                    fontFamily: 'var(--font-pixel)',
-                    fontSize: '0.875rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Plus size="1.1em" strokeWidth={2} aria-hidden />
-                  <span>New session</span>
-                </button>
-              </div>
             </div>
           )}
 

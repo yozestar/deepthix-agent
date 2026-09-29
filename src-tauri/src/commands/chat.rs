@@ -1800,17 +1800,14 @@ pub struct ResumableSession {
 /// Sorted by mtime desc (most recent first).
 #[tauri::command]
 pub fn list_resumable_sessions(project_cwd: PathBuf) -> Result<Vec<ResumableSession>, String> {
-    let raw = project_cwd.to_string_lossy();
-    let hash: String = raw
-        .chars()
-        .map(|c| match c {
-            '/' | '\\' | ':' | '.' => '-',
-            other => other,
-        })
-        .collect();
-    let dir = match dirs::home_dir() {
-        Some(h) => h.join(".claude").join("projects").join(&hash),
-        None => return Err("no home dir".to_string()),
+    // Same dir rule as every other transcript lookup (verbatim `\\?\`
+    // prefix stripped, any non-alphanumeric char → `-`). The previous
+    // local rule only mapped `/ \ : .`, so on Windows (`\\?\C:\…`, `_` in
+    // paths) the /resume picker looked in a dir that doesn't exist.
+    let probe = crate::jsonl_watcher::predict_jsonl_path(&project_cwd, "probe");
+    let dir = match probe.parent() {
+        Some(d) => d.to_path_buf(),
+        None => return Err("no transcript dir".to_string()),
     };
     let entries = match std::fs::read_dir(&dir) {
         Ok(it) => it,

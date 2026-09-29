@@ -102,6 +102,27 @@ export async function loadSessions(projectId: string): Promise<PersistedSession[
   return await invoke<PersistedSession[]>('load_sessions', { projectId });
 }
 
+/** A closed tab: its conversation stays on disk, this keeps its name and
+ *  notes so it can be reopened from the history panel. */
+export interface ClosedSession {
+  session_id: string;
+  label: string;
+  cwd: string;
+  skip_permissions: boolean;
+  notes: string | null;
+  closed_at_ms: number;
+}
+
+export async function loadClosedSessions(projectId: string): Promise<ClosedSession[]> {
+  return await invoke<ClosedSession[]>('load_closed_sessions', { projectId });
+}
+
+/** Persist the project's closed-session list (Rust sorts newest first,
+ *  dedups by session id and caps it). */
+export async function saveClosedSessions(projectId: string, sessions: ClosedSession[]): Promise<void> {
+  await invoke<void>('save_closed_sessions', { projectId, sessions });
+}
+
 /** Persist the xterm-serialized scrollback for `sessionId` to disk. */
 export async function saveTerminalScrollback(
   projectId: string,

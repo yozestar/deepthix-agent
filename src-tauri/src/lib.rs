@@ -93,6 +93,8 @@ pub fn run() {
             commands::terminals::kill_terminal,
             commands::sessions::save_sessions,
             commands::sessions::load_sessions,
+            commands::sessions::save_closed_sessions,
+            commands::sessions::load_closed_sessions,
             commands::scrollback::save_terminal_scrollback,
             commands::scrollback::load_terminal_scrollback,
             commands::scrollback::clear_terminal_scrollback,
