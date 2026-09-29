@@ -229,3 +229,5 @@ export const CONTENT_SEARCH_MIN_CHARS = 3;
 export const CONTENT_SEARCH_DEBOUNCE_MS = 350;
 /** User messages longer than this render full width instead of a bubble. */
 export const LONG_USER_MESSAGE_CHARS = 600;
+/** Mouse travel before a tab press turns into a drag (vs a click). */
+export const TAB_DRAG_THRESHOLD_PX = 6;

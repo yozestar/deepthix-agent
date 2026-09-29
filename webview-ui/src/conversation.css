@@ -703,3 +703,24 @@
   font-size: 1.125rem;
   color: var(--color-text);
 }
+
+/* Tab drag-to-reorder: dimmed source + blue insertion bar. */
+.dt-tab.is-dragging {
+  opacity: 0.45;
+}
+.dt-tab.drop-before::before,
+.dt-tab.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--color-accent);
+}
+.dt-tab.drop-before::before {
+  left: -5px;
+}
+.dt-tab.drop-after::after {
+  right: -5px;
+}

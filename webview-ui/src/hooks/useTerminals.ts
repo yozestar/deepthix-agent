@@ -90,6 +90,8 @@ export interface UseTerminalsResult {
   openTranscript: (projectId: string, cwd: string, sessionId: string, label: string) => void;
   /** Drop a closed session from the list (its conversation file stays). */
   forgetClosed: (projectId: string, sessionId: string) => void;
+  /** Move a tab to `toIndex` within its project's tab order (persisted). */
+  moveTab: (id: string, toIndex: number) => void;
 }
 
 function dispatchWebviewMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -498,6 +500,30 @@ export function useTerminals(): UseTerminalsResult {
     [focusExisting, registerGhost, persistProjectSessions],
   );
 
+  const moveTab = useCallback(
+    (id: string, toIndex: number): void => {
+      const all = terminalsRef.current;
+      const entry = all.find((t) => t.id === id);
+      if (!entry) return;
+      const siblings = all.filter((t) => t.projectId === entry.projectId);
+      const from = siblings.findIndex((t) => t.id === id);
+      const target = Math.max(0, Math.min(siblings.length - 1, toIndex));
+      if (from === target) return;
+      const reordered = [...siblings];
+      reordered.splice(from, 1);
+      reordered.splice(target, 0, entry);
+      // Put the project's tabs back into the global array at the slots
+      // they already occupy, so other projects' order is untouched.
+      let k = 0;
+      const next = all.map((t) => (t.projectId === entry.projectId ? reordered[k++] : t));
+      terminalsRef.current = next;
+      setTerminals(next);
+      // sessions.json is written in array order → the order survives a restart.
+      persistProjectSessions(entry.projectId);
+    },
+    [persistProjectSessions],
+  );
+
   const forgetClosed = useCallback(
     (projectId: string, sessionId: string): void => {
       updateClosed(projectId, (list) => list.filter((c) => c.session_id !== sessionId));
@@ -624,6 +650,7 @@ export function useTerminals(): UseTerminalsResult {
       reopenLastClosed,
       openTranscript,
       forgetClosed,
+      moveTab,
     }),
     [
       terminals,
@@ -641,6 +668,7 @@ export function useTerminals(): UseTerminalsResult {
       reopenLastClosed,
       openTranscript,
       forgetClosed,
+      moveTab,
     ],
   );
 }

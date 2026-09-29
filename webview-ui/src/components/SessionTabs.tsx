@@ -5,12 +5,16 @@
 // conversations of the project, reopenable with their full history).
 //
 // Shortcuts (browser-like): Ctrl+W closes the active tab, Ctrl+Shift+T
-// reopens the last closed one.
+// reopens the last closed one, Ctrl+Shift+PageUp/PageDown moves it.
+//
+// Tabs are reordered by dragging with the mouse. This uses pointer events,
+// not HTML5 drag-and-drop: the window has native file drop enabled (for
+// attachments), which disables HTML5 DnD inside the WebView on Windows.
 
 import { ChevronDown, History, Plus, SquareTerminal, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { SIDEBAR_PREVIEW_POLL_MS } from '../constants';
+import { SIDEBAR_PREVIEW_POLL_MS, TAB_DRAG_THRESHOLD_PX as DRAG_THRESHOLD_PX } from '../constants';
 import { avatarColor, formatWhen, initials, matches } from '../conversationUtils';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
@@ -57,6 +61,62 @@ export function SessionTabs({
   const [menuOpen, setMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [previews, setPreviews] = useState<Map<string, SessionPreview>>(new Map());
+
+  // ── Drag to reorder ────────────────────────────────────────────────
+  const tabRefs = useRef(new Map<string, HTMLDivElement>());
+  const pressRef = useRef<{ id: string; x: number; started: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
+  /** Tab being dragged + insertion index among the OTHER tabs. */
+  const [drag, setDrag] = useState<{ id: string; over: number } | null>(null);
+  const visibleRef = useRef(visible);
+  useEffect(() => {
+    visibleRef.current = visible;
+  }, [visible]);
+  useEffect(() => {
+    const insertionIndex = (id: string, x: number): number => {
+      const others = visibleRef.current.filter((t) => t.id !== id);
+      let idx = 0;
+      for (const t of others) {
+        const el = tabRefs.current.get(t.id);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (x > r.left + r.width / 2) idx++;
+      }
+      return idx;
+    };
+    function onMove(e: PointerEvent): void {
+      const press = pressRef.current;
+      if (!press) return;
+      if (!press.started) {
+        if (Math.abs(e.clientX - press.x) < DRAG_THRESHOLD_PX) return;
+        press.started = true;
+        document.body.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
+      }
+      setDrag({ id: press.id, over: insertionIndex(press.id, e.clientX) });
+    }
+    function onUp(e: PointerEvent): void {
+      const press = pressRef.current;
+      pressRef.current = null;
+      if (!press?.started) return;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      // Pin the tab currently on screen before reordering: when nothing
+      // was explicitly selected the pane shows the FIRST tab, so moving
+      // that tab would silently switch the view to its neighbour.
+      if (stateRef.current.activeId) terminals.setActive(stateRef.current.activeId);
+      // The insertion index among the other tabs is the final position.
+      terminals.moveTab(press.id, insertionIndex(press.id, e.clientX));
+      suppressClickRef.current = true;
+      setDrag(null);
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [terminals]);
 
   const closed = terminals.closedForProject(projectId);
 
@@ -113,6 +173,13 @@ export function SessionTabs({
       } else if (ev.shiftKey && (ev.key === 't' || ev.key === 'T') && pid) {
         ev.preventDefault();
         terminals.reopenLastClosed(pid);
+      } else if (ev.shiftKey && (ev.key === 'PageUp' || ev.key === 'PageDown') && aid) {
+        ev.preventDefault();
+        const idx = visibleRef.current.findIndex((t) => t.id === aid);
+        if (idx >= 0) {
+          terminals.setActive(aid);
+          terminals.moveTab(aid, idx + (ev.key === 'PageUp' ? -1 : 1));
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown);
@@ -136,6 +203,10 @@ export function SessionTabs({
       <div className="dt-tabs-scroll">
         {visible.map((t) => {
           const isActive = t.id === activeId;
+          const others = drag ? visible.filter((v) => v.id !== drag.id) : [];
+          const otherIdx = others.findIndex((v) => v.id === t.id);
+          const dropBefore = !!drag && otherIdx >= 0 && otherIdx === drag.over;
+          const dropAfter = !!drag && otherIdx >= 0 && otherIdx === others.length - 1 && drag.over === others.length;
           const st = statusText(t);
           const when = t.sessionId ? formatWhen(previews.get(t.sessionId)?.mtime_ms ?? 0) : '';
           return (
@@ -144,8 +215,25 @@ export function SessionTabs({
               role="tab"
               aria-selected={isActive}
               tabIndex={0}
-              className={`dt-tab${isActive ? ' is-active' : ''}`}
-              onClick={() => editingId !== t.id && terminals.setActive(t.id)}
+              ref={(el) => {
+                if (el) tabRefs.current.set(t.id, el);
+                else tabRefs.current.delete(t.id);
+              }}
+              className={`dt-tab${isActive ? ' is-active' : ''}${drag?.id === t.id ? ' is-dragging' : ''}${
+                dropBefore ? ' drop-before' : ''
+              }${dropAfter ? ' drop-after' : ''}`}
+              onPointerDown={(e) => {
+                if (e.button !== 0 || editingId === t.id) return;
+                if ((e.target as Element).closest('button, input')) return;
+                pressRef.current = { id: t.id, x: e.clientX, started: false };
+              }}
+              onClick={() => {
+                if (suppressClickRef.current) {
+                  suppressClickRef.current = false;
+                  return;
+                }
+                if (editingId !== t.id) terminals.setActive(t.id);
+              }}
               onAuxClick={(e) => {
                 // Middle click closes, like a browser tab.
                 if (e.button === 1) void terminals.close(t.id);
@@ -158,7 +246,7 @@ export function SessionTabs({
                 if (editingId === t.id) return;
                 if (e.key === 'Enter' || e.key === ' ') terminals.setActive(t.id);
               }}
-              title={`${t.label}\n(double-clic pour renommer)`}
+              title={`${t.label}\n(glisser pour déplacer · double-clic pour renommer)`}
             >
               {t.kind === 'claude' ? (
                 <span
