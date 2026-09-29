@@ -261,15 +261,15 @@ pub fn read_claude_subscription() -> Result<ClaudeSubscription, String> {
     // blob there. On Windows / Linux the binary doesn't exist and the
     // command above always errored with "security spawn failed: program
     // not found", which the UI surfaced as a red banner in the Usage pane.
-    // Short-circuit to an empty/unauthenticated result on non-macOS so the
-    // UI just shows the "not signed in" placeholder instead.
+    // On Windows / Linux Claude Code stores the same blob in
+    // ~/.claude/.credentials.json — read the plan from there (no network,
+    // the token itself is not used here).
     #[cfg(not(target_os = "macos"))]
     {
-        tracing::debug!(
-            target: "deepthix::commands",
-            "read_claude_subscription: not macOS — returning default (no Keychain probe)"
-        );
-        return Ok(ClaudeSubscription::default());
+        let raw = dirs::home_dir()
+            .map(|h| h.join(".claude").join(".credentials.json"))
+            .and_then(|p| std::fs::read_to_string(p).ok());
+        return Ok(raw.map(|r| subscription_from_blob(&r)).unwrap_or_default());
     }
     #[cfg(target_os = "macos")]
     {
@@ -424,6 +424,24 @@ fn read_credentials_file() -> Option<CachedToken> {
     let path = dirs::home_dir()?.join(".claude").join(".credentials.json");
     let raw = std::fs::read_to_string(path).ok()?;
     parse_oauth_blob(&raw)
+}
+
+/// Plan info from a Claude Code credentials blob. `authenticated` means an
+/// OAuth access token is present (Claude Code is signed in).
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn subscription_from_blob(raw: &str) -> ClaudeSubscription {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return ClaudeSubscription::default();
+    };
+    let Some(oauth) = parsed.get("claudeAiOauth") else {
+        return ClaudeSubscription::default();
+    };
+    let s = |k: &str| oauth.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    ClaudeSubscription {
+        subscription_type: s("subscriptionType"),
+        rate_limit_tier: s("rateLimitTier"),
+        authenticated: !s("accessToken").is_empty(),
+    }
 }
 
 /// Parse `{ "claudeAiOauth": { accessToken, refreshToken, expiresAt } }`.
@@ -867,6 +885,17 @@ pub fn read_claude_daily_activity() -> Result<ClaudeActivity, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subscription_from_blob_reads_plan_and_signed_in_state() {
+        let raw = r#"{"claudeAiOauth":{"accessToken":"a","subscriptionType":"max","rateLimitTier":"default_claude_max_20x"}}"#;
+        let s = subscription_from_blob(raw);
+        assert!(s.authenticated);
+        assert_eq!(s.subscription_type, "max");
+        assert_eq!(s.rate_limit_tier, "default_claude_max_20x");
+        assert!(!subscription_from_blob("{}").authenticated);
+        assert!(!subscription_from_blob("garbage").authenticated);
+    }
 
     #[test]
     fn parse_oauth_blob_reads_the_credentials_shape() {
