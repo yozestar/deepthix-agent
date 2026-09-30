@@ -125,8 +125,16 @@ fn ts_is_on_local_date(iso_ts: &str, target: NaiveDate) -> bool {
     local.date_naive() == target
 }
 
+/// Runs on a blocking worker: Tauri executes sync commands on the main
+/// thread, so any file scan or network wait here froze the whole UI.
 #[tauri::command]
-pub fn read_claude_usage() -> Result<ClaudeUsage, String> {
+pub async fn read_claude_usage() -> Result<ClaudeUsage, String> {
+    tauri::async_runtime::spawn_blocking(read_claude_usage_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn read_claude_usage_blocking() -> Result<ClaudeUsage, String> {
     let projects_root = match dirs::home_dir() {
         Some(h) => h.join(".claude").join("projects"),
         None => return Err("no home dir".to_string()),
@@ -254,8 +262,16 @@ struct OauthBlock {
     rate_limit_tier: Option<String>,
 }
 
+/// Runs on a blocking worker: Tauri executes sync commands on the main
+/// thread, so any file scan or network wait here froze the whole UI.
 #[tauri::command]
-pub fn read_claude_subscription() -> Result<ClaudeSubscription, String> {
+pub async fn read_claude_subscription() -> Result<ClaudeSubscription, String> {
+    tauri::async_runtime::spawn_blocking(read_claude_subscription_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn read_claude_subscription_blocking() -> Result<ClaudeSubscription, String> {
     // `security find-generic-password -s "Claude Code-credentials" -w` is a
     // macOS Keychain probe — the only place claude code stores the OAuth
     // blob there. On Windows / Linux the binary doesn't exist and the
@@ -489,32 +505,13 @@ fn refresh_access_token(refresh_token: &str) -> Result<CachedToken, String> {
     })
     .to_string();
 
-    let output = Command::new("curl")
-        .args([
-            "--silent",
-            "--max-time",
-            "8",
-            "--write-out",
-            "\n%{http_code}",
-            "-X",
-            "POST",
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            &body,
-            "https://console.anthropic.com/v1/oauth/token",
-        ])
-        .output()
-        .map_err(|e| format!("curl spawn (refresh) failed: {e}"))?;
-    let combined = String::from_utf8_lossy(&output.stdout).into_owned();
-    let (resp_body, status) = match combined.rfind('\n') {
-        Some(idx) => (
-            combined[..idx].to_string(),
-            combined[idx + 1..].trim().to_string(),
-        ),
-        None => (combined.clone(), "000".to_string()),
-    };
-    let status_num: u16 = status.parse().unwrap_or(0);
+    let (status_num, resp_body) = https_request(
+        reqwest::Method::POST,
+        "https://console.anthropic.com/v1/oauth/token",
+        &[],
+        Some(body),
+    )?;
+    let status = status_num.to_string();
     if !(200..300).contains(&status_num) {
         // 429 → arm the backoff so we stop hammering and let the bucket
         // recover. Anything else (4xx auth, 5xx server) we still log
@@ -616,38 +613,58 @@ fn current_access_token() -> Result<String, String> {
     }
 }
 
+/// HTTPS request done in-process (reqwest, SChannel on Windows).
+///
+/// Replaces spawning `curl`: on Windows a GUI app spawning a console
+/// program flashes a console window every time, and "read the credentials
+/// file, then run curl with the token" is exactly the pattern antivirus
+/// heuristics flag. Returns (status, body); status 0 = transport error.
+fn https_request(
+    method: reqwest::Method,
+    url: &str,
+    headers: &[(&str, &str)],
+    json_body: Option<String>,
+) -> Result<(u16, String), String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+    let mut req = client.request(method, url);
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    if let Some(body) = json_body {
+        req = req.header("Content-Type", "application/json").body(body);
+    }
+    let resp = req.send().map_err(|e| format!("request failed: {e}"))?;
+    let status = resp.status().as_u16();
+    let body = resp.text().unwrap_or_default();
+    Ok((status, body))
+}
+
 /// One GET attempt against the usage endpoint with the supplied token.
 /// Returns Ok((status_code, body)) so the caller can inspect 401 and
 /// decide to refresh + retry without conflating it with curl failures.
 fn fetch_usage_with(token: &str) -> Result<(u16, String), String> {
-    let output = Command::new("curl")
-        .args([
-            "--silent",
-            "--max-time",
-            "8",
-            "--write-out",
-            "\n%{http_code}",
-            "-H",
-            &format!("Authorization: Bearer {token}"),
-            "-H",
-            "anthropic-beta: oauth-2025-04-20",
-            "-H",
-            "Content-Type: application/json",
-            "https://api.anthropic.com/api/oauth/usage",
-        ])
-        .output()
-        .map_err(|e| format!("curl spawn failed: {e}"))?;
-    let combined = String::from_utf8_lossy(&output.stdout).into_owned();
-    let (body, status) = match combined.rfind('\n') {
-        Some(idx) => (combined[..idx].to_string(), combined[idx + 1..].trim().to_string()),
-        None => (combined.clone(), "000".to_string()),
-    };
-    let status_num: u16 = status.parse().unwrap_or(0);
-    Ok((status_num, body))
+    let auth = format!("Bearer {token}");
+    https_request(
+        reqwest::Method::GET,
+        "https://api.anthropic.com/api/oauth/usage",
+        &[("Authorization", auth.as_str()), ("anthropic-beta", "oauth-2025-04-20")],
+        None,
+    )
 }
 
+/// Runs on a blocking worker: Tauri executes sync commands on the main
+/// thread, so any file scan or network wait here froze the whole UI.
 #[tauri::command]
-pub fn read_claude_usage_limits() -> Result<ClaudeUsageLimits, String> {
+pub async fn read_claude_usage_limits() -> Result<ClaudeUsageLimits, String> {
+    tauri::async_runtime::spawn_blocking(read_claude_usage_limits_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn read_claude_usage_limits_blocking() -> Result<ClaudeUsageLimits, String> {
     let token = match current_access_token() {
         Ok(t) => t,
         Err(e) => {
@@ -839,8 +856,16 @@ struct DailyActivityRaw {
     tool_call_count: u64,
 }
 
+/// Runs on a blocking worker: Tauri executes sync commands on the main
+/// thread, so any file scan or network wait here froze the whole UI.
 #[tauri::command]
-pub fn read_claude_daily_activity() -> Result<ClaudeActivity, String> {
+pub async fn read_claude_daily_activity() -> Result<ClaudeActivity, String> {
+    tauri::async_runtime::spawn_blocking(read_claude_daily_activity_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn read_claude_daily_activity_blocking() -> Result<ClaudeActivity, String> {
     let path = match dirs::home_dir() {
         Some(h) => h.join(".claude").join("stats-cache.json"),
         None => return Err("no home dir".to_string()),

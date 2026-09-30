@@ -1306,7 +1306,14 @@ pub fn chat_set_session_id(
 /// where hash = absolute project path with slashes/backslashes/colons
 /// replaced by dashes.
 #[tauri::command]
-pub fn chat_load_history(project_cwd: PathBuf, session_id: String) -> Result<Vec<String>, String> {
+pub async fn chat_load_history(project_cwd: PathBuf, session_id: String) -> Result<Vec<String>, String> {
+    // Reads the whole transcript (up to ~10 MB): keep it off the UI thread.
+    tauri::async_runtime::spawn_blocking(move || chat_load_history_blocking(project_cwd, session_id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn chat_load_history_blocking(project_cwd: PathBuf, session_id: String) -> Result<Vec<String>, String> {
     let path = crate::jsonl_watcher::predict_jsonl_path(&project_cwd, &session_id);
     tracing::debug!(target: "deepthix::chat", ?path, %session_id, "chat_load_history");
     let raw = match std::fs::read_to_string(&path) {
@@ -1799,7 +1806,14 @@ pub struct ResumableSession {
 /// Reads `~/.claude/projects/<hash>/*.jsonl` and gathers metadata.
 /// Sorted by mtime desc (most recent first).
 #[tauri::command]
-pub fn list_resumable_sessions(project_cwd: PathBuf) -> Result<Vec<ResumableSession>, String> {
+pub async fn list_resumable_sessions(project_cwd: PathBuf) -> Result<Vec<ResumableSession>, String> {
+    // Reads whole transcripts: keep it off the UI thread.
+    tauri::async_runtime::spawn_blocking(move || list_resumable_sessions_blocking(project_cwd))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn list_resumable_sessions_blocking(project_cwd: PathBuf) -> Result<Vec<ResumableSession>, String> {
     // Same dir rule as every other transcript lookup (verbatim `\\?\`
     // prefix stripped, any non-alphanumeric char → `-`). The previous
     // local rule only mapped `/ \ : .`, so on Windows (`\\?\C:\…`, `_` in

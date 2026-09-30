@@ -115,7 +115,13 @@ fn preview_for_path(path: &Path) -> std::io::Result<(u64, String, String)> {
 /// unreadable transcripts yield an empty preview instead of an error so
 /// one broken file never blanks the whole sidebar.
 #[tauri::command]
-pub fn session_previews(items: Vec<PreviewRequest>) -> Vec<SessionPreview> {
+pub async fn session_previews(items: Vec<PreviewRequest>) -> Result<Vec<SessionPreview>, String> {
+    tauri::async_runtime::spawn_blocking(move || session_previews_blocking(items))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+fn session_previews_blocking(items: Vec<PreviewRequest>) -> Vec<SessionPreview> {
     items
         .into_iter()
         .map(|req| {
@@ -411,7 +417,7 @@ mod tests {
 
     #[test]
     fn session_previews_tolerates_missing_files() {
-        let out = session_previews(vec![PreviewRequest {
+        let out = session_previews_blocking(vec![PreviewRequest {
             cwd: "C:\\definitely\\missing".into(),
             session_id: "nope".into(),
         }]);

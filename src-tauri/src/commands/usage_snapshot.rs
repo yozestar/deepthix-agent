@@ -248,7 +248,13 @@ pub struct UsageSnapshot {
 /// Read whatever the dumper has captured. Returns an empty body when
 /// no claude session has run since install.
 #[tauri::command]
-pub fn read_claude_usage_snapshot() -> Result<UsageSnapshot, String> {
+pub async fn read_claude_usage_snapshot() -> Result<UsageSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(read_claude_usage_snapshot_blocking)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn read_claude_usage_snapshot_blocking() -> Result<UsageSnapshot, String> {
     let path = snapshot_path().map_err(|e| e.to_string())?;
     let body = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -281,7 +287,7 @@ mod tests {
     #[test]
     fn snapshot_returns_empty_when_missing() {
         // Best-effort — assumes no snapshot exists yet (or stale-but-readable).
-        let r = read_claude_usage_snapshot();
+        let r = read_claude_usage_snapshot_blocking();
         assert!(r.is_ok());
     }
 }
