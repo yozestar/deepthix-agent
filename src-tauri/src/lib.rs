@@ -174,6 +174,19 @@ pub fn run() {
             commands::variables::delete_variable,
         ])
         .setup(|app| {
+            // If the main window's WebView could not be created (e.g. its
+            // data folder is still locked by another instance: WebView2
+            // 0x800700AA), Tauri keeps running with no window at all. That
+            // left invisible, stuck app.exe copies piling up on every
+            // relaunch (2026-09-30). Quit instead so the next launch starts
+            // clean.
+            if app.get_webview_window("main").is_none() {
+                tracing::error!(
+                    target: "deepthix::boot",
+                    "main window could not be created — exiting instead of running windowless",
+                );
+                std::process::exit(1);
+            }
             // Spawn the notifications watcher tied to the app handle so it
             // can emit events to the webview. Runs until app shutdown.
             crate::commands::notifications::start_watcher(app.handle().clone());
