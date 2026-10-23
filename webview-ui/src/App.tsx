@@ -187,6 +187,21 @@ function App(): React.JSX.Element {
     [projects.projects, projects.activeProjectId, projects.switchProject, terminals.open, terminals.setActive],
   );
 
+  // Tab "Déplacer vers…": move the conversation to another project, then
+  // follow it there so the user keeps working on it.
+  const onMoveToProject = useCallback(
+    async (termId: string, projectId: string): Promise<void> => {
+      const target = projects.projects.find((p) => p.id === projectId);
+      if (!target) throw new Error('Projet introuvable.');
+      const newId = await terminals.moveToProject(termId, projectId, target.path);
+      await projects.switchProject(projectId);
+      terminals.setActive(newId);
+      setMode('sessions');
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projects.projects, projects.switchProject, terminals.moveToProject, terminals.setActive],
+  );
+
   const onOpenSettings = useCallback((): void => {
     console.debug('[Deepthix][App] open settings');
     setMode('settings');
@@ -260,6 +275,8 @@ function App(): React.JSX.Element {
                 onNewSession={(skip) => spawnSession(skip)}
                 skipPermissions={skipPerms}
                 onToggleSkipPermissions={setSkipPerms}
+                projects={projects.projects}
+                onMoveToProject={onMoveToProject}
               />
             </div>
           )}

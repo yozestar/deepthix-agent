@@ -101,6 +101,7 @@ pub fn run() {
             commands::scrollback::jsonl_mtime_ms,
             commands::conversations::session_previews,
             commands::conversations::search_conversations,
+            commands::conversations::move_session,
             migration::legacy_import_status,
             migration::import_from_deepthix,
             commands::dashboard::dashboard_path,

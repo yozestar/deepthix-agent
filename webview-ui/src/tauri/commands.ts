@@ -228,6 +228,13 @@ export async function importFromDeepthix(): Promise<ImportReport> {
   return await invoke<ImportReport>('import_from_deepthix');
 }
 
+/** Move a conversation transcript (and its sub-folder) from one project's
+ *  Claude folder to another's. Copy → verify → delete; refuses to overwrite.
+ *  Stop the agent before calling. */
+export async function moveSession(sessionId: string, fromCwd: string, toCwd: string): Promise<void> {
+  await invoke<void>('move_session', { sessionId, fromCwd, toCwd });
+}
+
 /** Search the content of every transcript of the given projects
  *  (accent/case-insensitive, max 50 hits, 3 per conversation). */
 export async function searchConversations(

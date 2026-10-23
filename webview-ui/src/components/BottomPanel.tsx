@@ -22,6 +22,7 @@ import {
   listProcesses as cmdListProcesses,
   type ProcessInfo,
 } from '../tauri/commands';
+import type { Project } from '../tauri/types';
 import { ChatPane } from './ChatPane';
 import { SessionTabs } from './SessionTabs';
 import { TerminalTab } from './TerminalTab';
@@ -52,6 +53,10 @@ interface SessionsPaneProps {
   /** Persisted "skip permissions" preference for new sessions. */
   skipPermissions: boolean;
   onToggleSkipPermissions: (value: boolean) => void;
+  /** All projects (targets of the tab "Déplacer vers…" menu). */
+  projects: Project[];
+  /** Move a conversation tab to another project. */
+  onMoveToProject: (termId: string, projectId: string) => Promise<void>;
 }
 
 /**
@@ -69,6 +74,8 @@ export function SessionsPane({
   onNewSession,
   skipPermissions,
   onToggleSkipPermissions,
+  projects,
+  onMoveToProject,
 }: SessionsPaneProps): React.JSX.Element | null {
   const visible = terminals.forProject(projectId);
   const effectiveActive: string | null = visible.some((t) => t.id === terminals.activeId)
@@ -166,6 +173,8 @@ export function SessionsPane({
           onNewSession={onNewSession}
           skipPermissions={skipPermissions}
           onToggleSkipPermissions={onToggleSkipPermissions}
+          projects={projects}
+          onMoveToProject={onMoveToProject}
         />
         <div className="dt-sessions-empty">
           <strong>Aucune session ouverte</strong>
@@ -218,6 +227,8 @@ export function SessionsPane({
         onNewSession={onNewSession}
         skipPermissions={skipPermissions}
         onToggleSkipPermissions={onToggleSkipPermissions}
+        projects={projects}
+        onMoveToProject={onMoveToProject}
       />
 
       {/* xterm content (one node per terminal, hidden via display:none for inactive). */}

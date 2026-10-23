@@ -331,10 +331,136 @@ pub async fn search_conversations(
         .map_err(|e| e.to_string())
 }
 
+// ── Move a conversation to another project ──────────────────────────────
+
+/// Recursive copy; returns the number of bytes copied.
+fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<u64> {
+    std::fs::create_dir_all(dst)?;
+    let mut bytes = 0;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let to = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            bytes += copy_dir(&entry.path(), &to)?;
+        } else {
+            bytes += std::fs::copy(entry.path(), &to)?;
+        }
+    }
+    Ok(bytes)
+}
+
+/// Move `<sid>.jsonl` (and its optional `<sid>/` folder: tool results,
+/// sub-agents) from one Claude project folder to another. Claude Code only
+/// resumes a session from the folder of the project it is stored in, so a
+/// tab moved to another project needs its transcript moved too.
+///
+/// Safe order: copy → verify size → delete originals. Refuses to overwrite
+/// an existing conversation at the destination. Nothing in the user's
+/// project folders (code, documents) is touched.
+pub fn move_session_files(src_dir: &Path, dst_dir: &Path, session_id: &str) -> Result<(), String> {
+    if src_dir == dst_dir {
+        return Ok(());
+    }
+    let src_file = src_dir.join(format!("{session_id}.jsonl"));
+    let dst_file = dst_dir.join(format!("{session_id}.jsonl"));
+    let src_sub = src_dir.join(session_id);
+    let dst_sub = dst_dir.join(session_id);
+    if !src_file.exists() {
+        return Err(format!("conversation introuvable : {}", src_file.display()));
+    }
+    if dst_file.exists() || dst_sub.exists() {
+        return Err(format!("une conversation {session_id} existe déjà dans le projet de destination"));
+    }
+    std::fs::create_dir_all(dst_dir).map_err(|e| e.to_string())?;
+
+    let expected = std::fs::metadata(&src_file).map_err(|e| e.to_string())?.len();
+    let copied = std::fs::copy(&src_file, &dst_file).map_err(|e| e.to_string())?;
+    if copied != expected {
+        let _ = std::fs::remove_file(&dst_file);
+        return Err("copie incomplète de la conversation — rien n'a été déplacé".to_string());
+    }
+    if src_sub.is_dir() {
+        if let Err(e) = copy_dir(&src_sub, &dst_sub) {
+            let _ = std::fs::remove_file(&dst_file);
+            let _ = std::fs::remove_dir_all(&dst_sub);
+            return Err(format!("copie du dossier de la conversation impossible ({e}) — rien n'a été déplacé"));
+        }
+    }
+    // Copies are in place: now drop the originals.
+    std::fs::remove_file(&src_file).map_err(|e| e.to_string())?;
+    if src_sub.is_dir() {
+        std::fs::remove_dir_all(&src_sub).map_err(|e| e.to_string())?;
+    }
+    tracing::info!(
+        target: "deepthix::conversations",
+        %session_id, from = ?src_dir, to = ?dst_dir, bytes = copied, "moved conversation",
+    );
+    Ok(())
+}
+
+/// Move a conversation's transcript from one project to another (see
+/// `move_session_files`). The caller stops the agent first.
+#[tauri::command]
+pub async fn move_session(session_id: String, from_cwd: String, to_cwd: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let src = crate::jsonl_watcher::predict_jsonl_path(Path::new(&from_cwd), &session_id);
+        let dst = crate::jsonl_watcher::predict_jsonl_path(Path::new(&to_cwd), &session_id);
+        let (Some(src_dir), Some(dst_dir)) = (src.parent(), dst.parent()) else {
+            return Err("dossier de conversation introuvable".to_string());
+        };
+        move_session_files(src_dir, dst_dir, &session_id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn move_session_files_moves_transcript_and_subfolder() {
+        let root = tempfile::tempdir().unwrap();
+        let a = root.path().join("A");
+        let b = root.path().join("B");
+        std::fs::create_dir_all(a.join("s1").join("tool-results")).unwrap();
+        std::fs::write(a.join("s1.jsonl"), "line1\nline2\n").unwrap();
+        std::fs::write(a.join("s1").join("tool-results").join("r.txt"), "x").unwrap();
+        std::fs::write(a.join("other.jsonl"), "keep").unwrap();
+
+        move_session_files(&a, &b, "s1").unwrap();
+        assert_eq!(std::fs::read_to_string(b.join("s1.jsonl")).unwrap(), "line1\nline2\n");
+        assert!(b.join("s1").join("tool-results").join("r.txt").exists());
+        assert!(!a.join("s1.jsonl").exists());
+        assert!(!a.join("s1").exists());
+        assert!(a.join("other.jsonl").exists(), "other conversations untouched");
+    }
+
+    #[test]
+    fn move_session_files_refuses_to_overwrite_and_keeps_source() {
+        let root = tempfile::tempdir().unwrap();
+        let a = root.path().join("A");
+        let b = root.path().join("B");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(a.join("s1.jsonl"), "src").unwrap();
+        std::fs::write(b.join("s1.jsonl"), "dst").unwrap();
+        assert!(move_session_files(&a, &b, "s1").is_err());
+        assert_eq!(std::fs::read_to_string(a.join("s1.jsonl")).unwrap(), "src");
+        assert_eq!(std::fs::read_to_string(b.join("s1.jsonl")).unwrap(), "dst");
+    }
+
+    #[test]
+    fn move_session_files_errors_when_missing_and_noops_same_dir() {
+        let root = tempfile::tempdir().unwrap();
+        let a = root.path().join("A");
+        std::fs::create_dir_all(&a).unwrap();
+        assert!(move_session_files(&a, &root.path().join("B"), "nope").is_err());
+        std::fs::write(a.join("s.jsonl"), "x").unwrap();
+        move_session_files(&a, &a, "s").unwrap();
+        assert!(a.join("s.jsonl").exists());
+    }
 
     #[test]
     fn fold_strips_french_accents() {

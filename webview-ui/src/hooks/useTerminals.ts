@@ -9,6 +9,7 @@ import {
   killTerminal as cmdKillTerminal,
   loadClosedSessions as cmdLoadClosedSessions,
   loadSessions as cmdLoadSessions,
+  moveSession as cmdMoveSession,
   type PersistedSession,
   saveClosedSessions as cmdSaveClosedSessions,
   saveSessions as cmdSaveSessions,
@@ -90,8 +91,10 @@ export interface UseTerminalsResult {
   openTranscript: (projectId: string, cwd: string, sessionId: string, label: string) => void;
   /** Drop a closed session from the list (its conversation file stays). */
   forgetClosed: (projectId: string, sessionId: string) => void;
-  /** Move a tab to `toIndex` within its project's tab order (persisted). */
-  moveTab: (id: string, toIndex: number) => void;
+  /** Move a session tab to another project: stops the agent, moves the
+   *  transcript to the target project's Claude folder, re-registers the
+   *  tab there (same name / notes). Resolves to the new tab id. */
+  moveToProject: (id: string, toProjectId: string, toCwd: string) => Promise<string>;
 }
 
 function dispatchWebviewMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -500,28 +503,44 @@ export function useTerminals(): UseTerminalsResult {
     [focusExisting, registerGhost, persistProjectSessions],
   );
 
-  const moveTab = useCallback(
-    (id: string, toIndex: number): void => {
-      const all = terminalsRef.current;
-      const entry = all.find((t) => t.id === id);
-      if (!entry) return;
-      const siblings = all.filter((t) => t.projectId === entry.projectId);
-      const from = siblings.findIndex((t) => t.id === id);
-      const target = Math.max(0, Math.min(siblings.length - 1, toIndex));
-      if (from === target) return;
-      const reordered = [...siblings];
-      reordered.splice(from, 1);
-      reordered.splice(target, 0, entry);
-      // Put the project's tabs back into the global array at the slots
-      // they already occupy, so other projects' order is untouched.
-      let k = 0;
-      const next = all.map((t) => (t.projectId === entry.projectId ? reordered[k++] : t));
-      terminalsRef.current = next;
-      setTerminals(next);
-      // sessions.json is written in array order → the order survives a restart.
-      persistProjectSessions(entry.projectId);
+  const moveToProject = useCallback(
+    async (id: string, toProjectId: string, toCwd: string): Promise<string> => {
+      const entry = terminalsRef.current.find((t) => t.id === id);
+      if (!entry || entry.kind !== 'claude' || !entry.sessionId) {
+        throw new Error('Seules les conversations peuvent être déplacées.');
+      }
+      if (entry.projectId === toProjectId) return id;
+      const sessionId = entry.sessionId;
+      // 1. Stop the agent (a live process keeps the transcript open).
+      if (!entry.id.startsWith('ghost:')) {
+        try {
+          await cmdChatKill(entry.id);
+        } catch (e) {
+          console.warn('[Elyone][useTerminals] chat_kill before move failed', e);
+        }
+      }
+      // 2. Move the transcript. On failure nothing changes on screen.
+      await cmdMoveSession(sessionId, entry.cwd, toCwd);
+      // 3. Drop the tab from the old project…
+      const fromProjectId = entry.projectId;
+      setTerminals((prev) => prev.filter((t) => t.id !== id));
+      terminalsRef.current = terminalsRef.current.filter((t) => t.id !== id);
+      dispatchWebviewMessage({ type: 'agentClosed', id: entry.agentId });
+      persistProjectSessions(fromProjectId);
+      // …and register it in the new one (lazy: agent restarts on next send,
+      // now working in the target project's folder).
+      const ghostId = registerGhost(toProjectId, {
+        session_id: sessionId,
+        label: entry.label,
+        cwd: toCwd,
+        skip_permissions: entry.skipPermissions,
+        notes: entry.notes,
+      });
+      persistProjectSessions(toProjectId);
+      setActive(ghostId);
+      return ghostId;
     },
-    [persistProjectSessions],
+    [persistProjectSessions, registerGhost],
   );
 
   const forgetClosed = useCallback(
@@ -650,7 +669,7 @@ export function useTerminals(): UseTerminalsResult {
       reopenLastClosed,
       openTranscript,
       forgetClosed,
-      moveTab,
+      moveToProject,
     }),
     [
       terminals,
@@ -668,7 +687,7 @@ export function useTerminals(): UseTerminalsResult {
       reopenLastClosed,
       openTranscript,
       forgetClosed,
-      moveTab,
+      moveToProject,
     ],
   );
 }

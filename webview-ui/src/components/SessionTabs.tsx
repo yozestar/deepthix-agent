@@ -5,16 +5,16 @@
 // conversations of the project, reopenable with their full history).
 //
 // Shortcuts (browser-like): Ctrl+W closes the active tab, Ctrl+Shift+T
-// reopens the last closed one, Ctrl+Shift+PageUp/PageDown moves it.
+// reopens the last closed one.
 //
-// Tabs are reordered by dragging with the mouse. This uses pointer events,
-// not HTML5 drag-and-drop: the window has native file drop enabled (for
-// attachments), which disables HTML5 DnD inside the WebView on Windows.
+// Order is automatic: most recent message first (left), oldest last; a
+// conversation that just got a message jumps to the front. Shell tabs go
+// last. Right-click a conversation tab → "Déplacer vers…" another project.
 
-import { ChevronDown, History, Plus, SquareTerminal, X } from 'lucide-react';
+import { ChevronDown, FolderInput, History, Plus, SquareTerminal, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { SIDEBAR_PREVIEW_POLL_MS, TAB_DRAG_THRESHOLD_PX as DRAG_THRESHOLD_PX } from '../constants';
+import { TAB_ORDER_POLL_MS } from '../constants';
 import { avatarColor, formatWhen, initials, matches } from '../conversationUtils';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
@@ -24,6 +24,7 @@ import {
   type SessionPreview,
   sessionPreviews,
 } from '../tauri/commands';
+import type { Project } from '../tauri/types';
 
 interface Props {
   terminals: UseTerminalsResult;
@@ -36,6 +37,10 @@ interface Props {
   onNewSession: (skipPermissions: boolean) => void;
   skipPermissions: boolean;
   onToggleSkipPermissions: (value: boolean) => void;
+  /** All projects (targets of "Déplacer vers…"). */
+  projects: Project[];
+  /** Move a conversation tab to another project (rejects with a message). */
+  onMoveToProject: (termId: string, projectId: string) => Promise<void>;
 }
 
 /** Name shown for a tab; unnamed sessions fall back to their short id,
@@ -61,6 +66,8 @@ export function SessionTabs({
   onNewSession,
   skipPermissions,
   onToggleSkipPermissions,
+  projects,
+  onMoveToProject,
 }: Props): React.JSX.Element {
   const agentStatus = useAgentStatus();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -68,62 +75,6 @@ export function SessionTabs({
   const [menuOpen, setMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [previews, setPreviews] = useState<Map<string, SessionPreview>>(new Map());
-
-  // ── Drag to reorder ────────────────────────────────────────────────
-  const tabRefs = useRef(new Map<string, HTMLDivElement>());
-  const pressRef = useRef<{ id: string; x: number; started: boolean } | null>(null);
-  const suppressClickRef = useRef(false);
-  /** Tab being dragged + insertion index among the OTHER tabs. */
-  const [drag, setDrag] = useState<{ id: string; over: number } | null>(null);
-  const visibleRef = useRef(visible);
-  useEffect(() => {
-    visibleRef.current = visible;
-  }, [visible]);
-  useEffect(() => {
-    const insertionIndex = (id: string, x: number): number => {
-      const others = visibleRef.current.filter((t) => t.id !== id);
-      let idx = 0;
-      for (const t of others) {
-        const el = tabRefs.current.get(t.id);
-        if (!el) continue;
-        const r = el.getBoundingClientRect();
-        if (x > r.left + r.width / 2) idx++;
-      }
-      return idx;
-    };
-    function onMove(e: PointerEvent): void {
-      const press = pressRef.current;
-      if (!press) return;
-      if (!press.started) {
-        if (Math.abs(e.clientX - press.x) < DRAG_THRESHOLD_PX) return;
-        press.started = true;
-        document.body.style.cursor = 'grabbing';
-        document.body.style.userSelect = 'none';
-      }
-      setDrag({ id: press.id, over: insertionIndex(press.id, e.clientX) });
-    }
-    function onUp(e: PointerEvent): void {
-      const press = pressRef.current;
-      pressRef.current = null;
-      if (!press?.started) return;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      // Pin the tab currently on screen before reordering: when nothing
-      // was explicitly selected the pane shows the FIRST tab, so moving
-      // that tab would silently switch the view to its neighbour.
-      if (stateRef.current.activeId) terminals.setActive(stateRef.current.activeId);
-      // The insertion index among the other tabs is the final position.
-      terminals.moveTab(press.id, insertionIndex(press.id, e.clientX));
-      suppressClickRef.current = true;
-      setDrag(null);
-    }
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-  }, [terminals]);
 
   const closed = terminals.closedForProject(projectId);
 
@@ -155,7 +106,7 @@ export function SessionTabs({
       }
     };
     void probe();
-    const iv = setInterval(() => void probe(), SIDEBAR_PREVIEW_POLL_MS);
+    const iv = setInterval(() => void probe(), TAB_ORDER_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(iv);
@@ -180,18 +131,42 @@ export function SessionTabs({
       } else if (ev.shiftKey && (ev.key === 't' || ev.key === 'T') && pid) {
         ev.preventDefault();
         terminals.reopenLastClosed(pid);
-      } else if (ev.shiftKey && (ev.key === 'PageUp' || ev.key === 'PageDown') && aid) {
-        ev.preventDefault();
-        const idx = visibleRef.current.findIndex((t) => t.id === aid);
-        if (idx >= 0) {
-          terminals.setActive(aid);
-          terminals.moveTab(aid, idx + (ev.key === 'PageUp' ? -1 : 1));
-        }
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [terminals]);
+
+  // Most recent message first. A conversation with no transcript yet was
+  // just created → newest of all. Shells (no transcript) go last. Ties keep
+  // the existing order (Array.prototype.sort is stable).
+  const ordered = useMemo(() => {
+    const key = (t: TerminalEntry): number => {
+      if (t.kind !== 'claude' || !t.sessionId) return -1;
+      const m = previews.get(t.sessionId)?.mtime_ms ?? 0;
+      return m > 0 ? m : Number.MAX_SAFE_INTEGER;
+    };
+    return [...visible].sort((x, y) => key(y) - key(x));
+  }, [visible, previews]);
+
+  // ── Right-click → move to another project ───────────────────────────
+  const [moveMenu, setMoveMenu] = useState<{ termId: string; x: number; y: number } | null>(null);
+  const [moveFilter, setMoveFilter] = useState('');
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const closeMoveMenu = (): void => {
+    setMoveMenu(null);
+    setMoveFilter('');
+    setMoveError(null);
+  };
+  useEffect(() => {
+    if (!moveMenu) return;
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape') closeMoveMenu();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [moveMenu]);
 
   const statusText = (t: TerminalEntry): { text: string; working: boolean } => {
     if (t.kind !== 'claude') return { text: 'Terminal', working: false };
@@ -208,12 +183,8 @@ export function SessionTabs({
   return (
     <div className="dt-tabs">
       <div className="dt-tabs-scroll">
-        {visible.map((t) => {
+        {ordered.map((t) => {
           const isActive = t.id === activeId;
-          const others = drag ? visible.filter((v) => v.id !== drag.id) : [];
-          const otherIdx = others.findIndex((v) => v.id === t.id);
-          const dropBefore = !!drag && otherIdx >= 0 && otherIdx === drag.over;
-          const dropAfter = !!drag && otherIdx >= 0 && otherIdx === others.length - 1 && drag.over === others.length;
           const st = statusText(t);
           const when = t.sessionId ? formatWhen(previews.get(t.sessionId)?.mtime_ms ?? 0) : '';
           return (
@@ -222,24 +193,15 @@ export function SessionTabs({
               role="tab"
               aria-selected={isActive}
               tabIndex={0}
-              ref={(el) => {
-                if (el) tabRefs.current.set(t.id, el);
-                else tabRefs.current.delete(t.id);
-              }}
-              className={`dt-tab${isActive ? ' is-active' : ''}${drag?.id === t.id ? ' is-dragging' : ''}${
-                dropBefore ? ' drop-before' : ''
-              }${dropAfter ? ' drop-after' : ''}`}
-              onPointerDown={(e) => {
-                if (e.button !== 0 || editingId === t.id) return;
-                if ((e.target as Element).closest('button, input')) return;
-                pressRef.current = { id: t.id, x: e.clientX, started: false };
-              }}
+              className={`dt-tab${isActive ? ' is-active' : ''}`}
               onClick={() => {
-                if (suppressClickRef.current) {
-                  suppressClickRef.current = false;
-                  return;
-                }
                 if (editingId !== t.id) terminals.setActive(t.id);
+              }}
+              onContextMenu={(e) => {
+                if (t.kind !== 'claude' || !t.sessionId) return;
+                e.preventDefault();
+                setMoveError(null);
+                setMoveMenu({ termId: t.id, x: e.clientX, y: e.clientY });
               }}
               onAuxClick={(e) => {
                 // Middle click closes, like a browser tab.
@@ -253,7 +215,7 @@ export function SessionTabs({
                 if (editingId === t.id) return;
                 if (e.key === 'Enter' || e.key === ' ') terminals.setActive(t.id);
               }}
-              title={`${tabLabel(t)}\n(glisser pour déplacer · double-clic pour renommer)`}
+              title={`${tabLabel(t)}\n(double-clic : renommer · clic droit : déplacer vers un autre projet)`}
             >
               {t.kind === 'claude' ? (
                 <span
@@ -306,6 +268,64 @@ export function SessionTabs({
           );
         })}
       </div>
+
+      {moveMenu && (
+        <>
+          <div className="dt-move-backdrop" onClick={closeMoveMenu} onContextMenu={(e) => { e.preventDefault(); closeMoveMenu(); }} />
+          <div
+            className="dt-move-menu"
+            role="menu"
+            style={{ left: Math.min(moveMenu.x, window.innerWidth - 320), top: moveMenu.y }}
+          >
+            <div className="dt-move-head">
+              <FolderInput size="1em" strokeWidth={1.75} aria-hidden />
+              <span>Déplacer vers…</span>
+            </div>
+            <input
+              autoFocus
+              className="dt-move-filter"
+              value={moveFilter}
+              onChange={(e) => setMoveFilter(e.target.value)}
+              placeholder="Filtrer les projets…"
+              aria-label="Filtrer les projets"
+            />
+            <div className="dt-move-list">
+              {projects
+                .filter((p) => p.id !== projectId)
+                .filter((p) => !moveFilter.trim() || matches(p.name, moveFilter.trim()))
+                .sort((x, y) => x.name.localeCompare(y.name, 'fr'))
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="menuitem"
+                    disabled={moveBusy}
+                    onClick={() => {
+                      setMoveBusy(true);
+                      setMoveError(null);
+                      onMoveToProject(moveMenu.termId, p.id)
+                        .then(() => closeMoveMenu())
+                        .catch((e: unknown) => setMoveError(e instanceof Error ? e.message : String(e)))
+                        .finally(() => setMoveBusy(false));
+                    }}
+                  >
+                    <span className="dt-move-avatar" style={{ background: avatarColor(p.id) }} aria-hidden>
+                      {initials(p.name)}
+                    </span>
+                    <span className="dt-move-name">{p.name}</span>
+                  </button>
+                ))}
+            </div>
+            <div className="dt-move-note">
+              {moveBusy
+                ? 'Déplacement en cours…'
+                : moveError
+                  ? `Échec : ${moveError}`
+                  : "L'agent est arrêté puis reprend dans le dossier du projet choisi. Tes fichiers ne bougent pas."}
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="dt-tabs-actions">
         <div className="dt-tabs-split">
