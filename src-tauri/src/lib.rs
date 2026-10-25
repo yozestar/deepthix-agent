@@ -5,6 +5,7 @@ mod jsonl_watcher;
 mod log;
 mod migration;
 mod pty;
+mod remote;
 mod state;
 mod storage;
 
