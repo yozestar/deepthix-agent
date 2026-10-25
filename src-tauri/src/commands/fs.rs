@@ -317,3 +317,11 @@ mod tests {
         assert_eq!(file_size(path).unwrap(), 5);
     }
 }
+
+/// The user's home folder — the remote folder picker starts there.
+#[tauri::command]
+pub fn home_dir() -> Result<String, String> {
+    dirs::home_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .ok_or_else(|| "no home dir".to_string())
+}

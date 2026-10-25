@@ -6,6 +6,7 @@ import { MemoryPane } from './components/MemoryPane';
 import { NotificationToasts } from './components/NotificationToasts';
 import { OverviewPane } from './components/OverviewPane';
 import { PairRequestDialog } from './components/PairRequestDialog';
+import { RemoteFolderPicker } from './components/RemoteFolderPicker';
 import { SchedulesPane } from './components/SchedulesPane';
 // SessionsTopArea import removed — Coach pane was unmounted from the
 // Sessions view per user request to give the chat the full height.
@@ -25,7 +26,7 @@ import { useGlobalConfig } from './hooks/useGlobalConfig';
 import { useOpenFiles } from './hooks/useOpenFiles';
 import { useProjects } from './hooks/useProjects';
 import { useTerminals } from './hooks/useTerminals';
-import { isTauriRuntime } from './runtime';
+import { isRemoteRuntime, isTauriRuntime } from './runtime';
 import { setActiveProjectId, setActiveProjectPath, setOnOpenTerminal } from './tauriApi';
 
 const MODE_STORAGE_KEY = 'deepthix.mode';
@@ -369,23 +370,26 @@ function App(): React.JSX.Element {
           ~/.elyone/notifications.jsonl (which deepthix-mcp writes to). */}
       <NotificationToasts />
       <PairRequestDialog />
+      {isRemoteRuntime && <RemoteFolderPicker />}
       {/* Auto-update banner: silent on launch, only paints itself if a
           newer version is available at the configured updater endpoint. */}
-      <UpdaterBanner />
+      {!isRemoteRuntime && <UpdaterBanner />}
       {/* Drag a file from Finder onto the window → its absolute path is
           shell-quoted and char-by-char-injected into the active claude
           session's prompt. Picks the same target as VoiceRecorder. */}
-      <TerminalDropTarget
-        activeTermId={terminals.activeId}
-        activeProjectId={projects.activeProjectId}
-        terminals={terminals.terminals.map((t) => ({
-          id: t.id,
-          label: t.label,
-          cwd: t.cwd,
-          kind: t.kind,
-          projectId: t.projectId,
-        }))}
-      />
+      {!isRemoteRuntime && (
+        <TerminalDropTarget
+          activeTermId={terminals.activeId}
+          activeProjectId={projects.activeProjectId}
+          terminals={terminals.terminals.map((t) => ({
+            id: t.id,
+            label: t.label,
+            cwd: t.cwd,
+            kind: t.kind,
+            projectId: t.projectId,
+          }))}
+        />
+      )}
     </div>
   );
 }

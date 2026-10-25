@@ -1,3 +1,5 @@
+import { requestFolderPick } from '../remote/folderPicker';
+import { isRemoteRuntime } from '../runtime';
 import { invoke } from './transport';
 import type { FileEntry, Project, ProjectsFile, SwitchResult } from './types';
 
@@ -7,7 +9,14 @@ function log(name: string, args?: unknown): void {
 
 export async function openFolder(): Promise<string | null> {
   log('openFolder');
+  // No native dialog in a remote browser: browse the PC in-app instead.
+  if (isRemoteRuntime) return await requestFolderPick();
   return await invoke<string | null>('open_folder');
+}
+
+export async function homeDir(): Promise<string> {
+  log('homeDir');
+  return await invoke<string>('home_dir');
 }
 
 export async function addProject(path: string): Promise<Project> {

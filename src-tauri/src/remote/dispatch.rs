@@ -20,6 +20,7 @@ const REMOTE_COMMANDS: &[&str] = &[
     "read_file",
     "write_file",
     "file_kind",
+    "home_dir",
     "file_size",
     "read_file_bytes_base64",
     "stash_paste_as_attachment",
@@ -198,7 +199,7 @@ mod tests {
 
     #[test]
     fn allows_chat_and_terminal() {
-        for c in ["chat_send_user_text", "pty_write", "list_projects", "read_file"] {
+        for c in ["chat_send_user_text", "pty_write", "list_projects", "read_file", "home_dir"] {
             assert!(is_remote_allowed(c), "{c}");
         }
     }

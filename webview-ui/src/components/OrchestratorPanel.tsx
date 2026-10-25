@@ -15,16 +15,16 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { GlobalConfig } from '../hooks/useGlobalConfig';
 import type { UseTerminalsResult } from '../hooks/useTerminals';
+import { homeDir } from '../tauri/commands';
 import { TerminalTab } from './TerminalTab';
 
 const ORCHESTRATOR_PROJECT_ID = '__orchestrator__';
-// Resolved at first render via Tauri's path API so we don't bake a
+// Resolved at first render via the backend's home_dir so we don't bake a
 // username into the bundle. Falls back to a sentinel for the SSR-ish
 // initial paint; the real spawn happens after the resolution.
 let resolvedOrchestratorCwd: string | null = null;
 async function resolveOrchestratorCwd(): Promise<string> {
   if (resolvedOrchestratorCwd) return resolvedOrchestratorCwd;
-  const { homeDir } = await import('@tauri-apps/api/path');
   const home = await homeDir();
   resolvedOrchestratorCwd = `${home.replace(/\/$/, '')}/.elyone/orchestrator`;
   return resolvedOrchestratorCwd;

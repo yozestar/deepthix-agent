@@ -26,3 +26,8 @@ test('remote pair request event subscription exists', async () => {
   const mod = await import('../src/tauri/events.ts');
   assert.equal(typeof mod.onRemotePairRequest, 'function');
 });
+
+test('homeDir wrapper exists', async () => {
+  const mod = await import('../src/tauri/commands.ts');
+  assert.equal(typeof mod.homeDir, 'function');
+});

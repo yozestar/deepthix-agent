@@ -15,12 +15,19 @@
 //   - "Marketplace" section fetches a curated catalog from the deepthix
 //     repo and offers 1-click install for each skill.
 
-import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { isRemoteRuntime } from '../runtime';
+import {
+  fetchMarketplaceCatalog,
+  fetchSkillContent,
+  type MarketplaceCatalog,
+  type MarketplaceSkill,
+} from '../skillsMarketplace';
 import {
   deleteSkill,
   installSkillFromPath,
@@ -30,12 +37,6 @@ import {
   setSkillEnabled,
   type SkillInfo,
 } from '../tauri/commands';
-import {
-  fetchMarketplaceCatalog,
-  fetchSkillContent,
-  type MarketplaceCatalog,
-  type MarketplaceSkill,
-} from '../skillsMarketplace';
 
 interface Props {
   projectPath: string | null;
@@ -133,6 +134,8 @@ export function SkillsPane({ projectPath }: Props): React.JSX.Element {
   );
 
   useEffect(() => {
+    // Remote browsers have no native drag-drop paths (files are not on the PC).
+    if (isRemoteRuntime) return;
     const off = getCurrentWebview()
       .onDragDropEvent((evt) => {
         // Tauri 2 event payload: { type: 'enter'|'over'|'drop'|'leave', paths?, position? }
@@ -313,24 +316,28 @@ export function SkillsPane({ projectPath }: Props): React.JSX.Element {
               minWidth: '160px',
             }}
           />
-          <button
-            type="button"
-            onClick={() => void onPickFile()}
-            disabled={installing !== null}
-            title="Pick a single .md file to install as a skill"
-            style={iconBtnStyle}
-          >
-            + .md file
-          </button>
-          <button
-            type="button"
-            onClick={() => void onPickFolder()}
-            disabled={installing !== null}
-            title="Pick a folder containing SKILL.md to install"
-            style={iconBtnStyle}
-          >
-            + folder
-          </button>
+          {!isRemoteRuntime && (
+            <>
+              <button
+                type="button"
+                onClick={() => void onPickFile()}
+                disabled={installing !== null}
+                title="Pick a single .md file to install as a skill"
+                style={iconBtnStyle}
+              >
+                + .md file
+              </button>
+              <button
+                type="button"
+                onClick={() => void onPickFolder()}
+                disabled={installing !== null}
+                title="Pick a folder containing SKILL.md to install"
+                style={iconBtnStyle}
+              >
+                + folder
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={() => void refresh()}

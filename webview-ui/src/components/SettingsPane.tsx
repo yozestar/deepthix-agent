@@ -35,6 +35,7 @@ import {
   UI_TEXT_SCALE_MIN,
   UI_TEXT_SCALE_STEP,
 } from '../hooks/useGlobalConfig';
+import { isRemoteRuntime } from '../runtime';
 import {
   importFromDeepthix,
   type ImportReport,
@@ -461,13 +462,13 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
       <DataImportSection />
 
       {/* REMOTE ACCESS section — iPhone / other PCs via Cloudflare Tunnel. */}
-      <RemoteAccessSection />
+      {!isRemoteRuntime && <RemoteAccessSection />}
 
       {/* UPDATES section — shows current version + update status, with a
           manual Check button. The UpdaterBanner at the top of the window
           covers the silent on-launch check; this section is the explicit
           place to look ("où je vois que je dois faire un update?"). */}
-      <UpdatesSection />
+      {!isRemoteRuntime && <UpdatesSection />}
 
       {/* ABOUT section */}
       <AboutSection />

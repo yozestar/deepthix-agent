@@ -80,6 +80,7 @@ pub fn run() {
             commands::fs::read_file,
             commands::fs::write_file,
             commands::fs::file_kind,
+            commands::fs::home_dir,
             commands::fs::file_size,
             commands::fs::read_file_bytes_base64,
             commands::fs::stash_dropped_file,
