@@ -2,7 +2,7 @@
   "name": "elyone-desktop-agent",
   "displayName": "Elyone AI Desktop Agent",
   "description": "Standalone macOS app for running and watching Claude Code agents in a pixel art office.",
-  "version": "0.5.8",
+  "version": "0.6.0",
   "license": "MIT",
   "private": true,
   "type": "module",

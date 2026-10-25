@@ -10,7 +10,10 @@ class FakeWS {
   onmessage: ((e: { data: string }) => void) | null = null;
   onclose: ((e: unknown) => void) | null = null;
   onerror: ((e: unknown) => void) | null = null;
-  constructor(public url: string) {}
+  url: string;
+  constructor(url: string) {
+    this.url = url;
+  }
   send(s: string): void {
     this.sent.push(JSON.parse(s) as Record<string, unknown>);
   }

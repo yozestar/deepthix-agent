@@ -17,11 +17,13 @@ declare global {
 
 const SERVICE_WORKER_URL = '/sw.js';
 
-export function base64UrlToBytes(s: string): Uint8Array {
+export function base64UrlToBytes(s: string): Uint8Array<ArrayBuffer> {
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
   const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
   const bin = atob(padded);
-  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  const out = new Uint8Array(new ArrayBuffer(bin.length));
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 export function pushSupported(): boolean {

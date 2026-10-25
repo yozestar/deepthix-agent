@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.5.8"
+version = "0.6.0"
 description = "Standalone macOS app for running and watching Claude Code agents in a pixel art office."
 authors = ["Elyone"]
 license = "MIT"
