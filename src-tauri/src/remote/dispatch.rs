@@ -24,6 +24,7 @@ const REMOTE_COMMANDS: &[&str] = &[
     "file_size",
     "read_file_bytes_base64",
     "stash_paste_as_attachment",
+    "stash_upload_base64",
     "save_open_files",
     "load_open_files",
     "save_layout",

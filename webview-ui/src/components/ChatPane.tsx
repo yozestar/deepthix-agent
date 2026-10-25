@@ -13,7 +13,7 @@
 // reads a `{"type":"user","message":{...}}` line on stdin and produces
 // the matching response.
 
-import { Brain, Mic, SendHorizontal } from 'lucide-react';
+import { Brain, Mic, Paperclip, SendHorizontal } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -25,6 +25,7 @@ import {
   contextWindowForModel,
   type TurnInfo,
 } from '../conversationUtils';
+import { uploadToChat } from "../remote/upload";
 import { isRemoteRuntime } from "../runtime";
 import {
   chatForkAtUuid,
@@ -2012,6 +2013,15 @@ function ChatPaneImpl({
         spawning={!termId}
         busy={busy}
         onInterrupt={interruptTurn}
+        onFiles={
+          isRemoteRuntime
+            ? (files) => {
+                const tid = termIdRef.current;
+                if (!tid) return;
+                uploadToChat(files, tid).catch((err: unknown) => setError(`Envoi du fichier : ${String(err)}`));
+              }
+            : undefined
+        }
         onLargePaste={async (content) => {
           // Stash the pasted text as ~/.deepthix/dropped/paste_*.txt
           // and stage it like a dragged file. ChatPane already listens
@@ -2314,6 +2324,7 @@ function ChatInput({
   busy,
   onInterrupt,
   onLargePaste,
+  onFiles,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -2336,6 +2347,8 @@ function ChatInput({
    *  dragged file. Returning `true` here cancels the default paste so
    *  the wall of text doesn't also land in the textarea. */
   onLargePaste: (content: string) => Promise<boolean>;
+  /** Remote devices only: files pasted, dropped or picked (paperclip). */
+  onFiles?: (files: File[]) => void;
 }): React.JSX.Element {
   const [selectedIdx, setSelectedIdx] = useState(0);
 
@@ -2522,7 +2535,22 @@ function ChatInput({
       >
         <textarea
           value={input}
+          onDragOver={onFiles ? (e) => e.preventDefault() : undefined}
+          onDrop={
+            onFiles
+              ? (e) => {
+                  if (e.dataTransfer.files.length === 0) return;
+                  e.preventDefault();
+                  onFiles(Array.from(e.dataTransfer.files));
+                }
+              : undefined
+          }
           onPaste={(e) => {
+            if (onFiles && e.clipboardData.files.length > 0) {
+              e.preventDefault();
+              onFiles(Array.from(e.clipboardData.files));
+              return;
+            }
             const text = e.clipboardData.getData('text');
             // Above ~5000 chars (≈80 lines of code) the textarea
             // becomes painful to scroll/edit AND claude sees a wall of
@@ -2618,6 +2646,33 @@ function ChatInput({
             lineHeight: 1.5,
           }}
         />
+        {onFiles && (
+          <label
+            title="Joindre une photo ou un fichier"
+            aria-label="Joindre une photo ou un fichier"
+            style={{
+              minWidth: 44,
+              minHeight: 44,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '2px solid var(--color-border)',
+              cursor: 'pointer',
+            }}
+          >
+            <Paperclip size="1.2em" strokeWidth={2} aria-hidden />
+            <input
+              type="file"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                e.target.value = '';
+                if (files.length > 0) onFiles(files);
+              }}
+            />
+          </label>
+        )}
         <button
           type="button"
           onClick={sendAndArchive}

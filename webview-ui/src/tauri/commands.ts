@@ -955,6 +955,11 @@ export async function stashDroppedFile(src: string): Promise<string> {
  *  file. Used when the user pastes a wall of text (logs, code, etc) —
  *  keeping it out of the prompt body lets claude Read() it rather than
  *  choke on a giant inline blob. */
+/** Remote devices: saves an uploaded file on the PC, returns its path. */
+export async function stashUploadBase64(name: string, dataBase64: string): Promise<string> {
+  return await invoke<string>('stash_upload_base64', { name, dataBase64 });
+}
+
 export async function stashPasteAsAttachment(content: string): Promise<string> {
   return await invoke<string>('stash_paste_as_attachment', { content });
 }

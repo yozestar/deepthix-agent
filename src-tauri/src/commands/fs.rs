@@ -318,10 +318,86 @@ mod tests {
     }
 }
 
+/// Largest file a remote device may upload (decoded bytes).
+pub const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
+
+/// Decodes a base64 upload into `dir`, keeping only a sanitised basename
+/// (uuid-prefixed, like dropped files) so the name can't escape `dir`.
+fn save_upload(dir: &std::path::Path, name: &str, data_base64: &str) -> Result<PathBuf, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64.trim())
+        .map_err(|e| format!("invalid upload: {e}"))?;
+    if bytes.len() > MAX_UPLOAD_BYTES {
+        return Err(format!("file too large (max {} MB)", MAX_UPLOAD_BYTES / (1024 * 1024)));
+    }
+    let base = name.rsplit(['/', '\\']).next().unwrap_or("file");
+    let clean: String = base
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let clean = clean.trim_start_matches('.');
+    let clean = if clean.is_empty() { "file" } else { clean };
+    let id = uuid::Uuid::new_v4().to_string();
+    let short = id.split('-').next().unwrap_or(&id);
+    let dst = dir.join(format!("{short}_{clean}"));
+    std::fs::write(&dst, &bytes).map_err(|e| format!("write upload: {e}"))?;
+    Ok(dst)
+}
+
+/// A file sent from a remote device (photo, screenshot, document): saved in
+/// `~/.elyone/dropped/` like a dropped file; returns its path on the PC.
+#[tauri::command]
+pub async fn stash_upload_base64(name: String, data_base64: String) -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "no home dir".to_string())?;
+    let dir = home.join(crate::storage::DATA_DIR_NAME).join("dropped");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create dropped dir: {e}"))?;
+    let path = save_upload(&dir, &name, &data_base64)?;
+    tracing::info!(target: "deepthix::commands", ?path, "stash_upload_base64 ok");
+    Ok(path)
+}
+
 /// The user's home folder — the remote folder picker starts there.
 #[tauri::command]
 pub fn home_dir() -> Result<String, String> {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .ok_or_else(|| "no home dir".to_string())
+}
+
+#[cfg(test)]
+mod upload_tests {
+    use super::*;
+    use base64::Engine;
+
+    fn b64(bytes: &[u8]) -> String {
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
+    #[test]
+    fn upload_is_saved_with_its_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = save_upload(dir.path(), "Capture 1.png", &b64(b"PNGDATA")).unwrap();
+        assert_eq!(p.parent().unwrap(), dir.path());
+        assert_eq!(p.extension().unwrap(), "png");
+        assert!(p.file_name().unwrap().to_str().unwrap().ends_with("_Capture_1.png"));
+        assert_eq!(std::fs::read(&p).unwrap(), b"PNGDATA");
+    }
+
+    #[test]
+    fn upload_name_cannot_escape_the_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = save_upload(dir.path(), "../../evil.png", &b64(b"x")).unwrap();
+        assert_eq!(p.parent().unwrap(), dir.path());
+        let p2 = save_upload(dir.path(), r"C:\Windows\evil.png", &b64(b"x")).unwrap();
+        assert_eq!(p2.parent().unwrap(), dir.path());
+    }
+
+    #[test]
+    fn upload_rejects_bad_base64_and_oversize() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(save_upload(dir.path(), "a.png", "%%%not base64").is_err());
+        let big = vec![0u8; MAX_UPLOAD_BYTES + 1];
+        assert!(save_upload(dir.path(), "a.png", &b64(&big)).is_err());
+    }
 }
