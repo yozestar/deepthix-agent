@@ -15,12 +15,14 @@ import {
   FolderTree,
   Gauge,
   LayoutDashboard,
+  Menu,
   MessagesSquare,
   Sparkles,
   Variable,
   Workflow,
 } from 'lucide-react';
 
+import type { FormFactor } from '../hooks/useFormFactor';
 import { PlanUsageGauge } from './PlanUsageGauge';
 
 export type Mode =
@@ -40,6 +42,9 @@ interface Props {
   projectName: string | null;
   mode: Mode;
   onChangeMode: (m: Mode) => void;
+  /** Touch layouts get a menu button (sidebar drawer) and icon-only tabs. */
+  formFactor?: FormFactor;
+  onOpenMenu?: () => void;
 }
 
 /** Visible top-tab modes, in display order. `'settings'` is filtered out.
@@ -58,6 +63,9 @@ const VISIBLE_MODES: ReadonlyArray<Mode> = [
   'variables',
 ];
 
+/** Folded phone: the minimal set — sessions and the project board. */
+const PHONE_MODES: ReadonlyArray<Mode> = ['sessions', 'overview'];
+
 /** Icon + human label per tab (sentence case instead of SHOUTING). */
 const MODE_META: Record<Exclude<Mode, 'settings'>, { label: string; Icon: LucideIcon }> = {
   overview: { label: 'Overview', Icon: LayoutDashboard },
@@ -72,7 +80,15 @@ const MODE_META: Record<Exclude<Mode, 'settings'>, { label: string; Icon: Lucide
   variables: { label: 'Variables', Icon: Variable },
 };
 
-export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.Element {
+export function TopTabs({
+  projectName,
+  mode,
+  onChangeMode,
+  formFactor = 'desktop',
+  onOpenMenu,
+}: Props): React.JSX.Element {
+  const touch = formFactor !== 'desktop';
+  const modes = formFactor === 'phone' ? PHONE_MODES : VISIBLE_MODES;
   return (
     <div
       style={{
@@ -86,8 +102,32 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
         fontFamily: 'var(--font-pixel)',
         flexShrink: 0,
         minHeight: '44px',
+        // Touch: tabs move to their own full-width row below.
+        flexWrap: touch ? 'wrap' : undefined,
+        rowGap: touch ? '4px' : undefined,
       }}
     >
+      {touch && onOpenMenu && (
+        <button
+          type="button"
+          onClick={onOpenMenu}
+          aria-label="Projets et sessions"
+          style={{
+            minWidth: 44,
+            minHeight: 44,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'transparent',
+            color: 'var(--color-text)',
+            border: 'none',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <Menu size="1.4em" strokeWidth={1.75} aria-hidden />
+        </button>
+      )}
       {/* Left: project name. No more heavy box — just a clean label with a
           discrete "▸" path hint on hover. */}
       <div
@@ -98,8 +138,8 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
           padding: '4px 8px',
           fontSize: '0.9375rem',
           letterSpacing: '0.04em',
-          maxWidth: '40%',
-          minWidth: '120px',
+          maxWidth: touch ? '30%' : '40%',
+          minWidth: touch ? 0 : '120px',
           flexShrink: 0,
           overflow: 'hidden',
           whiteSpace: 'nowrap',
@@ -121,14 +161,23 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
       </div>
 
       {/* Plan consumption (5 h session + weekly) — click opens Usage. */}
-      <PlanUsageGauge onOpenUsage={() => onChangeMode('usage')} />
+      {formFactor !== 'phone' && <PlanUsageGauge onOpenUsage={() => onChangeMode('usage')} />}
 
       {/* Right: mode tabs. Active tab gets an underline-style accent
           instead of full-fill — calmer chrome. */}
       {/* Tabs scroll horizontally instead of squeezing the project name
           when the window is narrow or the UI text size is large. */}
-      <div style={{ display: 'flex', gap: '2px', minWidth: 0, overflowX: 'auto', scrollbarWidth: 'none' }}>
-        {VISIBLE_MODES.map((m) => {
+      <div
+        style={{
+          display: 'flex',
+          gap: '2px',
+          minWidth: 0,
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+          ...(touch ? { order: 3, width: '100%', justifyContent: 'space-between' } : {}),
+        }}
+      >
+        {modes.map((m) => {
           const active = m === mode;
           const meta = MODE_META[m as Exclude<Mode, 'settings'>];
           const Icon = meta.Icon;
@@ -141,7 +190,9 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
                 onChangeMode(m);
               }}
               style={{
-                padding: '6px 12px',
+                padding: touch ? '6px 10px' : '6px 12px',
+                minHeight: touch ? 44 : undefined,
+                minWidth: touch ? 44 : undefined,
                 background: active ? 'var(--color-bg)' : 'transparent',
                 color: active ? 'var(--color-accent)' : 'var(--color-text-muted)',
                 border: 'none',
@@ -167,9 +218,10 @@ export function TopTabs({ projectName, mode, onChangeMode }: Props): React.JSX.E
                   (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-muted)';
               }}
               title={`Switch to ${meta.label}`}
+              aria-label={meta.label}
             >
               <Icon size="1.15em" strokeWidth={1.75} aria-hidden />
-              <span>{meta.label}</span>
+              {!touch && <span>{meta.label}</span>}
             </button>
           );
         })}

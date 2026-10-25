@@ -245,3 +245,11 @@ export const REMOTE_TOKEN_STORAGE_KEY = 'elyone.remote.token';
 export const REMOTE_BACKOFF_MS = [500, 1000, 2000, 5000, 10000] as const;
 /** How long a call issued while offline waits for the connection. */
 export const REMOTE_OFFLINE_TIMEOUT_MS = 15000;
+
+// ── Touch layout (remote access from a phone) ────────────────
+// Guesses for the iPhone Duo (folded / unfolded) in CSS px — measure on the
+// device (window.innerWidth) and adjust.
+/** Below this width (touch screen): folded-phone minimal layout. */
+export const PHONE_MAX_WIDTH_PX = 520;
+/** Below this width (touch screen): tablet layout with a sidebar drawer. */
+export const TABLET_MAX_WIDTH_PX = 1100;

@@ -543,3 +543,10 @@ pre * {
 .dt-markdown li::marker {
   color: var(--color-accent);
 }
+
+/* Touch screens (remote access from a phone): finger-sized buttons. */
+@media (pointer: coarse) {
+  .dt-btn {
+    min-height: 44px;
+  }
+}

@@ -22,6 +22,7 @@ import { VoiceRecorder } from './components/VoiceRecorder';
 import { Welcome } from './components/Welcome';
 import { WorkflowsPane } from './components/WorkflowsPane';
 import { useFileTree } from './hooks/useFileTree';
+import { useFormFactor } from './hooks/useFormFactor';
 import { useGlobalConfig } from './hooks/useGlobalConfig';
 import { useOpenFiles } from './hooks/useOpenFiles';
 import { useProjects } from './hooks/useProjects';
@@ -209,24 +210,69 @@ function App(): React.JSX.Element {
     setMode('settings');
   }, []);
 
+  // Touch layouts (remote access from a phone): the sidebar becomes a
+  // drawer that closes once the user picked something in it.
+  const formFactor = useFormFactor();
+  const touch = formFactor !== 'desktop';
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const closeDrawerThen =
+    <A extends unknown[]>(fn: (...args: A) => void) =>
+    (...args: A): void => {
+      setDrawerOpen(false);
+      fn(...args);
+    };
+
+  const sidebar = (
+    <Sidebar
+      projects={projects}
+      terminals={terminals.terminals}
+      onOpenSettings={touch ? closeDrawerThen(onOpenSettings) : onOpenSettings}
+      settingsActive={mode === 'settings'}
+      onOpenSession={touch ? closeDrawerThen(onOpenSession) : onOpenSession}
+      onResumeSession={touch ? closeDrawerThen(onResumeSession) : onResumeSession}
+      onNewSession={touch ? closeDrawerThen(onSpawnAgent) : onSpawnAgent}
+      fill={touch}
+    />
+  );
+
   return (
     <div
       style={{
         display: 'flex',
-        height: '100vh',
+        // --app-height follows the iOS visual viewport (keyboard open).
+        height: 'var(--app-height, 100vh)',
         width: '100vw',
         background: 'var(--color-bg)',
+        paddingTop: 'env(safe-area-inset-top)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        paddingLeft: 'env(safe-area-inset-left)',
+        paddingRight: 'env(safe-area-inset-right)',
+        boxSizing: 'border-box',
       }}
     >
-      <Sidebar
-        projects={projects}
-        terminals={terminals.terminals}
-        onOpenSettings={onOpenSettings}
-        settingsActive={mode === 'settings'}
-        onOpenSession={onOpenSession}
-        onResumeSession={onResumeSession}
-        onNewSession={onSpawnAgent}
-      />
+      {!touch && sidebar}
+      {touch && drawerOpen && (
+        <div
+          onClick={() => setDrawerOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 250, background: 'var(--color-backdrop)' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              left: 0,
+              width: 'min(88vw, 380px)',
+              paddingTop: 'env(safe-area-inset-top)',
+              background: 'var(--color-sidebar-bg)',
+              boxShadow: 'var(--shadow-pixel)',
+            }}
+          >
+            {sidebar}
+          </div>
+        </div>
+      )}
       <div
         style={{
           flex: 1,
@@ -243,6 +289,8 @@ function App(): React.JSX.Element {
           projectName={projects.activeProject?.name ?? null}
           mode={mode}
           onChangeMode={setMode}
+          formFactor={formFactor}
+          onOpenMenu={() => setDrawerOpen(true)}
         />
         {/* Right-pane body. The SESSIONS layout (TamagotchiView + the
             resizable terminal pane) MUST stay mounted across mode switches

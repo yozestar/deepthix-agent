@@ -25,6 +25,8 @@ interface Props {
   onResumeSession: (projectId: string, sessionId: string) => void;
   /** New session in the active project. */
   onNewSession: () => void;
+  /** Touch layout: fill the drawer it is rendered in, no resize handle. */
+  fill?: boolean;
 }
 
 export function Sidebar({
@@ -35,6 +37,7 @@ export function Sidebar({
   onOpenSession,
   onResumeSession,
   onNewSession,
+  fill = false,
 }: Props): React.JSX.Element {
   const [width, setWidth] = useState<number>(() => {
     const stored = Number(localStorage.getItem(STORAGE_KEY));
@@ -79,10 +82,10 @@ export function Sidebar({
   }, []);
 
   return (
-    <div style={{ display: 'flex', height: '100%', flexShrink: 0 }}>
+    <div style={{ display: 'flex', height: '100%', flexShrink: 0, width: fill ? '100%' : undefined }}>
       <div
         style={{
-          width: `${width}px`,
+          width: fill ? '100%' : `${width}px`,
           background: 'var(--color-sidebar-bg)',
           display: 'flex',
           flexDirection: 'column',
@@ -109,6 +112,7 @@ export function Sidebar({
           settingsActive={settingsActive}
         />
       </div>
+      {!fill && (
       <div
         onMouseDown={onMouseDown}
         title="Drag to resize sidebar"
@@ -127,6 +131,7 @@ export function Sidebar({
             (e.currentTarget as HTMLDivElement).style.background = 'transparent';
         }}
       />
+      )}
     </div>
   );
 }
