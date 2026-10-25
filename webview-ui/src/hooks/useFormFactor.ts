@@ -16,6 +16,8 @@ export function classifyFormFactor(width: number, coarsePointer: boolean): FormF
 }
 
 const COARSE_QUERY = '(pointer: coarse)';
+/** Root class enabling the touch-only CSS (index.css). Desktop never gets it. */
+const TOUCH_CLASS = 'touch-layout';
 
 function current(): FormFactor {
   const coarse = typeof window.matchMedia === 'function' && window.matchMedia(COARSE_QUERY).matches;
@@ -24,6 +26,7 @@ function current(): FormFactor {
 
 export function useFormFactor(): FormFactor {
   const [ff, setFf] = useState<FormFactor>(current);
+  const touch = ff !== 'desktop';
 
   useEffect(() => {
     const update = (): void => setFf(current());
@@ -31,20 +34,30 @@ export function useFormFactor(): FormFactor {
     return () => window.removeEventListener('resize', update);
   }, []);
 
-  // iOS: the on-screen keyboard shrinks the *visual* viewport only. Expose
-  // its height so the root can shrink and keep the composer visible.
+  // Touch only. iOS opens the keyboard by shrinking the *visual* viewport and
+  // scrolling the page to reveal the field; a root sized to the visual
+  // viewport then gets scrolled out of sight (black screen). Instead the root
+  // is pinned to the visible area: same height, moved by its offset.
   useEffect(() => {
     const vv = window.visualViewport;
-    if (!vv) return;
+    if (!touch || !vv) return;
     const root = document.documentElement;
-    const apply = (): void => root.style.setProperty('--app-height', `${vv.height}px`);
+    root.classList.add(TOUCH_CLASS);
+    const apply = (): void => {
+      root.style.setProperty('--app-height', `${vv.height}px`);
+      root.style.setProperty('--app-offset-top', `${vv.offsetTop}px`);
+    };
     apply();
     vv.addEventListener('resize', apply);
+    vv.addEventListener('scroll', apply);
     return () => {
       vv.removeEventListener('resize', apply);
+      vv.removeEventListener('scroll', apply);
+      root.classList.remove(TOUCH_CLASS);
       root.style.removeProperty('--app-height');
+      root.style.removeProperty('--app-offset-top');
     };
-  }, []);
+  }, [touch]);
 
   return ff;
 }

@@ -27,6 +27,8 @@ interface Props {
   onNewSession: () => void;
   /** Touch layout: fill the drawer it is rendered in, no resize handle. */
   fill?: boolean;
+  /** Touch layout: called after a project is picked (closes the drawer). */
+  onProjectPicked?: () => void;
 }
 
 export function Sidebar({
@@ -38,6 +40,7 @@ export function Sidebar({
   onResumeSession,
   onNewSession,
   fill = false,
+  onProjectPicked,
 }: Props): React.JSX.Element {
   const [width, setWidth] = useState<number>(() => {
     const stored = Number(localStorage.getItem(STORAGE_KEY));
@@ -101,7 +104,10 @@ export function Sidebar({
           projects={projects.projects}
           activeProjectId={projects.activeProjectId}
           terminals={terminals}
-          onSwitchProject={(id) => void projects.switchProject(id)}
+          onSwitchProject={(id) => {
+            void projects.switchProject(id);
+            onProjectPicked?.();
+          }}
           onOpenSession={onOpenSession}
           onResumeSession={onResumeSession}
           onRemoveProject={(id) => void projects.removeProject(id)}

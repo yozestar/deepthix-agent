@@ -232,6 +232,7 @@ function App(): React.JSX.Element {
       onResumeSession={touch ? closeDrawerThen(onResumeSession) : onResumeSession}
       onNewSession={touch ? closeDrawerThen(onSpawnAgent) : onSpawnAgent}
       fill={touch}
+      onProjectPicked={touch ? () => setDrawerOpen(false) : undefined}
     />
   );
 
@@ -239,9 +240,19 @@ function App(): React.JSX.Element {
     <div
       style={{
         display: 'flex',
-        // --app-height follows the iOS visual viewport (keyboard open).
-        height: 'var(--app-height, 100vh)',
+        height: '100vh',
         width: '100vw',
+        // Touch: pinned to the visual viewport so the iOS keyboard never
+        // scrolls the app out of sight.
+        ...(touch
+          ? {
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              height: 'var(--app-height, 100vh)',
+              transform: 'translateY(var(--app-offset-top, 0px))',
+            }
+          : {}),
         background: 'var(--color-bg)',
         paddingTop: 'env(safe-area-inset-top)',
         paddingBottom: 'env(safe-area-inset-bottom)',
