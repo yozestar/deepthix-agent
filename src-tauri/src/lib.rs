@@ -174,6 +174,11 @@ pub fn run() {
             commands::variables::list_variables,
             commands::variables::set_variable,
             commands::variables::delete_variable,
+            commands::remote::remote_get_status,
+            commands::remote::remote_set_enabled,
+            commands::remote::remote_revoke_device,
+            commands::remote::remote_pair_respond,
+            commands::remote::remote_set_cf,
         ])
         .setup(|app| {
             // If the main window's WebView could not be created (e.g. its
@@ -214,6 +219,33 @@ pub fn run() {
                     error = %e,
                     "ensure_global_brief failed (claude won't auto-discover env hooks)"
                 );
+            }
+            // Remote access (iPhone / other PCs via Cloudflare Tunnel). The
+            // listener only starts if the owner left the switch ON.
+            {
+                let notify_app = app.handle().clone();
+                let remote = crate::remote::glue::RemoteState::new(
+                    app.handle(),
+                    crate::remote::config::RemoteConfig::path().ok(),
+                    Box::new(move |title, body| {
+                        crate::commands::notifications::notify(
+                            &notify_app,
+                            title,
+                            body,
+                            crate::commands::notifications::NotifKind::Warn,
+                            "remote",
+                        )
+                    }),
+                );
+                crate::remote::glue::install_bridge(app.handle(), remote.hub.clone());
+                app.manage(remote);
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    handle
+                        .state::<crate::remote::glue::RemoteState>()
+                        .start_if_enabled()
+                        .await;
+                });
             }
             tracing::info!(target: "deepthix::boot", "tauri setup complete");
             Ok(())

@@ -235,3 +235,7 @@ export const TAB_ORDER_POLL_MS = 5_000;
 export const PLAN_USAGE_POLL_MS = 30_000;
 /** Minimum gap between two calls to the (rate-limited) OAuth usage endpoint. */
 export const PLAN_USAGE_OAUTH_MIN_INTERVAL_MS = 120_000;
+
+// ── Remote access ────────────────────────────────────────────
+/** Settings → Accès à distance re-polls status (connected devices). */
+export const REMOTE_STATUS_REFRESH_MS = 3000;

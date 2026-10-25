@@ -4,6 +4,7 @@
 pub mod cf_access;
 pub mod config;
 pub mod dispatch;
+pub mod glue;
 pub mod pairing;
 pub mod protocol;
 pub mod server;

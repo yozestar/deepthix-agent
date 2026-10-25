@@ -12,3 +12,17 @@ test('command wrappers exist with expected signatures', async () => {
   assert.equal(typeof mod.saveLayout, 'function');
   assert.equal(typeof mod.loadLayout, 'function');
 });
+
+test('remote access wrappers exist', async () => {
+  const mod = await import('../src/tauri/commands.ts');
+  assert.equal(typeof mod.remoteGetStatus, 'function');
+  assert.equal(typeof mod.remoteSetEnabled, 'function');
+  assert.equal(typeof mod.remoteRevokeDevice, 'function');
+  assert.equal(typeof mod.remotePairRespond, 'function');
+  assert.equal(typeof mod.remoteSetCf, 'function');
+});
+
+test('remote pair request event subscription exists', async () => {
+  const mod = await import('../src/tauri/events.ts');
+  assert.equal(typeof mod.onRemotePairRequest, 'function');
+});

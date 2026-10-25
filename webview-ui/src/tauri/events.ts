@@ -109,3 +109,19 @@ export async function onChatExit(
     handler(event.payload);
   });
 }
+
+export interface RemotePairRequest {
+  id: string;
+  code: string;
+  name: string;
+}
+
+/** A new device asks for remote access (owner must accept or refuse). */
+export async function onRemotePairRequest(
+  handler: (r: RemotePairRequest) => void,
+): Promise<UnlistenFn> {
+  return await listen<RemotePairRequest>('remote_pair_request', (event) => {
+    log('remote_pair_request', { name: event.payload.name });
+    handler(event.payload);
+  });
+}

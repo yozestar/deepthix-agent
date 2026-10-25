@@ -5,6 +5,7 @@ import { FilesPane } from './components/FilesPane';
 import { MemoryPane } from './components/MemoryPane';
 import { NotificationToasts } from './components/NotificationToasts';
 import { OverviewPane } from './components/OverviewPane';
+import { PairRequestDialog } from './components/PairRequestDialog';
 import { SchedulesPane } from './components/SchedulesPane';
 // SessionsTopArea import removed — Coach pane was unmounted from the
 // Sessions view per user request to give the chat the full height.
@@ -367,6 +368,7 @@ function App(): React.JSX.Element {
           from Tauri commands AND the JsonlWatcher on
           ~/.elyone/notifications.jsonl (which deepthix-mcp writes to). */}
       <NotificationToasts />
+      <PairRequestDialog />
       {/* Auto-update banner: silent on launch, only paints itself if a
           newer version is available at the configured updater endpoint. */}
       <UpdaterBanner />

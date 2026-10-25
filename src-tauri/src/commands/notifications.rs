@@ -107,6 +107,20 @@ fn dispatch(app: &AppHandle, notif: Notification) {
     }
 }
 
+/// In-process publish (toast + system banner) for Rust-side features.
+pub(crate) fn notify(app: &AppHandle, title: &str, body: &str, kind: NotifKind, source: &str) {
+    dispatch(
+        app,
+        Notification {
+            title: title.to_string(),
+            body: body.to_string(),
+            kind,
+            source: source.to_string(),
+            ts_ms: Notification::now_ms(),
+        },
+    );
+}
+
 /// Tauri command — called from the webview to publish a notification.
 #[tauri::command]
 pub fn notify_user(

@@ -1069,3 +1069,53 @@ export async function loadOpenFiles(projectId: string): Promise<PersistedOpenFil
   log('loadOpenFiles', { projectId });
   return await invoke<PersistedOpenFile[]>('load_open_files', { projectId });
 }
+
+// ── Remote access (PC-side controls) ─────────────────────────────────────
+
+export interface RemoteDevice {
+  id: string;
+  name: string;
+  paired_ms: number;
+  last_seen_ms: number;
+}
+
+export interface RemoteStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  require_cf_access: boolean;
+  cf_team_domain: string;
+  cf_aud: string;
+  cf_allowed_email: string;
+  devices: RemoteDevice[];
+  connected: string[];
+}
+
+export async function remoteGetStatus(): Promise<RemoteStatus> {
+  log('remoteGetStatus');
+  return await invoke<RemoteStatus>('remote_get_status');
+}
+
+export async function remoteSetEnabled(enabled: boolean): Promise<RemoteStatus> {
+  log('remoteSetEnabled', { enabled });
+  return await invoke<RemoteStatus>('remote_set_enabled', { enabled });
+}
+
+export async function remoteRevokeDevice(id: string): Promise<RemoteStatus> {
+  log('remoteRevokeDevice', { id });
+  return await invoke<RemoteStatus>('remote_revoke_device', { id });
+}
+
+export async function remotePairRespond(id: string, accept: boolean): Promise<void> {
+  log('remotePairRespond', { id, accept });
+  await invoke('remote_pair_respond', { id, accept });
+}
+
+export async function remoteSetCf(
+  teamDomain: string,
+  aud: string,
+  allowedEmail: string,
+): Promise<RemoteStatus> {
+  log('remoteSetCf', { teamDomain, aud, allowedEmail });
+  return await invoke<RemoteStatus>('remote_set_cf', { teamDomain, aud, allowedEmail });
+}

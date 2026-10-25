@@ -10,6 +10,7 @@ pub mod notifications;
 pub mod open_files;
 pub mod processes;
 pub mod projects;
+pub mod remote;
 pub mod schedules;
 pub mod scrollback;
 pub mod sessions;

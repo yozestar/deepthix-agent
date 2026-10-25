@@ -107,8 +107,18 @@ impl Hub {
         *self.jwks.lock().unwrap() = Some((jwks, Instant::now()));
     }
 
+    /// Forget cached signing keys (team domain changed).
+    pub fn clear_jwks(&self) {
+        *self.jwks.lock().unwrap() = None;
+    }
+
     pub fn is_running(&self) -> bool {
         self.shutdown.lock().unwrap().is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn subscribe(&self) -> broadcast::Receiver<ServerMsg> {
+        self.events.subscribe()
     }
 
     /// Sends an event to every authenticated socket.

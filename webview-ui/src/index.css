@@ -59,6 +59,7 @@
   /* Semantic */
   --color-reset-text: #ecc;
   --color-danger: #d14249;
+  --color-backdrop: rgba(0, 0, 0, 0.55);
   --color-warning: #ff8d14;
 
   /* Status */

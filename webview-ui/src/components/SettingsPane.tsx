@@ -14,6 +14,7 @@ import { check, type Update } from '@tauri-apps/plugin-updater';
 import { useCallback, useEffect, useState } from 'react';
 
 import {
+  REMOTE_STATUS_REFRESH_MS,
   TERMINAL_FONT_FAMILY_PRESETS,
   TERMINAL_FONT_SIZE_MAX,
   TERMINAL_FONT_SIZE_MIN,
@@ -39,6 +40,11 @@ import {
   type ImportReport,
   type ImportStatus,
   legacyImportStatus,
+  remoteGetStatus,
+  remoteRevokeDevice,
+  remoteSetCf,
+  remoteSetEnabled,
+  type RemoteStatus,
 } from '../tauri/commands';
 import { resolveTheme, SYSTEM_THEME_ID, THEMES } from '../themes';
 
@@ -453,6 +459,9 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
       {/* DATA section — Elyone's own folder + re-runnable copy from the
           legacy Deepthix folder while both apps coexist. */}
       <DataImportSection />
+
+      {/* REMOTE ACCESS section — iPhone / other PCs via Cloudflare Tunnel. */}
+      <RemoteAccessSection />
 
       {/* UPDATES section — shows current version + update status, with a
           manual Check button. The UpdaterBanner at the top of the window
@@ -910,6 +919,142 @@ function UpdatesSection(): React.JSX.Element {
           ⬆ Check now
         </button>
       </div>
+    </Section>
+  );
+}
+
+const REMOTE_INPUT_STYLE: React.CSSProperties = {
+  background: 'var(--color-bg-dark)',
+  color: 'inherit',
+  border: '2px solid var(--color-border)',
+  padding: '4px 6px',
+  fontFamily: 'var(--font-pixel)',
+  fontSize: '0.8125rem',
+  minWidth: 280,
+};
+
+/** Remote access switch (OFF by default), paired devices, Cloudflare
+ *  Access identifiers. Pairing requests pop up in PairRequestDialog. */
+function RemoteAccessSection(): React.JSX.Element {
+  const [status, setStatus] = useState<RemoteStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [cf, setCf] = useState({ team: '', aud: '', email: '' });
+
+  const apply = useCallback((s: RemoteStatus): void => {
+    setStatus(s);
+    setCf({ team: s.cf_team_domain, aud: s.cf_aud, email: s.cf_allowed_email });
+  }, []);
+
+  const refresh = useCallback((): void => {
+    remoteGetStatus()
+      .then(apply)
+      .catch((e) => setError(String(e)));
+  }, [apply]);
+
+  useEffect(() => {
+    refresh();
+    // Devices connect / disconnect while the pane is open.
+    const timer = window.setInterval(refresh, REMOTE_STATUS_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
+  const run = useCallback(async (op: () => Promise<RemoteStatus>): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      apply(await op());
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [apply]);
+
+  const fmt = (ms: number): string => (ms ? new Date(ms).toLocaleString('fr-FR') : 'jamais');
+  const cfComplete = cf.team !== '' && cf.aud !== '' && cf.email !== '';
+
+  return (
+    <Section
+      title="ACCÈS À DISTANCE"
+      subtitle="Piloter cet agent depuis ton iPhone ou un autre de tes PC, via Cloudflare. Coupé par défaut."
+    >
+      <Row label="Accès à distance">
+        <button
+          type="button"
+          className={status?.enabled ? 'dt-btn dt-btn--primary' : 'dt-btn'}
+          disabled={busy || !status}
+          onClick={() => void run(() => remoteSetEnabled(!status?.enabled))}
+        >
+          {status?.enabled ? 'ACTIVÉ — cliquer pour couper' : 'COUPÉ — cliquer pour activer'}
+        </button>
+        {status?.enabled && !status.running && (
+          <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem' }}>serveur arrêté</span>
+        )}
+      </Row>
+      {status?.enabled && !cfComplete && (
+        <div style={{ fontSize: '0.75rem', color: 'var(--color-warning)' }}>
+          Renseigne les trois champs Cloudflare ci-dessous : sans eux, toute connexion est refusée.
+        </div>
+      )}
+      <Row label="Appareils appairés">
+        {status && status.devices.length === 0 && (
+          <span style={{ fontSize: '0.8125rem', opacity: 0.7 }}>aucun</span>
+        )}
+      </Row>
+      {status?.devices.map((d) => (
+        <div key={d.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.8125rem' }}>
+          <span style={{ minWidth: 160 }}>
+            {d.name}
+            {status.connected.includes(d.id) && (
+              <span style={{ color: 'var(--color-status-success)' }}> ● connecté</span>
+            )}
+          </span>
+          <span style={{ opacity: 0.6 }}>vu : {fmt(d.last_seen_ms)}</span>
+          <button
+            type="button"
+            className="dt-btn"
+            disabled={busy}
+            onClick={() => void run(() => remoteRevokeDevice(d.id))}
+          >
+            Révoquer
+          </button>
+        </div>
+      ))}
+      <Row label="Domaine d'équipe">
+        <input
+          style={REMOTE_INPUT_STYLE}
+          value={cf.team}
+          placeholder="elyone.cloudflareaccess.com"
+          onChange={(e) => setCf({ ...cf, team: e.target.value })}
+        />
+      </Row>
+      <Row label="AUD de l'application">
+        <input
+          style={REMOTE_INPUT_STYLE}
+          value={cf.aud}
+          onChange={(e) => setCf({ ...cf, aud: e.target.value })}
+        />
+      </Row>
+      <Row label="Email autorisé">
+        <input
+          style={REMOTE_INPUT_STYLE}
+          value={cf.email}
+          placeholder="prenom@elyone.com"
+          onChange={(e) => setCf({ ...cf, email: e.target.value })}
+        />
+        <button
+          type="button"
+          className="dt-btn"
+          disabled={busy}
+          onClick={() => void run(() => remoteSetCf(cf.team, cf.aud, cf.email))}
+        >
+          Enregistrer
+        </button>
+      </Row>
+      {error && (
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-danger)' }}>Échec : {error}</div>
+      )}
     </Section>
   );
 }
