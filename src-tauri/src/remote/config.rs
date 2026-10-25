@@ -24,6 +24,8 @@ pub struct RemoteConfig {
     pub require_cf_access: bool,
     pub cf_team_domain: String,
     pub cf_aud: String,
+    /// The only identity Cloudflare Access may present (checked again here).
+    pub cf_allowed_email: String,
     pub devices: Vec<Device>,
 }
 
@@ -35,6 +37,7 @@ impl Default for RemoteConfig {
             require_cf_access: true,
             cf_team_domain: String::new(),
             cf_aud: String::new(),
+            cf_allowed_email: String::new(),
             devices: Vec::new(),
         }
     }
