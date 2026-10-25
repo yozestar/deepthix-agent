@@ -60,7 +60,7 @@ jsonwebtoken = { version = "11", default-features = false, features = ["rust_cry
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "ws", "query"] }
 rand = "0.8"
-tokio = { version = "1", features = ["sync", "time", "macros", "rt-multi-thread", "net"] }
+tokio = { version = "1", features = ["sync", "time", "macros", "rt-multi-thread", "net", "process", "io-util"] }
 
 [dev-dependencies]
 tempfile = "3"

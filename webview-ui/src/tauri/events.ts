@@ -1,4 +1,4 @@
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from './transport';
 
 function log(name: string, payload?: unknown): void {
   console.debug('[Deepthix][evt]', name, payload ?? '');

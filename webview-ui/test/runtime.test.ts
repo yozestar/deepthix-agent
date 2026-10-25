@@ -11,3 +11,10 @@ test('detectRuntime falls back to browser when neither vscode nor tauri globals 
   assert.equal(mod.isTauriRuntime, mod.runtime === 'tauri');
   assert.equal(mod.isVscodeRuntime, mod.runtime === 'vscode');
 });
+
+test('remote flag wins over tauri internals', async () => {
+  const { detectRuntimeFrom } = await import('../src/runtime.ts');
+  assert.equal(detectRuntimeFrom({ __ELYONE_REMOTE__: 1, __TAURI_INTERNALS__: {} }), 'remote');
+  assert.equal(detectRuntimeFrom({ __TAURI_INTERNALS__: {} }), 'tauri');
+  assert.equal(detectRuntimeFrom({}), 'browser');
+});

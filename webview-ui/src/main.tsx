@@ -14,7 +14,9 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import App from './App.tsx';
-import { isBrowserRuntime, isTauriRuntime } from './runtime';
+import { RemoteGate } from './components/RemoteGate';
+import { isBrowserRuntime, isRemoteRuntime, isTauriRuntime } from './runtime';
+import { remoteClient } from './tauri/transport';
 
 /**
  * WKWebView reports `window.devicePixelRatio = 1` even on Retina when
@@ -55,13 +57,19 @@ async function main() {
   // mounts — that's why it's awaited here at the top of main, not in a
   // useEffect somewhere downstream.
   await reconcileDpr();
-  if (isBrowserRuntime || isTauriRuntime) {
+  if (isBrowserRuntime || isTauriRuntime || isRemoteRuntime) {
     const { initBrowserMock } = await import('./browserMock.js');
     await initBrowserMock();
   }
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      {remoteClient ? (
+        <RemoteGate client={remoteClient}>
+          <App />
+        </RemoteGate>
+      ) : (
+        <App />
+      )}
     </StrictMode>,
   );
 }

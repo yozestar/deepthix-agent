@@ -748,4 +748,39 @@ mod tests {
         let spa = reqwest::get(format!("http://{addr}/some/route")).await.unwrap().text().await.unwrap();
         assert!(spa.contains("__ELYONE_REMOTE__"));
     }
+
+    /// Cross-language check: the real TypeScript transport client against a
+    /// real Hub. Needs node + webview-ui deps: `cargo test -- --ignored e2e`.
+    #[tokio::test]
+    #[ignore]
+    async fn e2e_with_real_ts_client() {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let (hub, _b, addr) = serve(cfg_with_device("tok")).await;
+        let webview = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../webview-ui");
+        let mut child = tokio::process::Command::new("node")
+            .args(["--import", "tsx/esm", "test-e2e/remote-client.e2e.ts", &addr.port().to_string(), "tok"])
+            .current_dir(webview)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("node");
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        let mut seen = Vec::new();
+        while let Ok(Ok(Some(line))) = tokio::time::timeout(Duration::from_secs(30), lines.next_line()).await {
+            match line.as_str() {
+                "READY" => hub.publish("pty_data", json!({"id":"t1","data":"hi"})),
+                "EVENT_OK" => hub.revoke_device("dev-1").unwrap(),
+                _ => {}
+            }
+            let done = line == "DONE" || line.starts_with("FAIL");
+            seen.push(line);
+            if done {
+                break;
+            }
+        }
+        let status = child.wait().await.unwrap();
+        assert!(status.success(), "client output: {seen:?}");
+        assert_eq!(seen, ["READY", "EVENT_OK", "DONE"]);
+    }
 }

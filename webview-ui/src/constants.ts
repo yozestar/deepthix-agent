@@ -239,3 +239,9 @@ export const PLAN_USAGE_OAUTH_MIN_INTERVAL_MS = 120_000;
 // ── Remote access ────────────────────────────────────────────
 /** Settings → Accès à distance re-polls status (connected devices). */
 export const REMOTE_STATUS_REFRESH_MS = 3000;
+/** localStorage key holding this device's pairing token (remote mode). */
+export const REMOTE_TOKEN_STORAGE_KEY = 'elyone.remote.token';
+/** Reconnect delays after a dropped connection (last value repeats). */
+export const REMOTE_BACKOFF_MS = [500, 1000, 2000, 5000, 10000] as const;
+/** How long a call issued while offline waits for the connection. */
+export const REMOTE_OFFLINE_TIMEOUT_MS = 15000;
