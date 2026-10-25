@@ -253,3 +253,6 @@ export const REMOTE_OFFLINE_TIMEOUT_MS = 15000;
 export const PHONE_MAX_WIDTH_PX = 520;
 /** Below this width (touch screen): tablet layout with a sidebar drawer. */
 export const TABLET_MAX_WIDTH_PX = 1100;
+
+/** How often a paused chat tab checks whether its session woke up elsewhere. */
+export const CHAT_LIVE_POLL_MS = 3000;

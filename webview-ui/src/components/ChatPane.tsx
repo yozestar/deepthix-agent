@@ -18,7 +18,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { LONG_USER_MESSAGE_CHARS } from '../constants';
+import { CHAT_LIVE_POLL_MS, LONG_USER_MESSAGE_CHARS } from '../constants';
 import {
   computeTurnFooters,
   contextFromRecord,
@@ -680,6 +680,9 @@ function ChatPaneImpl({
   // reply). Result: every message in a brand-new session appeared
   // twice. Capture the initial value in a ref and ignore later changes.
   const initialResumeSessionIdRef = useRef(resumeSessionId ?? null);
+  // True while a turn THIS pane asked for is running (see turn_end).
+  const localTurnRef = useRef(false);
+  const sessionIdRef = useRef<string | null>(resumeSessionId ?? null);
   useEffect(() => {
     const sid = initialResumeSessionIdRef.current;
     if (!sid) return;
@@ -783,6 +786,7 @@ function ChatPaneImpl({
       for (const a of actions) {
         switch (a.kind) {
           case 'set_session': {
+            sessionIdRef.current = a.sessionId;
             setSessionId(a.sessionId);
             const tid = termIdRef.current as string;
             void chatSetSessionId(tid, a.sessionId).catch((e) =>
@@ -796,6 +800,21 @@ function ChatPaneImpl({
             break;
           }
           case 'turn_end': {
+            // A turn sent from another screen (phone, browser, PC): its user
+            // message never reached this pane — reload the transcript.
+            if (!localTurnRef.current && sessionIdRef.current) {
+              const sid = sessionIdRef.current;
+              void chatLoadHistory(cwd, sid)
+                .then((lines) => {
+                  const restored: Message[] = [];
+                  for (const line of lines) {
+                    for (const m of parseHistoryRecord(line)) restored.push(m);
+                  }
+                  if (restored.length > 0) setMessages(restored);
+                })
+                .catch((e: unknown) => console.warn('[Elyone][ChatPane] resync history failed', e));
+            }
+            localTurnRef.current = false;
             setLastTurn({
               ok: a.ok,
               durationMs: a.durationMs,
@@ -958,23 +977,29 @@ function ChatPaneImpl({
   // same auto-respawn path — lazy spawn for free.
   const sessionExitedRef = useRef(isGhost);
 
-  // Remote device only: a session already running on the PC is attached to
-  // its live claude process, so its output streams here too (instead of the
-  // frozen transcript a ghost shows). The desktop keeps its lazy behaviour.
+  // A paused (ghost) session may be woken up elsewhere — on the PC, a phone or
+  // another browser. Poll for a live claude process hosting it and attach,
+  // so its output streams here too instead of a frozen transcript.
   useEffect(() => {
     const sid = initialResumeSessionIdRef.current;
-    if (!isRemoteRuntime || !isGhost || !sid) return;
+    if (!isGhost || !sid) return;
     let cancelled = false;
-    chatLiveTerm(sid)
-      .then((live) => {
-        if (cancelled || !live) return;
-        sessionExitedRef.current = false;
-        setTermId(live);
-        onActivateGhost?.(live, sid);
-      })
-      .catch((e: unknown) => console.warn('[Elyone][ChatPane] live term lookup failed', e));
+    const probe = (): void => {
+      if (cancelled || !termIdRef.current?.startsWith('ghost:')) return;
+      chatLiveTerm(sid)
+        .then((live) => {
+          if (cancelled || !live || !termIdRef.current?.startsWith('ghost:')) return;
+          sessionExitedRef.current = false;
+          setTermId(live);
+          onActivateGhost?.(live, sid);
+        })
+        .catch((e: unknown) => console.warn('[Elyone][ChatPane] live term lookup failed', e));
+    };
+    probe();
+    const timer = window.setInterval(probe, CHAT_LIVE_POLL_MS);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1099,6 +1124,7 @@ function ChatPaneImpl({
         ...prev,
         { kind: 'user', uid: uid(), ts: Date.now(), text: detail.text },
       ]);
+      localTurnRef.current = true;
       setBusy(true);
     }
     window.addEventListener('deepthix:chat:user-text', onVoiceUserText);
@@ -1482,6 +1508,7 @@ function ChatPaneImpl({
     if (text.startsWith('/') && handleSlashCommand(text)) {
       return;
     }
+    localTurnRef.current = true;
     setBusy(true);
     setLiveUsage({ startedAt: Date.now(), outputTokens: 0, nowMs: Date.now() });
     forceScrollNextRef.current = true;
