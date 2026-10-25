@@ -24,9 +24,9 @@ function current(): FormFactor {
   return classifyFormFactor(window.innerWidth, coarse);
 }
 
+/** Current screen class; safe to call from any component. */
 export function useFormFactor(): FormFactor {
   const [ff, setFf] = useState<FormFactor>(current);
-  const touch = ff !== 'desktop';
 
   useEffect(() => {
     const update = (): void => setFf(current());
@@ -34,10 +34,18 @@ export function useFormFactor(): FormFactor {
     return () => window.removeEventListener('resize', update);
   }, []);
 
-  // Touch only. iOS opens the keyboard by shrinking the *visual* viewport and
-  // scrolling the page to reveal the field; a root sized to the visual
-  // viewport then gets scrolled out of sight (black screen). Instead the root
-  // is pinned to the visible area: same height, moved by its offset.
+  return ff;
+}
+
+/**
+ * Touch only — call ONCE, from the app root. iOS opens the keyboard by
+ * shrinking the *visual* viewport and scrolling the page to reveal the
+ * field; a root sized to the visual viewport then gets scrolled out of sight
+ * (black screen). Instead the root is pinned to the visible area: same
+ * height, moved by its offset (CSS vars read by App + index.css).
+ */
+export function useTouchViewport(ff: FormFactor): void {
+  const touch = ff !== 'desktop';
   useEffect(() => {
     const vv = window.visualViewport;
     if (!touch || !vv) return;
@@ -58,6 +66,4 @@ export function useFormFactor(): FormFactor {
       root.style.removeProperty('--app-offset-top');
     };
   }, [touch]);
-
-  return ff;
 }

@@ -22,7 +22,7 @@ import { VoiceRecorder } from './components/VoiceRecorder';
 import { Welcome } from './components/Welcome';
 import { WorkflowsPane } from './components/WorkflowsPane';
 import { useFileTree } from './hooks/useFileTree';
-import { useFormFactor } from './hooks/useFormFactor';
+import { useFormFactor, useTouchViewport } from './hooks/useFormFactor';
 import { useGlobalConfig } from './hooks/useGlobalConfig';
 import { useOpenFiles } from './hooks/useOpenFiles';
 import { useProjects } from './hooks/useProjects';
@@ -213,6 +213,7 @@ function App(): React.JSX.Element {
   // Touch layouts (remote access from a phone): the sidebar becomes a
   // drawer that closes once the user picked something in it.
   const formFactor = useFormFactor();
+  useTouchViewport(formFactor);
   const touch = formFactor !== 'desktop';
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawerThen =

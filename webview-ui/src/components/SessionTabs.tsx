@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { TAB_ORDER_POLL_MS } from '../constants';
 import { avatarColor, formatWhen, initials, matches } from '../conversationUtils';
 import { useAgentStatus } from '../hooks/useAgentStatus';
+import { useFormFactor } from '../hooks/useFormFactor';
 import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
 import {
   listResumableSessions,
@@ -70,6 +71,10 @@ export function SessionTabs({
   onMoveToProject,
 }: Props): React.JSX.Element {
   const agentStatus = useAgentStatus();
+  // Phone (folded / narrow): one "current session ▾" button opening a list
+  // instead of a row of tabs that mostly scrolls out of sight.
+  const compact = useFormFactor() === 'phone';
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -180,9 +185,93 @@ export function SessionTabs({
     setEditingId(null);
   };
 
+  const avatar = (t: TerminalEntry): React.JSX.Element =>
+    t.kind === 'claude' ? (
+      <span className="dt-tab-avatar" style={{ background: avatarColor(t.sessionId ?? t.id) }} aria-hidden>
+        {initials(tabLabel(t))}
+      </span>
+    ) : (
+      <span className="dt-tab-avatar dt-tab-avatar--shell" aria-hidden>
+        <SquareTerminal size="1em" strokeWidth={1.75} />
+      </span>
+    );
+
+  const current = ordered.find((t) => t.id === activeId) ?? ordered[0];
+
   return (
     <div className="dt-tabs">
-      <div className="dt-tabs-scroll">
+      {compact && (
+        <div className="dt-tabs-picker">
+          <button
+            type="button"
+            className="dt-tabs-picker-btn"
+            aria-expanded={pickerOpen}
+            onClick={() => setPickerOpen((o) => !o)}
+          >
+            {current ? (
+              <>
+                {avatar(current)}
+                <span className="dt-tab-text">
+                  <span className="dt-tab-title">{tabLabel(current)}</span>
+                  <span className="dt-tab-sub">
+                    <span className={statusText(current).working ? 'dt-conv-status is-working' : undefined}>
+                      {statusText(current).text}
+                    </span>
+                    {` · ${ordered.length} session${ordered.length > 1 ? 's' : ''}`}
+                  </span>
+                </span>
+              </>
+            ) : (
+              <span className="dt-tab-title">Aucune session</span>
+            )}
+            <ChevronDown size="1.1em" strokeWidth={2} aria-hidden />
+          </button>
+          {pickerOpen && (
+            <>
+              <div className="dt-move-backdrop" onClick={() => setPickerOpen(false)} />
+              <div className="dt-tabs-picker-list" role="listbox">
+                {ordered.map((t) => {
+                  const st = statusText(t);
+                  const when = t.sessionId ? formatWhen(previews.get(t.sessionId)?.mtime_ms ?? 0) : '';
+                  return (
+                    <div
+                      key={t.id}
+                      role="option"
+                      aria-selected={t.id === current?.id}
+                      className={`dt-tab${t.id === current?.id ? ' is-active' : ''}`}
+                      onClick={() => {
+                        terminals.setActive(t.id);
+                        setPickerOpen(false);
+                      }}
+                    >
+                      {avatar(t)}
+                      <span className="dt-tab-text">
+                        <span className="dt-tab-title">{tabLabel(t)}</span>
+                        <span className="dt-tab-sub">
+                          <span className={st.working ? 'dt-conv-status is-working' : undefined}>{st.text}</span>
+                          {when ? ` · ${when}` : ''}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        className="dt-tab-close"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void terminals.close(t.id);
+                        }}
+                        aria-label={`Fermer ${tabLabel(t)}`}
+                      >
+                        <X size="0.9em" strokeWidth={2} aria-hidden />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      <div className="dt-tabs-scroll" style={compact ? { display: 'none' } : undefined}>
         {ordered.map((t) => {
           const isActive = t.id === activeId;
           const st = statusText(t);
@@ -337,7 +426,7 @@ export function SessionTabs({
             title={skipPermissions ? 'Nouvelle session (sans demandes de permission)' : 'Nouvelle session'}
           >
             <Plus size="1.1em" strokeWidth={2} aria-hidden />
-            <span>Session</span>
+            {!compact && <span>Session</span>}
           </button>
           <button
             type="button"
@@ -371,7 +460,7 @@ export function SessionTabs({
           title="Sessions fermées et autres conversations (Ctrl+Maj+T : rouvrir la dernière)"
         >
           <History size="1.1em" strokeWidth={1.75} aria-hidden />
-          <span>Historique</span>
+          {!compact && <span>Historique</span>}
           {closed.length > 0 && <span className="dt-tabs-badge">{closed.length}</span>}
         </button>
       </div>
