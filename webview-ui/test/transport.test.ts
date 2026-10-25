@@ -201,3 +201,11 @@ test('state subscribers are notified', async () => {
   await ready(ws);
   assert.ok(seen.includes('ready'));
 });
+
+test('push subscription is sent to the agent', async () => {
+  const { client, ws } = setup();
+  await ready(ws);
+  const sub = { endpoint: 'https://push.example/x', keys: { p256dh: 'p', auth: 'a' } };
+  client.pushSubscribe(sub);
+  assert.deepEqual(ws().sent[1], { t: 'push_subscribe', subscription: sub });
+});

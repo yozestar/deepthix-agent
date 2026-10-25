@@ -63,6 +63,8 @@ export interface RemoteClient {
   subscribe(cb: (s: RemoteState) => void): () => void;
   /** Starts a new pairing request after a refusal / revocation. */
   retry(): void;
+  /** Registers this device's Web Push subscription with the agent. */
+  pushSubscribe(subscription: unknown): void;
 }
 
 type ServerMsg =
@@ -241,6 +243,9 @@ export function createRemoteClient(opts: RemoteClientOptions): RemoteClient {
     subscribe(cb: (s: RemoteState) => void): () => void {
       subscribers.add(cb);
       return () => subscribers.delete(cb);
+    },
+    pushSubscribe(subscription: unknown): void {
+      send({ t: 'push_subscribe', subscription });
     },
     retry(): void {
       if (!stopped) return;

@@ -14,6 +14,9 @@ pub struct Device {
     pub token_hash: String,
     pub paired_ms: i64,
     pub last_seen_ms: i64,
+    /// Web Push subscription of this device (home-screen web app), if any.
+    #[serde(default)]
+    pub push_subscription: Option<crate::remote::webpush::Subscription>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,6 +29,8 @@ pub struct RemoteConfig {
     pub cf_aud: String,
     /// The only identity Cloudflare Access may present (checked again here).
     pub cf_allowed_email: String,
+    /// VAPID signing key (base64url, 32 bytes), generated on first start.
+    pub vapid_private_key: String,
     pub devices: Vec<Device>,
 }
 
@@ -38,6 +43,7 @@ impl Default for RemoteConfig {
             cf_team_domain: String::new(),
             cf_aud: String::new(),
             cf_allowed_email: String::new(),
+            vapid_private_key: String::new(),
             devices: Vec::new(),
         }
     }
@@ -108,6 +114,7 @@ mod tests {
             token_hash: hash_token(token),
             paired_ms: 1,
             last_seen_ms: 1,
+            push_subscription: None,
         }
     }
 

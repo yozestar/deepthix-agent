@@ -27,6 +27,9 @@ use super::cf_access;
 use super::config::{Device, RemoteConfig};
 use super::pairing::{PairOutcome, PairRequest, PairingQueue, PAIR_TTL_MS};
 use super::protocol::{ClientMsg, ServerMsg};
+use super::webpush::{self, Subscription};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
+use base64::Engine;
 
 pub type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
@@ -35,7 +38,8 @@ pub const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 const EVENT_BUFFER: usize = 4096;
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 const JWKS_TTL: Duration = Duration::from_secs(3600);
-const REMOTE_FLAG_SCRIPT: &str = "<script>window.__ELYONE_REMOTE__=1</script>";
+/// Push `sub` claim when no owner email is configured.
+const PUSH_SUBJECT_FALLBACK: &str = "https://elyone.com";
 
 pub trait Backend: Send + Sync + 'static {
     fn dispatch(&self, cmd: String, args: Value) -> BoxFut<Result<Value, String>>;
@@ -72,7 +76,7 @@ fn now_ms() -> i64 {
 
 impl Hub {
     pub fn new(cfg: RemoteConfig, cfg_path: Option<PathBuf>, backend: Arc<dyn Backend>) -> Arc<Hub> {
-        Arc::new(Hub {
+        let hub = Arc::new(Hub {
             cfg: RwLock::new(cfg),
             cfg_path,
             backend,
@@ -83,7 +87,78 @@ impl Hub {
             events: broadcast::channel(EVENT_BUFFER).0,
             jwks: Mutex::new(None),
             shutdown: Mutex::new(None),
-        })
+        });
+        if hub.config().vapid_private_key.is_empty() {
+            let key = p256::SecretKey::random(&mut rand::rngs::OsRng);
+            let encoded = B64.encode(key.to_bytes());
+            if let Err(e) = hub.update_config(|c| c.vapid_private_key = encoded) {
+                tracing::warn!(target: "deepthix::remote", error = %e, "could not persist vapid key");
+            }
+        }
+        hub
+    }
+
+    fn vapid_secret(&self) -> Option<p256::SecretKey> {
+        let raw = B64.decode(self.config().vapid_private_key).ok()?;
+        p256::SecretKey::from_slice(&raw).ok()
+    }
+
+    /// Browser `applicationServerKey` for push subscriptions.
+    pub fn vapid_public(&self) -> String {
+        self.vapid_secret().map(|k| webpush::vapid_public_key(&k)).unwrap_or_default()
+    }
+
+    /// Paired devices with a push subscription, minus `except`.
+    pub fn push_targets(&self, except: Option<&str>) -> Vec<(String, Subscription)> {
+        self.config()
+            .devices
+            .into_iter()
+            .filter(|d| Some(d.id.as_str()) != except)
+            .filter_map(|d| d.push_subscription.map(|s| (d.id, s)))
+            .collect()
+    }
+
+    /// Notifies every subscribed device (except `except`); subscriptions the
+    /// push service reports gone (404/410) are forgotten.
+    pub async fn push_all(&self, title: &str, body: &str, except: Option<&str>) {
+        let Some(key) = self.vapid_secret() else { return };
+        let email = self.config().cf_allowed_email;
+        let subject = if email.is_empty() {
+            PUSH_SUBJECT_FALLBACK.to_string()
+        } else {
+            format!("mailto:{email}")
+        };
+        let payload = json!({ "title": title, "body": body }).to_string();
+        let mut gone = Vec::new();
+        for (device_id, sub) in self.push_targets(except) {
+            match webpush::send(&sub, &key, &subject, payload.as_bytes()).await {
+                Ok(404) | Ok(410) => gone.push(device_id),
+                Ok(status) if status >= 400 => {
+                    tracing::warn!(target: "deepthix::remote", status, %device_id, "push rejected")
+                }
+                Ok(_) => {}
+                Err(e) => tracing::warn!(target: "deepthix::remote", error = %e, %device_id, "push failed"),
+            }
+        }
+        if !gone.is_empty() {
+            let _ = self.update_config(|c| {
+                for d in c.devices.iter_mut().filter(|d| gone.contains(&d.id)) {
+                    d.push_subscription = None;
+                }
+            });
+        }
+    }
+
+    fn set_push_subscription(&self, conn_id: u64, sub: Subscription) {
+        let device_id = self.conns.lock().unwrap().get(&conn_id).and_then(|c| c.device_id.clone());
+        let Some(device_id) = device_id else { return };
+        if let Err(e) = self.update_config(|c| {
+            if let Some(d) = c.devices.iter_mut().find(|d| d.id == device_id) {
+                d.push_subscription = Some(sub);
+            }
+        }) {
+            tracing::warn!(target: "deepthix::remote", error = %e, "could not persist push subscription");
+        }
     }
 
     pub fn config(&self) -> RemoteConfig {
@@ -371,7 +446,12 @@ async fn handle_socket(hub: Arc<Hub>, socket: WebSocket) {
                 let ready = events.is_some();
                 match msg {
                     ClientMsg::Hello { token } if !ready => match hub.hello(conn_id, &token) {
-                        Some(_) => {
+                        Some(device) => {
+                            let h = hub.clone();
+                            tokio::spawn(async move {
+                                h.push_all("Nouvelle connexion à distance", &device.name, Some(&device.id))
+                                    .await;
+                            });
                             events = Some(hub.events.subscribe());
                             let _ = out_tx.send(ServerMsg::Ready);
                         }
@@ -380,6 +460,11 @@ async fn handle_socket(hub: Arc<Hub>, socket: WebSocket) {
                     ClientMsg::Pair { name } if !ready && pair_reply.is_none() => {
                         let (req, rx) = hub.start_pairing(name);
                         pair_reply = Some(rx);
+                        let h = hub.clone();
+                        let body = format!("{} — code {}", req.name, req.code);
+                        tokio::spawn(async move {
+                            h.push_all("Demande d'accès à distance", &body, None).await;
+                        });
                         let _ = out_tx.send(ServerMsg::PairPending { code: req.code });
                     }
                     ClientMsg::Invoke { id, cmd, args } if ready => {
@@ -397,6 +482,9 @@ async fn handle_socket(hub: Arc<Hub>, socket: WebSocket) {
                         if let Err(e) = hub.respond_pair(&id, accept) {
                             tracing::info!(target: "deepthix::remote", error = %e, "pair_respond ignored");
                         }
+                    }
+                    ClientMsg::PushSubscribe { subscription } if ready => {
+                        hub.set_push_subscription(conn_id, subscription);
                     }
                     ClientMsg::Disable if ready => {
                         if let Err(e) = hub.update_config(|c| c.enabled = false) {
@@ -452,16 +540,19 @@ async fn asset_handler(State(hub): State<Arc<Hub>>, uri: Uri) -> Response {
     let mut builder = Response::builder().header(header::CONTENT_TYPE, mime);
     let body = if is_index {
         builder = builder.header(header::CACHE_CONTROL, "no-store");
-        Body::from(inject_remote_flag(&String::from_utf8_lossy(&bytes)))
+        Body::from(inject_remote_flag(&String::from_utf8_lossy(&bytes), &hub.vapid_public()))
     } else {
         Body::from(bytes)
     };
     builder.body(body).unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-fn inject_remote_flag(html: &str) -> String {
+fn inject_remote_flag(html: &str, vapid_public: &str) -> String {
     let at = html.find("<script").or_else(|| html.find("</head>")).unwrap_or(0);
-    format!("{}{}{}", &html[..at], REMOTE_FLAG_SCRIPT, &html[at..])
+    let script = format!(
+        "<script>window.__ELYONE_REMOTE__=1;window.__ELYONE_VAPID__=\"{vapid_public}\"</script>"
+    );
+    format!("{}{}{}", &html[..at], script, &html[at..])
 }
 
 #[cfg(test)]
@@ -518,6 +609,7 @@ mod tests {
             token_hash: hash_token(token),
             paired_ms: 0,
             last_seen_ms: 0,
+            push_subscription: None,
         });
         cfg
     }
@@ -782,5 +874,96 @@ mod tests {
         let status = child.wait().await.unwrap();
         assert!(status.success(), "client output: {seen:?}");
         assert_eq!(seen, ["READY", "EVENT_OK", "DONE"]);
+    }
+
+    #[tokio::test]
+    async fn vapid_key_generated_once_and_exposed_in_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("remote.json");
+        let hub = Hub::new(RemoteConfig::default(), Some(path.clone()), Arc::new(FakeBackend::default()));
+        let key = hub.config().vapid_private_key.clone();
+        assert!(!key.is_empty());
+        assert_eq!(RemoteConfig::load(&path).vapid_private_key, key);
+        let again = Hub::new(RemoteConfig::load(&path), Some(path), Arc::new(FakeBackend::default()));
+        assert_eq!(again.config().vapid_private_key, key);
+        let addr = hub.start(0).await.unwrap();
+        let index = reqwest::get(format!("http://{addr}/")).await.unwrap().text().await.unwrap();
+        assert!(index.contains(&format!("window.__ELYONE_VAPID__=\"{}\"", hub.vapid_public())));
+    }
+
+    fn sub_json(endpoint: &str) -> Value {
+        // Valid P-256 point + auth (RFC 8291 example user agent keys).
+        json!({
+            "endpoint": endpoint,
+            "keys": {
+                "p256dh": "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
+                "auth": "BTBZMqHH6r4Tts7J_aSIgg"
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn push_subscribe_is_stored_on_device() {
+        let (hub, _b, addr) = serve(cfg_with_device("tok")).await;
+        let mut c = ready_client(addr, "tok").await;
+        send(&mut c, json!({"t":"push_subscribe","subscription": sub_json("https://push.example/abc")})).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let sub = hub.config().devices[0].push_subscription.clone().expect("stored");
+        assert_eq!(sub.endpoint, "https://push.example/abc");
+    }
+
+    #[tokio::test]
+    async fn push_all_posts_encrypted_payload_and_drops_gone_subscriptions() {
+        use axum::extract::Path;
+        let seen: Arc<Mutex<Vec<(String, HeaderMap, usize)>>> = Arc::default();
+        let seen2 = seen.clone();
+        let app = Router::new().route(
+            "/push/{id}",
+            axum::routing::post(move |Path(id): Path<String>, headers: HeaderMap, body: axum::body::Bytes| {
+                let seen = seen2.clone();
+                async move {
+                    seen.lock().unwrap().push((id.clone(), headers, body.len()));
+                    if id == "gone" { StatusCode::GONE } else { StatusCode::CREATED }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let push_addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let mut cfg = cfg_with_device("tok");
+        cfg.devices[0].push_subscription =
+            Some(serde_json::from_value(sub_json(&format!("http://{push_addr}/push/ok"))).unwrap());
+        let mut gone = cfg.devices[0].clone();
+        gone.id = "dev-2".into();
+        gone.push_subscription =
+            Some(serde_json::from_value(sub_json(&format!("http://{push_addr}/push/gone"))).unwrap());
+        cfg.devices.push(gone);
+        let hub = Hub::new(cfg, None, Arc::new(FakeBackend::default()));
+
+        hub.push_all("Titre", "Corps", None).await;
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        for (_, headers, len) in seen.iter() {
+            assert_eq!(headers["content-encoding"], "aes128gcm");
+            assert!(headers["authorization"].to_str().unwrap().starts_with("vapid t="));
+            assert!(headers.contains_key("ttl"));
+            assert!(*len > 86);
+        }
+        let devices = hub.config().devices;
+        assert!(devices.iter().find(|d| d.id == "dev-1").unwrap().push_subscription.is_some());
+        assert!(devices.iter().find(|d| d.id == "dev-2").unwrap().push_subscription.is_none());
+    }
+
+    #[tokio::test]
+    async fn push_all_skips_the_excluded_device() {
+        let mut cfg = cfg_with_device("tok");
+        cfg.devices[0].push_subscription =
+            Some(serde_json::from_value(sub_json("http://127.0.0.1:9/push/never")).unwrap());
+        let hub = Hub::new(cfg, None, Arc::new(FakeBackend::default()));
+        // Would fail to connect (port 9) and log; must simply not be attempted.
+        assert_eq!(hub.push_targets(Some("dev-1")).len(), 0);
+        assert_eq!(hub.push_targets(None).len(), 1);
     }
 }

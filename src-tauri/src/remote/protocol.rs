@@ -10,6 +10,7 @@ pub enum ClientMsg {
     Pair { name: String },
     Invoke { id: u64, cmd: String, #[serde(default)] args: Value },
     PairRespond { id: String, accept: bool },
+    PushSubscribe { subscription: crate::remote::webpush::Subscription },
     Disable,
 }
 

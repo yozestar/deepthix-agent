@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 
+import { enablePush, isStandalone, pushSupported, refreshPush } from '../remote/push';
 import { type RemoteClient, type RemoteState } from '../tauri/transport';
 
 interface Props {
@@ -15,11 +16,15 @@ export function RemoteGate({ client, children }: Props): React.JSX.Element {
   const [state, setState] = useState<RemoteState>(client.state());
   const [epoch, setEpoch] = useState(0);
   const [everReady, setEverReady] = useState(client.state().status === 'ready');
+  const [askPush, setAskPush] = useState(false);
 
   useEffect(() => {
     const offState = client.subscribe((s) => {
       setState(s);
-      if (s.status === 'ready') setEverReady(true);
+      if (s.status !== 'ready') return;
+      setEverReady(true);
+      void refreshPush(client);
+      setAskPush(pushSupported() && isStandalone() && Notification.permission === 'default');
     });
     const offResync = client.onResync(() => setEpoch((n) => n + 1));
     return () => {
@@ -39,6 +44,24 @@ export function RemoteGate({ client, children }: Props): React.JSX.Element {
         <div key={epoch} style={{ display: 'contents' }}>
           {children}
         </div>
+        {askPush && (
+          <div style={pushBarStyle} role="status">
+            <span>Recevoir sur cet appareil les alertes de connexion à ton agent ?</span>
+            <button
+              type="button"
+              className="dt-btn dt-btn--primary"
+              onClick={() => {
+                setAskPush(false);
+                void enablePush(client);
+              }}
+            >
+              Activer
+            </button>
+            <button type="button" className="dt-btn" onClick={() => setAskPush(false)}>
+              Plus tard
+            </button>
+          </div>
+        )}
       </>
     );
   }
@@ -103,4 +126,22 @@ const bannerStyle: React.CSSProperties = {
   color: 'var(--color-bg-dark)',
   fontFamily: 'var(--font-pixel)',
   fontSize: '0.8125rem',
+};
+
+const pushBarStyle: React.CSSProperties = {
+  position: 'fixed',
+  left: 12,
+  right: 12,
+  bottom: 'calc(12px + env(safe-area-inset-bottom))',
+  zIndex: 400,
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: 8,
+  padding: '10px 12px',
+  background: 'var(--color-bg)',
+  border: '2px solid var(--color-border)',
+  boxShadow: 'var(--shadow-pixel)',
+  fontFamily: 'var(--font-pixel)',
+  fontSize: '0.875rem',
 };

@@ -54,6 +54,7 @@ impl PairingQueue {
             token_hash: hash_token(&token),
             paired_ms: now_ms,
             last_seen_ms: now_ms,
+            push_subscription: None,
         };
         Some(PairOutcome::Accepted { token, device })
     }
