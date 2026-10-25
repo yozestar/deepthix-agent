@@ -58,6 +58,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         // Updater + process plugins disabled on Windows ARM64 (ring needs
         // clang). Re-enable after `winget install LLVM.LLVM` — see
         // Cargo.toml note.
@@ -180,6 +184,8 @@ pub fn run() {
             commands::remote::remote_revoke_device,
             commands::remote::remote_pair_respond,
             commands::remote::remote_set_cf,
+            commands::remote::remote_get_autostart,
+            commands::remote::remote_set_autostart,
         ])
         .setup(|app| {
             // If the main window's WebView could not be created (e.g. its

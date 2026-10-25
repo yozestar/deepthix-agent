@@ -1119,6 +1119,16 @@ export async function remotePairRespond(id: string, accept: boolean): Promise<vo
   await invoke('remote_pair_respond', { id, accept });
 }
 
+export async function getAutostart(): Promise<boolean> {
+  log('getAutostart');
+  return await invoke<boolean>('remote_get_autostart');
+}
+
+export async function setAutostart(enabled: boolean): Promise<boolean> {
+  log('setAutostart', { enabled });
+  return await invoke<boolean>('remote_set_autostart', { enabled });
+}
+
 export async function remoteSetCf(
   teamDomain: string,
   aud: string,

@@ -37,6 +37,7 @@ import {
 } from '../hooks/useGlobalConfig';
 import { isRemoteRuntime } from '../runtime';
 import {
+  getAutostart,
   importFromDeepthix,
   type ImportReport,
   type ImportStatus,
@@ -46,6 +47,7 @@ import {
   remoteSetCf,
   remoteSetEnabled,
   type RemoteStatus,
+  setAutostart,
 } from '../tauri/commands';
 import { resolveTheme, SYSTEM_THEME_ID, THEMES } from '../themes';
 
@@ -941,6 +943,7 @@ function RemoteAccessSection(): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cf, setCf] = useState({ team: '', aud: '', email: '' });
+  const [autostart, setAutostartState] = useState<boolean | null>(null);
 
   const apply = useCallback((s: RemoteStatus): void => {
     setStatus(s);
@@ -952,6 +955,12 @@ function RemoteAccessSection(): React.JSX.Element {
       .then(apply)
       .catch((e) => setError(String(e)));
   }, [apply]);
+
+  useEffect(() => {
+    getAutostart()
+      .then(setAutostartState)
+      .catch((e) => setError(String(e)));
+  }, []);
 
   useEffect(() => {
     refresh();
@@ -992,6 +1001,23 @@ function RemoteAccessSection(): React.JSX.Element {
         {status?.enabled && !status.running && (
           <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem' }}>serveur arrêté</span>
         )}
+      </Row>
+      <Row label="Démarrage auto">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem' }}>
+          <input
+            type="checkbox"
+            checked={autostart === true}
+            disabled={autostart === null}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setError(null);
+              setAutostart(next)
+                .then(setAutostartState)
+                .catch((err) => setError(String(err)));
+            }}
+          />
+          Lancer l&apos;agent à l&apos;ouverture de la session Windows
+        </label>
       </Row>
       {status?.enabled && !cfComplete && (
         <div style={{ fontSize: '0.75rem', color: 'var(--color-warning)' }}>

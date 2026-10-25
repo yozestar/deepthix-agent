@@ -213,7 +213,13 @@ mod tests {
 
     #[test]
     fn denies_remote_admin() {
-        for c in ["remote_set_enabled", "remote_revoke_device", "remote_pair_respond", "remote_get_status"] {
+        for c in [
+            "remote_set_enabled",
+            "remote_revoke_device",
+            "remote_pair_respond",
+            "remote_get_status",
+            "remote_set_autostart",
+        ] {
             assert!(!is_remote_allowed(c), "{c}");
         }
     }

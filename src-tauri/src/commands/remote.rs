@@ -30,6 +30,27 @@ pub async fn remote_pair_respond(state: State<'_, RemoteState>, id: String, acce
     state.hub.respond_pair(&id, accept)
 }
 
+/// Launch the agent when the Windows session opens (remote access needs the
+/// agent running after the VM's daily restart).
+#[tauri::command]
+pub async fn remote_get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn remote_set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    tracing::info!(target: "deepthix::remote", enabled, "remote_set_autostart");
+    let launcher = app.autolaunch();
+    if enabled {
+        launcher.enable().map_err(|e| e.to_string())?;
+    } else {
+        launcher.disable().map_err(|e| e.to_string())?;
+    }
+    launcher.is_enabled().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn remote_set_cf(
     state: State<'_, RemoteState>,

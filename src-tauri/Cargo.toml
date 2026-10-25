@@ -37,6 +37,7 @@ log = "0.4"
 tauri = { version = "2.10.3", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
+tauri-plugin-autostart = "=2.5.1"
 # Auto-updater + relaunch helpers disabled on Windows ARM64 — the
 # transitive `ring` crate needs clang to build. Re-enable after
 # `winget install LLVM.LLVM` (also requires `winget install Strawberry.Perl`).
