@@ -1,6 +1,6 @@
 import { requestFolderPick } from '../remote/folderPicker';
 import { isRemoteRuntime } from '../runtime';
-import { invoke } from './transport';
+import { invoke, remoteClient } from './transport';
 import type { FileEntry, Project, ProjectsFile, SwitchResult } from './types';
 
 function log(name: string, args?: unknown): void {
@@ -1116,6 +1116,12 @@ export async function remoteRevokeDevice(id: string): Promise<RemoteStatus> {
 
 export async function remotePairRespond(id: string, accept: boolean): Promise<void> {
   log('remotePairRespond', { id, accept });
+  // From an already-paired device the answer goes through the socket
+  // (remote_* commands are PC-only).
+  if (remoteClient) {
+    remoteClient.pairRespond(id, accept);
+    return;
+  }
   await invoke('remote_pair_respond', { id, accept });
 }
 

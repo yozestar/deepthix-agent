@@ -65,6 +65,8 @@ export interface RemoteClient {
   retry(): void;
   /** Registers this device's Web Push subscription with the agent. */
   pushSubscribe(subscription: unknown): void;
+  /** Accepts / refuses another device's pairing request. */
+  pairRespond(id: string, accept: boolean): void;
 }
 
 type ServerMsg =
@@ -87,6 +89,23 @@ interface Queued extends Pending {
   args: Record<string, unknown>;
   timer: ReturnType<typeof setTimeout>;
 }
+
+/**
+ * The PC stays the owner of tabs, layout, preferences and running sessions:
+ * a remote device must not overwrite its saved state nor kill a session the
+ * PC may be using. These calls succeed locally without reaching the agent.
+ */
+const PC_OWNED_COMMANDS = new Set([
+  'save_sessions',
+  'save_closed_sessions',
+  'save_terminal_scrollback',
+  'clear_terminal_scrollback',
+  'save_open_files',
+  'save_layout',
+  'write_global_config',
+  'chat_kill',
+  'kill_terminal',
+]);
 
 /** Reasons after which the device must not silently reconnect. */
 const TERMINAL_REASONS = new Set(['revoked', 'unknown device', 'pairing denied']);
@@ -211,6 +230,7 @@ export function createRemoteClient(opts: RemoteClientOptions): RemoteClient {
 
   return {
     invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
+      if (PC_OWNED_COMMANDS.has(cmd)) return Promise.resolve(null as T);
       return new Promise<T>((resolve, reject) => {
         const id = nextId++;
         const pending: Pending = { resolve: resolve as (v: unknown) => void, reject };
@@ -246,6 +266,9 @@ export function createRemoteClient(opts: RemoteClientOptions): RemoteClient {
     },
     pushSubscribe(subscription: unknown): void {
       send({ t: 'push_subscribe', subscription });
+    },
+    pairRespond(id: string, accept: boolean): void {
+      send({ t: 'pair_respond', id, accept });
     },
     retry(): void {
       if (!stopped) return;

@@ -356,6 +356,11 @@ impl ChatManager {
 
 // ─── Spawn ───────────────────────────────────────────────────────────────
 
+/// Live term already hosting the session `args` asks to resume, if any.
+fn live_term_for_resume(args: &ChatSpawnArgs, find: impl Fn(&str) -> Option<String>) -> Option<String> {
+    args.resume_session_id.as_deref().and_then(find)
+}
+
 #[tauri::command]
 pub fn chat_spawn(
     app: AppHandle,
@@ -369,6 +374,13 @@ pub fn chat_spawn(
     // was a belt-and-braces guard against the original zombie-children
     // bug, which the reaper now handles directly. The Settings field is
     // kept for back-compat but no longer enforced here.
+    // Resuming a conversation that already has a live claude (opened on the
+    // PC and now from the phone, or twice on the same screen): attach to that
+    // process instead of starting a second one writing the same transcript.
+    if let Some(term_id) = live_term_for_resume(&args, |sid| state.find_term_by_session(sid)) {
+        tracing::info!(target: "deepthix::chat", %term_id, "chat_spawn reuses live session");
+        return Ok(ChatSpawnResult { term_id, session_id: args.resume_session_id.clone() });
+    }
     let term_id = format!("chat-{}", uuid::Uuid::new_v4().simple());
     tracing::info!(
         target: "deepthix::chat",
@@ -2070,4 +2082,29 @@ pub fn chat_kill(state: State<'_, ChatManager>, term_id: String) -> Result<(), S
         let _ = entry.child.kill();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod reuse_tests {
+    use super::*;
+
+    fn args(resume: Option<&str>) -> ChatSpawnArgs {
+        serde_json::from_value(serde_json::json!({
+            "cwd": "C:/proj",
+            "resume_session_id": resume,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn resume_of_a_live_session_reuses_its_process() {
+        let found = live_term_for_resume(&args(Some("s1")), |sid| (sid == "s1").then(|| "chat-1".to_string()));
+        assert_eq!(found.as_deref(), Some("chat-1"));
+    }
+
+    #[test]
+    fn fresh_spawn_or_unknown_session_spawns() {
+        assert_eq!(live_term_for_resume(&args(None), |_| Some("chat-1".into())), None);
+        assert_eq!(live_term_for_resume(&args(Some("s2")), |_| None), None);
+    }
 }

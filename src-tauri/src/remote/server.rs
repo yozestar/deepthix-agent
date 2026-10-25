@@ -76,6 +76,17 @@ fn now_ms() -> i64 {
 
 impl Hub {
     pub fn new(cfg: RemoteConfig, cfg_path: Option<PathBuf>, backend: Arc<dyn Backend>) -> Arc<Hub> {
+        Self::with_event_buffer(cfg, cfg_path, backend, EVENT_BUFFER)
+    }
+
+    /// `events` = how many live events a slow client may fall behind
+    /// before it is told to reconnect and reload.
+    pub fn with_event_buffer(
+        cfg: RemoteConfig,
+        cfg_path: Option<PathBuf>,
+        backend: Arc<dyn Backend>,
+        events: usize,
+    ) -> Arc<Hub> {
         let hub = Arc::new(Hub {
             cfg: RwLock::new(cfg),
             cfg_path,
@@ -84,7 +95,7 @@ impl Hub {
             pair_waiters: Mutex::new(HashMap::new()),
             conns: Mutex::new(HashMap::new()),
             next_conn: AtomicU64::new(1),
-            events: broadcast::channel(EVENT_BUFFER).0,
+            events: broadcast::channel(events).0,
             jwks: Mutex::new(None),
             shutdown: Mutex::new(None),
         });
@@ -374,14 +385,15 @@ async fn next_event(rx: &mut Option<broadcast::Receiver<ServerMsg>>) -> ServerMs
     let Some(rx) = rx.as_mut() else {
         return std::future::pending().await;
     };
-    loop {
-        match rx.recv().await {
-            Ok(msg) => return msg,
-            Err(broadcast::error::RecvError::Lagged(n)) => {
-                tracing::warn!(target: "deepthix::remote", skipped = n, "slow client dropped events");
-            }
-            Err(broadcast::error::RecvError::Closed) => return std::future::pending().await,
+    match rx.recv().await {
+        Ok(msg) => msg,
+        // Missed output would leave holes in terminals / chats: make the
+        // client reconnect, which reloads every pane from the agent.
+        Err(broadcast::error::RecvError::Lagged(n)) => {
+            tracing::warn!(target: "deepthix::remote", skipped = n, "slow client, forcing resync");
+            ServerMsg::Bye { reason: "resync".into() }
         }
+        Err(broadcast::error::RecvError::Closed) => std::future::pending().await,
     }
 }
 
@@ -965,5 +977,21 @@ mod tests {
         // Would fail to connect (port 9) and log; must simply not be attempted.
         assert_eq!(hub.push_targets(Some("dev-1")).len(), 0);
         assert_eq!(hub.push_targets(None).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn lagging_client_is_told_to_resync() {
+        let backend = Arc::new(FakeBackend::default());
+        let hub = Hub::with_event_buffer(cfg_with_device("tok"), None, backend, 4);
+        let addr = hub.start(0).await.unwrap();
+        let mut c = ready_client(addr, "tok").await;
+        for i in 0..64 {
+            hub.publish("pty_data", json!({ "i": i }));
+        }
+        let mut last = None;
+        while let Some(m) = recv(&mut c).await {
+            last = Some(m);
+        }
+        assert_eq!(last, Some(json!({"t":"bye","reason":"resync"})));
     }
 }

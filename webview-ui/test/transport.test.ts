@@ -209,3 +209,29 @@ test('push subscription is sent to the agent', async () => {
   client.pushSubscribe(sub);
   assert.deepEqual(ws().sent[1], { t: 'push_subscribe', subscription: sub });
 });
+
+test('PC-owned state is never written from a remote device', async () => {
+  const { client, ws } = setup();
+  await ready(ws);
+  for (const cmd of ['save_sessions', 'save_closed_sessions', 'save_layout', 'write_global_config', 'chat_kill']) {
+    assert.equal(await client.invoke(cmd, { x: 1 }), null, cmd);
+  }
+  assert.equal(ws().sent.length, 1, 'only hello went out');
+});
+
+test('pairRespond answers through the socket', async () => {
+  const { client, ws } = setup();
+  await ready(ws);
+  client.pairRespond('req-1', true);
+  assert.deepEqual(ws().sent[1], { t: 'pair_respond', id: 'req-1', accept: true });
+});
+
+test('resync bye reconnects', async () => {
+  const { client, ws, sockets } = setup();
+  await ready(ws);
+  ws().emit({ t: 'bye', reason: 'resync' });
+  ws().drop();
+  await tick(20);
+  assert.equal(sockets.length, 2);
+  assert.notEqual(client.state().status, 'denied');
+});
