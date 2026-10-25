@@ -950,12 +950,6 @@ function RemoteAccessSection(): React.JSX.Element {
     setCf({ team: s.cf_team_domain, aud: s.cf_aud, email: s.cf_allowed_email });
   }, []);
 
-  const refresh = useCallback((): void => {
-    remoteGetStatus()
-      .then(apply)
-      .catch((e) => setError(String(e)));
-  }, [apply]);
-
   useEffect(() => {
     getAutostart()
       .then(setAutostartState)
@@ -963,11 +957,19 @@ function RemoteAccessSection(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    refresh();
-    // Devices connect / disconnect while the pane is open.
-    const timer = window.setInterval(refresh, REMOTE_STATUS_REFRESH_MS);
+    // First load fills the Cloudflare fields; the periodic refresh (devices
+    // connect / disconnect while the pane is open) only updates the status,
+    // otherwise it would wipe what the user is typing.
+    remoteGetStatus()
+      .then(apply)
+      .catch((e) => setError(String(e)));
+    const timer = window.setInterval(() => {
+      remoteGetStatus()
+        .then(setStatus)
+        .catch((e) => setError(String(e)));
+    }, REMOTE_STATUS_REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [apply]);
 
   const run = useCallback(async (op: () => Promise<RemoteStatus>): Promise<void> => {
     setBusy(true);
