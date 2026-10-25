@@ -149,6 +149,7 @@ pub fn run() {
             commands::chat::chat_send_tool_result,
             commands::chat::chat_switch_model,
             commands::chat::chat_set_session_id,
+            commands::chat::chat_live_term,
             commands::chat::chat_load_history,
             commands::chat::chat_interrupt,
             commands::chat::chat_interrupt_and_resume,

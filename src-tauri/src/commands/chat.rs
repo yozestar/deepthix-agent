@@ -1291,6 +1291,14 @@ pub fn chat_switch_model(
 /// Webview tells us the claude session UUID it just learned from the
 /// `system/init` event. We store it so the scheduler can resolve a
 /// stable session_id back to the live term_id.
+/// Live term hosting `session_id`, if any. A remote device opening a session
+/// that already runs on the PC attaches to it (live output) instead of
+/// showing a frozen transcript.
+#[tauri::command]
+pub fn chat_live_term(state: State<'_, ChatManager>, session_id: String) -> Option<String> {
+    state.find_term_by_session(&session_id)
+}
+
 #[tauri::command]
 pub fn chat_set_session_id(
     state: State<'_, ChatManager>,

@@ -646,6 +646,10 @@ export async function chatSwitchModel(
   return await invoke<void>('chat_switch_model', { termId, model, effort });
 }
 
+export async function chatLiveTerm(sessionId: string): Promise<string | null> {
+  return await invoke<string | null>('chat_live_term', { sessionId });
+}
+
 export async function chatSetSessionId(termId: string, sessionId: string): Promise<void> {
   return await invoke<void>('chat_set_session_id', { termId, sessionId });
 }

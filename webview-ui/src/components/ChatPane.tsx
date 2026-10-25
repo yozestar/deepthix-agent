@@ -25,10 +25,12 @@ import {
   contextWindowForModel,
   type TurnInfo,
 } from '../conversationUtils';
+import { isRemoteRuntime } from "../runtime";
 import {
   chatForkAtUuid,
   chatInterruptAndResume,
   chatKill,
+  chatLiveTerm,
   chatLoadHistory,
   chatResumeOtherSession,
   chatSendUserText,
@@ -954,6 +956,27 @@ function ChatPaneImpl({
   // Seeded `true` for ghost entries so the first send triggers the
   // same auto-respawn path — lazy spawn for free.
   const sessionExitedRef = useRef(isGhost);
+
+  // Remote device only: a session already running on the PC is attached to
+  // its live claude process, so its output streams here too (instead of the
+  // frozen transcript a ghost shows). The desktop keeps its lazy behaviour.
+  useEffect(() => {
+    const sid = initialResumeSessionIdRef.current;
+    if (!isRemoteRuntime || !isGhost || !sid) return;
+    let cancelled = false;
+    chatLiveTerm(sid)
+      .then((live) => {
+        if (cancelled || !live) return;
+        sessionExitedRef.current = false;
+        setTermId(live);
+        onActivateGhost?.(live, sid);
+      })
+      .catch((e: unknown) => console.warn('[Elyone][ChatPane] live term lookup failed', e));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Tracks the safety timer that auto-clears busy if chat_exit never
   // arrives after Stop (rare but possible if claude hangs in a tool
   // call that ignores SIGINT).

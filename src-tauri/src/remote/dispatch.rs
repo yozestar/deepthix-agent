@@ -81,6 +81,7 @@ const REMOTE_COMMANDS: &[&str] = &[
     "chat_send_tool_result",
     "chat_switch_model",
     "chat_set_session_id",
+    "chat_live_term",
     "chat_load_history",
     "chat_interrupt",
     "chat_interrupt_and_resume",
@@ -199,7 +200,7 @@ mod tests {
 
     #[test]
     fn allows_chat_and_terminal() {
-        for c in ["chat_send_user_text", "pty_write", "list_projects", "read_file", "home_dir"] {
+        for c in ["chat_send_user_text", "pty_write", "list_projects", "read_file", "home_dir", "chat_live_term"] {
             assert!(is_remote_allowed(c), "{c}");
         }
     }

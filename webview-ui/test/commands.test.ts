@@ -37,3 +37,8 @@ test('autostart wrappers exist', async () => {
   assert.equal(typeof mod.getAutostart, 'function');
   assert.equal(typeof mod.setAutostart, 'function');
 });
+
+test('chatLiveTerm wrapper exists', async () => {
+  const mod = await import('../src/tauri/commands.ts');
+  assert.equal(typeof mod.chatLiveTerm, 'function');
+});
