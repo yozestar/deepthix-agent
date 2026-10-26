@@ -6,6 +6,7 @@ import { MemoryPane } from './components/MemoryPane';
 import { NotificationToasts } from './components/NotificationToasts';
 import { OverviewPane } from './components/OverviewPane';
 import { PairRequestDialog } from './components/PairRequestDialog';
+import { RemoteDropZone } from './components/RemoteDropZone';
 import { RemoteFolderPicker } from './components/RemoteFolderPicker';
 import { SchedulesPane } from './components/SchedulesPane';
 // SessionsTopArea import removed — Coach pane was unmounted from the
@@ -431,6 +432,7 @@ function App(): React.JSX.Element {
       <NotificationToasts />
       <PairRequestDialog />
       {isRemoteRuntime && <RemoteFolderPicker />}
+      {isRemoteRuntime && <RemoteDropZone activeTermId={terminals.activeId} />}
       {/* Auto-update banner: silent on launch, only paints itself if a
           newer version is available at the configured updater endpoint. */}
       {!isRemoteRuntime && <UpdaterBanner />}

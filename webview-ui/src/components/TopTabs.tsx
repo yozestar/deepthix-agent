@@ -63,8 +63,8 @@ const VISIBLE_MODES: ReadonlyArray<Mode> = [
   'variables',
 ];
 
-/** Folded phone: the minimal set — sessions and the project board. */
-const PHONE_MODES: ReadonlyArray<Mode> = ['sessions', 'overview'];
+/** Folded phone: the minimal set — sessions, project board, files. */
+const PHONE_MODES: ReadonlyArray<Mode> = ['sessions', 'overview', 'files'];
 
 /** Icon + human label per tab (sentence case instead of SHOUTING). */
 const MODE_META: Record<Exclude<Mode, 'settings'>, { label: string; Icon: LucideIcon }> = {

@@ -560,3 +560,26 @@ html.touch-layout body {
   overscroll-behavior: none;
   background: var(--color-bg);
 }
+
+/* Files tree: "copy path" button — on hover with a mouse, always on touch. */
+.dt-tree-copy {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.dt-tree-row:hover .dt-tree-copy,
+.dt-tree-copy:focus-visible {
+  opacity: 1;
+}
+html.touch-layout .dt-tree-copy {
+  opacity: 1;
+  min-width: 36px;
+  min-height: 36px;
+}

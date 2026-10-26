@@ -1,4 +1,34 @@
+import { Check, Copy } from 'lucide-react';
+import { useState } from 'react';
+
 import type { FileTreeNode, UseFileTreeResult } from '../hooks/useFileTree';
+
+const COPIED_FEEDBACK_MS = 1500;
+
+/** Copies the quoted path so it can be pasted as-is into a conversation. */
+function CopyPathButton({ path }: { path: string }): React.JSX.Element {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="dt-tree-copy"
+      title="Copier le chemin"
+      aria-label={`Copier le chemin de ${path}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        void navigator.clipboard
+          .writeText(`"${path}"`)
+          .then(() => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
+          })
+          .catch((err: unknown) => console.warn('[Elyone][FileTree] copy path failed', err));
+      }}
+    >
+      {copied ? <Check size="1em" strokeWidth={2} aria-hidden /> : <Copy size="1em" strokeWidth={2} aria-hidden />}
+    </button>
+  );
+}
 
 interface Props {
   tree: UseFileTreeResult;
@@ -163,19 +193,23 @@ function Branch({
             }
           }
         }}
+        className="dt-tree-row"
         style={{
           cursor: node.is_dir ? 'pointer' : isFile && onFileClick ? 'pointer' : 'default',
           opacity: node.is_hidden ? 0.55 : 1,
           padding: `2px 4px 2px ${4 + depth * 12}px`,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
         }}
         title={node.path}
       >
-        {node.is_dir ? (isExpanded ? '▾ ' : '▸ ') : '   '}
-        {node.name}
-        {node.loading && <span style={{ opacity: 0.5 }}> …</span>}
+        <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {node.is_dir ? (isExpanded ? '▾ ' : '▸ ') : '   '}
+          {node.name}
+          {node.loading && <span style={{ opacity: 0.5 }}> …</span>}
+        </span>
+        <CopyPathButton path={node.path} />
       </div>
       {node.is_dir && isExpanded && node.children && (
         <div>
