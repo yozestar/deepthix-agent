@@ -18,13 +18,14 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { CHAT_LIVE_POLL_MS, LONG_USER_MESSAGE_CHARS } from '../constants';
+import { CHAT_LIVE_POLL_MS, LONG_USER_MESSAGE_CHARS, TOUCH_COMPOSER_MAX_PX } from '../constants';
 import {
   computeTurnFooters,
   contextFromRecord,
   contextWindowForModel,
   type TurnInfo,
 } from '../conversationUtils';
+import { useFormFactor } from '../hooks/useFormFactor';
 import { uploadToChat } from "../remote/upload";
 import { isRemoteRuntime } from "../runtime";
 import {
@@ -596,6 +597,7 @@ function ChatPaneImpl({
   // — already present below) loads the JSONL transcript on its own,
   // independent of any live process.
   const isGhost = !!bindTermId?.startsWith('ghost:');
+  const isTouch = useFormFactor() !== 'desktop';
   const [termId, setTermId] = useState<string | null>(bindTermId ?? null);
   const [sessionId, setSessionId] = useState<string | null>(resumeSessionId ?? null);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
@@ -1776,10 +1778,11 @@ function ChatPaneImpl({
         position: 'relative',
       }}
     >
-      {/* Header */}
+      {/* Header — hidden on touch screens: room for the conversation, and its
+          tiny model badge is out of finger reach (/model still works). */}
       <div
         style={{
-          display: 'flex',
+          display: isTouch ? 'none' : 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '6px 12px',
@@ -2377,6 +2380,16 @@ function ChatInput({
   /** Remote devices only: files pasted, dropped or picked (paperclip). */
   onFiles?: (files: File[]) => void;
 }): React.JSX.Element {
+  // Touch screens (phone / tablet): one growing line, 16px text (no iOS
+  // zoom), round 44px buttons, Return = new line, send with the button.
+  const touch = useFormFactor() !== 'desktop';
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!touch || !ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(ta.scrollHeight, TOUCH_COMPOSER_MAX_PX)}px`;
+  }, [input, touch]);
   const [selectedIdx, setSelectedIdx] = useState(0);
 
   // Shell-style history navigation. Up arrow when caret is on the
@@ -2555,12 +2568,13 @@ function ChatInput({
           // by the resize handle in its bottom-right corner) wins over flex
           // stretch — without this the textarea's height was dictated by
           // the parent BottomPanel and the resize handle was a no-op.
-          alignItems: 'flex-start',
+          alignItems: touch ? 'flex-end' : 'flex-start',
           gap: 8,
           flexShrink: 0,
         }}
       >
         <textarea
+          ref={textareaRef}
           value={input}
           onDragOver={onFiles ? (e) => e.preventDefault() : undefined}
           onDrop={
@@ -2647,7 +2661,7 @@ function ChatInput({
               }
               return;
             }
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !touch) {
               e.preventDefault();
               sendAndArchive();
             }
@@ -2655,21 +2669,26 @@ function ChatInput({
           placeholder={
             spawning
               ? 'Spawning claude…'
-              : "Écrire à l'agent…  (⏎ envoyer · ⇧⏎ nouvelle ligne · ↑/↓ historique · / commandes)"
+              : touch
+                ? "Écrire à l'agent…"
+                : "Écrire à l'agent…  (⏎ envoyer · ⇧⏎ nouvelle ligne · ↑/↓ historique · / commandes)"
           }
           disabled={spawning}
-          rows={6}
+          rows={touch ? 1 : 6}
           style={{
             flex: 1,
-            resize: 'vertical',
-            minHeight: '6.5em',
-            padding: '10px',
+            resize: touch ? 'none' : 'vertical',
+            minHeight: touch ? 44 : '6.5em',
+            maxHeight: touch ? TOUCH_COMPOSER_MAX_PX : undefined,
+            overflowY: touch ? 'auto' : undefined,
+            borderRadius: touch ? 22 : undefined,
+            padding: touch ? '10px 14px' : '10px',
             background: 'var(--color-bg)',
             color: 'var(--color-text)',
             border: '2px solid var(--color-border)',
             outline: 'none',
             fontFamily: 'var(--font-pixel)',
-            fontSize: '0.875rem',
+            fontSize: touch ? 16 : '0.875rem',
             lineHeight: 1.5,
           }}
         />
@@ -2684,7 +2703,9 @@ function ChatInput({
               alignItems: 'center',
               justifyContent: 'center',
               border: '2px solid var(--color-border)',
+              borderRadius: touch ? 22 : undefined,
               cursor: 'pointer',
+              flexShrink: 0,
             }}
           >
             <Paperclip size="1.2em" strokeWidth={2} aria-hidden />
@@ -2705,8 +2726,14 @@ function ChatInput({
           onClick={sendAndArchive}
           disabled={!canSend || !input.trim()}
           title={busy ? 'Send (queues — claude is still on previous turn)' : 'Send (⏎)'}
+          aria-label="Envoyer"
           style={{
-            padding: '4px 16px',
+            padding: touch ? 0 : '4px 16px',
+            minWidth: touch ? 44 : undefined,
+            minHeight: touch ? 44 : undefined,
+            borderRadius: touch ? 22 : undefined,
+            justifyContent: 'center',
+            flexShrink: 0,
             background: canSend && input.trim() ? 'var(--color-accent)' : 'transparent',
             color: canSend && input.trim() ? 'var(--color-on-accent)' : 'inherit',
             border: '2px solid var(--color-border)',
@@ -2720,8 +2747,8 @@ function ChatInput({
             gap: 6,
           }}
         >
-          <SendHorizontal size="1.1em" strokeWidth={2} aria-hidden />
-          {input.trim() && busy ? 'Queue' : 'Send'}
+          <SendHorizontal size={touch ? '1.3em' : '1.1em'} strokeWidth={2} aria-hidden />
+          {!touch && (input.trim() && busy ? 'Queue' : 'Send')}
         </button>
         {busy && (
           <button
@@ -2730,6 +2757,9 @@ function ChatInput({
             title="Stop the current turn (Ctrl+C)"
             style={{
               padding: '4px 12px',
+              minHeight: touch ? 44 : undefined,
+              borderRadius: touch ? 22 : undefined,
+              flexShrink: 0,
               background: 'var(--color-danger)',
               color: 'var(--color-on-accent)',
               border: '2px solid var(--color-border)',
@@ -2742,7 +2772,7 @@ function ChatInput({
             ⏹ Stop
           </button>
         )}
-        <MicButton disabled={spawning} />
+        {!touch && <MicButton disabled={spawning} />}
       </div>
     </div>
   );
@@ -4057,6 +4087,7 @@ function ToolBubbleImpl({
     >
       <button
         type="button"
+        className="dt-tool-head"
         onClick={() => setExpanded((v) => !v)}
         title={isResult ? '' : expanded ? 'Click to collapse' : 'Click to expand input'}
         disabled={isResult}

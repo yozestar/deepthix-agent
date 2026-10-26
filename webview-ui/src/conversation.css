@@ -908,3 +908,49 @@
   width: 100%;
   min-height: 52px;
 }
+
+/* ── Touch layout (html.touch-layout, set by useTouchViewport) ─────────────
+   iOS turns the first tap into a "hover" when it reveals hidden controls,
+   so nothing may depend on :hover here: hidden-on-hover controls are either
+   shown for good or removed. Targets are at least 44px (Apple guideline). */
+html.touch-layout .dt-conv-kbd,
+html.touch-layout .dt-conv-remove,
+html.touch-layout .dt-bubble .dt-bubble-actions {
+  display: none !important;
+}
+html.touch-layout .dt-tab-close {
+  opacity: 1;
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+}
+html.touch-layout .dt-tab-avatar {
+  opacity: 1;
+}
+html.touch-layout .dt-tabs-btn {
+  min-height: 44px;
+  min-width: 44px;
+  justify-content: center;
+}
+html.touch-layout .dt-conv-iconbtn {
+  min-width: 44px;
+  min-height: 44px;
+}
+html.touch-layout .dt-conv-search {
+  min-height: 44px;
+}
+html.touch-layout .dt-conv-search input {
+  font-size: 16px;
+}
+html.touch-layout .dt-tool-head {
+  /* Inline `all: unset` on the button: !important is the only way in. */
+  min-height: 44px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+html.touch-layout .dt-conv-link {
+  min-height: 44px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+}

@@ -102,8 +102,9 @@ export function TopTabs({
         fontFamily: 'var(--font-pixel)',
         flexShrink: 0,
         minHeight: '44px',
-        // Touch: tabs move to their own full-width row below.
-        flexWrap: touch ? 'wrap' : undefined,
+        // Tablet: tabs move to their own full-width row below. Phone keeps a
+        // single compact row (only 3 tabs).
+        flexWrap: formFactor === 'tablet' ? 'wrap' : undefined,
         rowGap: touch ? '4px' : undefined,
       }}
     >
@@ -138,8 +139,9 @@ export function TopTabs({
           padding: '4px 8px',
           fontSize: '0.9375rem',
           letterSpacing: '0.04em',
-          maxWidth: touch ? '30%' : '40%',
+          maxWidth: formFactor === 'phone' ? undefined : touch ? '30%' : '40%',
           minWidth: touch ? 0 : '120px',
+          flex: formFactor === 'phone' ? 1 : undefined,
           flexShrink: 0,
           overflow: 'hidden',
           whiteSpace: 'nowrap',
@@ -174,7 +176,7 @@ export function TopTabs({
           minWidth: 0,
           overflowX: 'auto',
           scrollbarWidth: 'none',
-          ...(touch ? { order: 3, width: '100%', justifyContent: 'space-between' } : {}),
+          ...(formFactor === 'tablet' ? { order: 3, width: '100%', justifyContent: 'space-between' } : {}),
         }}
       >
         {modes.map((m) => {

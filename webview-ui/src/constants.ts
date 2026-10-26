@@ -256,3 +256,5 @@ export const TABLET_MAX_WIDTH_PX = 1100;
 
 /** How often a paused chat tab checks whether its session woke up elsewhere. */
 export const CHAT_LIVE_POLL_MS = 3000;
+/** Touch composer grows with the text up to ~5 lines, then scrolls. */
+export const TOUCH_COMPOSER_MAX_PX = 140;
