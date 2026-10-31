@@ -258,3 +258,7 @@ export const TABLET_MAX_WIDTH_PX = 1100;
 export const CHAT_LIVE_POLL_MS = 3000;
 /** Touch composer grows with the text up to ~5 lines, then scrolls. */
 export const TOUCH_COMPOSER_MAX_PX = 140;
+/** Remote devices: background polls run this many times less often. */
+export const REMOTE_POLL_FACTOR = 4;
+/** Remote devices: a list re-read within this delay is served from memory. */
+export const REMOTE_READ_CACHE_MS = 30_000;

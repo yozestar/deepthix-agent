@@ -12,6 +12,7 @@ import { listen as tauriListen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   REMOTE_BACKOFF_MS,
   REMOTE_OFFLINE_TIMEOUT_MS,
+  REMOTE_READ_CACHE_MS,
   REMOTE_TOKEN_STORAGE_KEY,
 } from '../constants';
 import { isRemoteRuntime } from '../runtime';
@@ -53,6 +54,8 @@ export interface RemoteClientOptions {
   deviceName: string;
   backoffMs?: readonly number[];
   offlineTimeoutMs?: number;
+  /** Clock for the read cache (tests). */
+  now?: () => number;
 }
 
 export interface RemoteClient {
@@ -107,6 +110,50 @@ const PC_OWNED_COMMANDS = new Set([
   'kill_terminal',
 ]);
 
+/**
+ * Lists re-read on every (re)mount: served from memory when younger than
+ * REMOTE_READ_CACHE_MS (then refreshed in the background), so coming back
+ * to the app or switching project does not wait on a round trip each.
+ * Conversation histories are deliberately NOT here (must never be stale).
+ */
+const CACHEABLE_READS = new Set([
+  'list_projects',
+  'load_sessions',
+  'load_closed_sessions',
+  'session_previews',
+  'read_global_config',
+  'list_recent_notifications',
+  'read_claude_usage',
+  'read_claude_subscription',
+  'read_claude_usage_limits',
+  'read_claude_usage_snapshot',
+]);
+
+/** Commands that only read: identical concurrent calls are merged, and they
+ *  leave the read cache alone. Anything else counts as a write. */
+const READ_PREFIXES = [
+  'read_',
+  'list_',
+  'load_',
+  'search_',
+  'session_previews',
+  'jsonl_mtime_ms',
+  'chat_live_term',
+  'chat_load_history',
+  'file_kind',
+  'file_size',
+  'home_dir',
+  'dashboard_path',
+  'dashboard_mtime_ms',
+  'variables_path',
+  'workflows_path',
+  'coach_workspace_path',
+];
+
+function isReadCommand(cmd: string): boolean {
+  return READ_PREFIXES.some((p) => cmd.startsWith(p));
+}
+
 /** Reasons after which the device must not silently reconnect. */
 const TERMINAL_REASONS = new Set(['revoked', 'unknown device', 'pairing denied']);
 const OPEN = 1;
@@ -114,6 +161,9 @@ const OPEN = 1;
 export function createRemoteClient(opts: RemoteClientOptions): RemoteClient {
   const backoff = opts.backoffMs ?? REMOTE_BACKOFF_MS;
   const offlineTimeout = opts.offlineTimeoutMs ?? REMOTE_OFFLINE_TIMEOUT_MS;
+  const now = opts.now ?? Date.now;
+  const readCache = new Map<string, { value: unknown; at: number }>();
+  const readsInFlight = new Map<string, Promise<unknown>>();
   let ws: SocketLike | null = null;
   let current: RemoteState = { status: 'connecting' };
   let nextId = 1;
@@ -226,26 +276,52 @@ export function createRemoteClient(opts: RemoteClientOptions): RemoteClient {
     };
   }
 
+  function sendInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const id = nextId++;
+      const pending: Pending = { resolve: resolve as (v: unknown) => void, reject };
+      if (current.status === 'ready' && ws && ws.readyState === OPEN) {
+        inFlight.set(id, pending);
+        send({ t: 'invoke', id, cmd, args });
+        return;
+      }
+      const timer = setTimeout(() => {
+        const i = queue.findIndex((q) => q.id === id);
+        if (i >= 0) queue.splice(i, 1);
+        reject(new Error(`offline: ${cmd}`));
+      }, offlineTimeout);
+      queue.push({ ...pending, id, cmd, args, timer });
+    });
+  }
+
   connect();
 
   return {
     invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
       if (PC_OWNED_COMMANDS.has(cmd)) return Promise.resolve(null as T);
-      return new Promise<T>((resolve, reject) => {
-        const id = nextId++;
-        const pending: Pending = { resolve: resolve as (v: unknown) => void, reject };
-        if (current.status === 'ready' && ws && ws.readyState === OPEN) {
-          inFlight.set(id, pending);
-          send({ t: 'invoke', id, cmd, args });
-          return;
-        }
-        const timer = setTimeout(() => {
-          const i = queue.findIndex((q) => q.id === id);
-          if (i >= 0) queue.splice(i, 1);
-          reject(new Error(`offline: ${cmd}`));
-        }, offlineTimeout);
-        queue.push({ ...pending, id, cmd, args, timer });
-      });
+      if (!isReadCommand(cmd)) {
+        readCache.clear();
+        return sendInvoke<T>(cmd, args);
+      }
+      const key = `${cmd}:${JSON.stringify(args)}`;
+      const fetchRead = (): Promise<T> => {
+        const running = readsInFlight.get(key);
+        if (running) return running as Promise<T>;
+        const p = sendInvoke<T>(cmd, args)
+          .then((value) => {
+            if (CACHEABLE_READS.has(cmd)) readCache.set(key, { value, at: now() });
+            return value;
+          })
+          .finally(() => readsInFlight.delete(key));
+        readsInFlight.set(key, p);
+        return p;
+      };
+      const hit = CACHEABLE_READS.has(cmd) ? readCache.get(key) : undefined;
+      if (hit && now() - hit.at < REMOTE_READ_CACHE_MS) {
+        fetchRead().catch(() => {});
+        return Promise.resolve(hit.value as T);
+      }
+      return fetchRead();
     },
     async listen<T>(event: string, handler: (e: RemoteEvent<T>) => void): Promise<UnlistenFn> {
       const h = handler as (e: RemoteEvent<unknown>) => void;

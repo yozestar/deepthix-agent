@@ -238,3 +238,72 @@ test('resync bye reconnects', async () => {
   assert.equal(sockets.length, 2);
   assert.notEqual(client.state().status, 'denied');
 });
+
+// ── Read cache (remote): instant lists after a reconnect ────────────────
+
+function clock() {
+  let t = 1_000_000;
+  return { now: () => t, advance: (ms: number) => (t += ms) };
+}
+
+test('identical reads in flight are sent once', async () => {
+  const { client, ws } = setup();
+  await ready(ws);
+  const a = client.invoke('list_projects');
+  const b = client.invoke('list_projects');
+  assert.equal(ws().sent.filter((m) => m.cmd === 'list_projects').length, 1);
+  ws().emit({ t: 'result', id: ws().sent[1].id, ok: ['p1'] });
+  assert.deepEqual(await a, ['p1']);
+  assert.deepEqual(await b, ['p1']);
+});
+
+test('a fresh cached list is served at once and refreshed in the background', async () => {
+  const c = clock();
+  const { client, ws } = setup({ now: c.now });
+  await ready(ws);
+  const first = client.invoke('load_sessions', { projectId: 'x' });
+  ws().emit({ t: 'result', id: ws().sent[1].id, ok: ['s1'] });
+  await first;
+  c.advance(5_000);
+  const second = await client.invoke('load_sessions', { projectId: 'x' });
+  assert.deepEqual(second, ['s1'], 'served from cache');
+  assert.equal(ws().sent.length, 3, 'a background refresh went out');
+});
+
+test('a cached list older than the freshness window goes to the agent', async () => {
+  const c = clock();
+  const { client, ws } = setup({ now: c.now });
+  await ready(ws);
+  const first = client.invoke('list_projects');
+  ws().emit({ t: 'result', id: ws().sent[1].id, ok: ['old'] });
+  await first;
+  c.advance(31_000);
+  const p = client.invoke('list_projects');
+  ws().emit({ t: 'result', id: ws().sent[2].id, ok: ['new'] });
+  assert.deepEqual(await p, ['new']);
+});
+
+test('a write clears the cache', async () => {
+  const c = clock();
+  const { client, ws } = setup({ now: c.now });
+  await ready(ws);
+  const first = client.invoke('list_projects');
+  ws().emit({ t: 'result', id: ws().sent[1].id, ok: ['before'] });
+  await first;
+  void client.invoke('rename_project', { id: 'p', name: 'n' });
+  const p = client.invoke('list_projects');
+  const req = ws().sent.filter((m) => m.cmd === 'list_projects').pop()!;
+  ws().emit({ t: 'result', id: req.id, ok: ['after'] });
+  assert.deepEqual(await p, ['after'], 'not the stale cached list');
+});
+
+test('a conversation history is never served from cache', async () => {
+  const c = clock();
+  const { client, ws } = setup({ now: c.now });
+  await ready(ws);
+  const first = client.invoke('chat_load_history', { projectCwd: 'c', sessionId: 's' });
+  ws().emit({ t: 'result', id: ws().sent[1].id, ok: ['l1'] });
+  await first;
+  void client.invoke('chat_load_history', { projectCwd: 'c', sessionId: 's' });
+  assert.equal(ws().sent.filter((m) => m.cmd === 'chat_load_history').length, 2);
+});

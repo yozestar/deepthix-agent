@@ -26,6 +26,7 @@ import {
   type TurnInfo,
 } from '../conversationUtils';
 import { useFormFactor } from '../hooks/useFormFactor';
+import { startPolling } from '../remote/polling';
 import { uploadToChat } from "../remote/upload";
 import { isRemoteRuntime } from "../runtime";
 import {
@@ -998,10 +999,10 @@ function ChatPaneImpl({
         .catch((e: unknown) => console.warn('[Elyone][ChatPane] live term lookup failed', e));
     };
     probe();
-    const timer = window.setInterval(probe, CHAT_LIVE_POLL_MS);
+    const stopPolling = startPolling(probe, CHAT_LIVE_POLL_MS);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      stopPolling();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

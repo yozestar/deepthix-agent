@@ -22,6 +22,7 @@ import {
 import { avatarColor, formatWhen, initials, matches, splitOnMatch } from '../conversationUtils';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { TerminalEntry } from '../hooks/useTerminals';
+import { startPolling } from '../remote/polling';
 import {
   type ConversationHit,
   searchConversations,
@@ -149,10 +150,10 @@ export function ConversationSidebar({
       }
     };
     void probe();
-    const iv = setInterval(() => void probe(), SIDEBAR_PREVIEW_POLL_MS);
+    const stopPolling = startPolling(() => void probe(), SIDEBAR_PREVIEW_POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(iv);
+      stopPolling();
     };
   }, [probeKey]);
 

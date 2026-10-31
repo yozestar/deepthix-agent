@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { startPolling } from '../remote/polling';
 import {
   chatKill as cmdChatKill,
   chatSpawn as cmdChatSpawn,
@@ -217,10 +218,10 @@ export function useTerminals(): UseTerminalsResult {
       );
     };
     void tick();
-    const id = setInterval(() => void tick(), 2000);
+    const stopPolling = startPolling(() => void tick(), 2000);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      stopPolling();
     };
   }, []);
 

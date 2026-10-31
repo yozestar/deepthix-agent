@@ -19,6 +19,7 @@ import { avatarColor, formatWhen, initials, matches } from '../conversationUtils
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import { useFormFactor } from '../hooks/useFormFactor';
 import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
+import { startPolling } from '../remote/polling';
 import {
   listResumableSessions,
   type ResumableSession,
@@ -111,10 +112,10 @@ export function SessionTabs({
       }
     };
     void probe();
-    const iv = setInterval(() => void probe(), TAB_ORDER_POLL_MS);
+    const stopPolling = startPolling(() => void probe(), TAB_ORDER_POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(iv);
+      stopPolling();
     };
   }, [probeKey]);
 
