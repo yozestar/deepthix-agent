@@ -15,7 +15,7 @@ import { ChevronDown, FolderInput, History, Plus, SquareTerminal, X } from 'luci
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { TAB_ORDER_POLL_MS } from '../constants';
-import { avatarColor, formatWhen, initials, matches } from '../conversationUtils';
+import { avatarColor, formatWhen, initials, matches, tabOrderKey } from '../conversationUtils';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import { useFormFactor } from '../hooks/useFormFactor';
 import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
@@ -143,15 +143,12 @@ export function SessionTabs({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [terminals]);
 
-  // Most recent message first. A conversation with no transcript yet was
-  // just created → newest of all. Shells (no transcript) go last. Ties keep
-  // the existing order (Array.prototype.sort is stable).
+  // Most recent message first (see tabOrderKey: a just-launched session
+  // leads, a paused tab whose transcript is gone trails, shells last). Ties
+  // keep the existing order (Array.prototype.sort is stable).
   const ordered = useMemo(() => {
-    const key = (t: TerminalEntry): number => {
-      if (t.kind !== 'claude' || !t.sessionId) return -1;
-      const m = previews.get(t.sessionId)?.mtime_ms ?? 0;
-      return m > 0 ? m : Number.MAX_SAFE_INTEGER;
-    };
+    const key = (t: TerminalEntry): number =>
+      tabOrderKey(t, t.sessionId ? previews.get(t.sessionId)?.mtime_ms : undefined);
     return [...visible].sort((x, y) => key(y) - key(x));
   }, [visible, previews]);
 

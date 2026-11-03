@@ -157,3 +157,18 @@ export function splitOnMatch(text: string, query: string): [string, string, stri
   }
   return null;
 }
+
+/**
+ * Tab order key (higher = further left): last message date. No transcript
+ * found means either a session just launched (live `chat-…` tab, its file
+ * does not exist yet → first) or a paused tab whose transcript is gone
+ * (`ghost:…`, e.g. not carried over by a migration → last). Shells last.
+ */
+export function tabOrderKey(
+  tab: { id: string; kind: string; sessionId?: string | null },
+  lastMessageMs: number | undefined,
+): number {
+  if (tab.kind !== 'claude' || !tab.sessionId) return -1;
+  if (lastMessageMs && lastMessageMs > 0) return lastMessageMs;
+  return tab.id.startsWith('ghost:') ? 0 : Number.MAX_SAFE_INTEGER;
+}
