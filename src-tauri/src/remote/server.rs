@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
+use axum::Extension;
 use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -68,7 +69,15 @@ pub struct Hub {
     events: broadcast::Sender<ServerMsg>,
     jwks: Mutex<Option<(JwkSet, Instant)>>,
     shutdown: Mutex<Option<oneshot::Sender<()>>>,
+    tailnet_shutdown: Mutex<Option<oneshot::Sender<()>>>,
 }
+
+/// Marks requests that came in through the tailnet listener: only
+/// `tailscale serve` forwards there, so Tailscale has already restricted the
+/// caller to the owner's own devices and Cloudflare Access does not apply.
+/// The device token is still required.
+#[derive(Clone, Copy)]
+struct TailnetListener;
 
 fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
@@ -98,6 +107,7 @@ impl Hub {
             events: broadcast::channel(events).0,
             jwks: Mutex::new(None),
             shutdown: Mutex::new(None),
+            tailnet_shutdown: Mutex::new(None),
         });
         if hub.config().vapid_private_key.is_empty() {
             let key = p256::SecretKey::random(&mut rand::rngs::OsRng);
@@ -260,14 +270,35 @@ impl Hub {
 
     /// Binds `127.0.0.1:port` (0 = ephemeral) and serves until [`Hub::stop`].
     pub async fn start(self: &Arc<Self>, port: u16) -> std::io::Result<SocketAddr> {
-        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
-        let addr = listener.local_addr()?;
         let (tx, rx) = oneshot::channel::<()>();
+        let addr = self.serve_on(port, self.router(), rx).await?;
         *self.shutdown.lock().unwrap() = Some(tx);
-        let app = Router::new()
+        tracing::info!(target: "deepthix::remote", %addr, "remote server listening");
+        Ok(addr)
+    }
+
+    /// Second loopback listener for `tailscale serve` (Mac client app, other
+    /// devices on the owner's tailnet). Same server, minus the Cloudflare
+    /// Access check — see [`TailnetListener`]. Stopped by [`Hub::stop`].
+    pub async fn start_tailnet(self: &Arc<Self>, port: u16) -> std::io::Result<SocketAddr> {
+        let (tx, rx) = oneshot::channel::<()>();
+        let app = self.router().layer(Extension(TailnetListener));
+        let addr = self.serve_on(port, app, rx).await?;
+        *self.tailnet_shutdown.lock().unwrap() = Some(tx);
+        tracing::info!(target: "deepthix::remote", %addr, "tailnet listener listening");
+        Ok(addr)
+    }
+
+    fn router(self: &Arc<Self>) -> Router {
+        Router::new()
             .route("/ws", get(ws_handler))
             .fallback(get(asset_handler))
-            .with_state(self.clone());
+            .with_state(self.clone())
+    }
+
+    async fn serve_on(&self, port: u16, app: Router, rx: oneshot::Receiver<()>) -> std::io::Result<SocketAddr> {
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
+        let addr = listener.local_addr()?;
         tokio::spawn(async move {
             let served = axum::serve(listener, app)
                 .with_graceful_shutdown(async {
@@ -278,7 +309,6 @@ impl Hub {
                 tracing::warn!(target: "deepthix::remote", error = %e, "server stopped with error");
             }
         });
-        tracing::info!(target: "deepthix::remote", %addr, "remote server listening");
         Ok(addr)
     }
 
@@ -287,8 +317,10 @@ impl Hub {
         for conn in self.conns.lock().unwrap().values() {
             let _ = conn.tx.send(ServerMsg::Bye { reason: reason.to_string() });
         }
-        if let Some(tx) = self.shutdown.lock().unwrap().take() {
-            let _ = tx.send(());
+        for shutdown in [&self.shutdown, &self.tailnet_shutdown] {
+            if let Some(tx) = shutdown.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
         }
         tracing::info!(target: "deepthix::remote", reason, "remote server stopped");
     }
@@ -371,8 +403,14 @@ async fn fetch_jwks(team_domain: &str) -> Result<JwkSet, String> {
         .map_err(|e| format!("jwks parse failed: {e}"))
 }
 
-async fn ws_handler(State(hub): State<Arc<Hub>>, headers: HeaderMap, ws: WebSocketUpgrade) -> Response {
-    if let Err(e) = hub.check_cf_access(&headers).await {
+async fn ws_handler(
+    State(hub): State<Arc<Hub>>,
+    tailnet: Option<Extension<TailnetListener>>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Response {
+    let checked = if tailnet.is_some() { Ok(()) } else { hub.check_cf_access(&headers).await };
+    if let Err(e) = checked {
         tracing::warn!(target: "deepthix::remote", error = %e, "websocket refused");
         return StatusCode::UNAUTHORIZED.into_response();
     }
@@ -838,6 +876,22 @@ mod tests {
         assert_eq!(recv(&mut c).await.unwrap()["t"], "bye");
         assert!(!hub.config().enabled);
         assert!(!RemoteConfig::load(&path).enabled);
+    }
+
+    #[tokio::test]
+    async fn tailnet_listener_skips_cf_access_but_needs_a_token() {
+        let backend = Arc::new(FakeBackend::default());
+        let hub = Hub::new(cf_cfg(), None, backend);
+        let cf_addr = hub.start(0).await.unwrap();
+        let tailnet_addr = hub.start_tailnet(0).await.unwrap();
+        assert!(tailnet_addr.ip().is_loopback());
+        assert!(connect(cf_addr, None).await.is_err(), "cloudflare listener still demands a jwt");
+        let mut c = ready_client(tailnet_addr, "tok").await;
+        let mut bad = connect(tailnet_addr, None).await.unwrap();
+        send(&mut bad, json!({"t":"hello","token":"wrong"})).await;
+        assert_eq!(recv(&mut bad).await.unwrap()["t"], "bye");
+        hub.stop("test");
+        assert_eq!(recv(&mut c).await.unwrap()["t"], "bye");
     }
 
     #[tokio::test]

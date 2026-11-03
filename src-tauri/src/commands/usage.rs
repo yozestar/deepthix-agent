@@ -16,30 +16,13 @@ use std::sync::Mutex;
 use chrono::{Local, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
-/// Public Claude Code OAuth client id — same value used by every
-/// open-source claude-usage clone. Extracted from claude code's CLI
-/// (it's a public client identifier — refresh still requires the
-/// matching refresh_token).
-const CLAUDE_CODE_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-
 /// In-process cache of the access token. Avoids hammering the keychain
-/// (which can prompt) and lets us hold a refreshed token without
-/// rewriting the system credential store.
+/// (which can prompt) or the credentials file on every poll.
 static TOKEN_CACHE: Mutex<Option<CachedToken>> = Mutex::new(None);
-
-/// Backoff tracker for the refresh endpoint. Anthropic rate-limits
-/// /v1/oauth/token aggressively (verified: a handful of refresh
-/// attempts in a minute earn a 429 that lasts >10 minutes). We cache
-/// the last failure so we don't keep poking and extending the cooldown.
-static REFRESH_BACKOFF_UNTIL_MS: Mutex<u64> = Mutex::new(0);
-
-/// How long to wait after a 429 before re-attempting refresh.
-const REFRESH_BACKOFF_MS: u64 = 15 * 60 * 1000; // 15 minutes
 
 #[derive(Clone)]
 struct CachedToken {
     access_token: String,
-    refresh_token: String,
     /// epoch ms — same convention as the keychain payload.
     expires_at_ms: u64,
 }
@@ -420,8 +403,9 @@ fn bucket_from_value(v: &serde_json::Value) -> Option<UsageBucket> {
     })
 }
 
-/// Read access + refresh + expiry from the keychain payload. None if
+/// Read access token + expiry from the keychain payload. None if
 /// not signed in.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn read_keychain_tokens() -> Option<CachedToken> {
     let output = Command::new("security")
         .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
@@ -436,6 +420,7 @@ fn read_keychain_tokens() -> Option<CachedToken> {
 
 /// Windows / Linux: Claude Code keeps the same OAuth blob in
 /// `~/.claude/.credentials.json` instead of the macOS Keychain.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn read_credentials_file() -> Option<CachedToken> {
     let path = dirs::home_dir()?.join(".claude").join(".credentials.json");
     let raw = std::fs::read_to_string(path).ok()?;
@@ -466,11 +451,6 @@ fn parse_oauth_blob(raw: &str) -> Option<CachedToken> {
     let oauth = parsed.get("claudeAiOauth")?;
     Some(CachedToken {
         access_token: oauth.get("accessToken")?.as_str()?.to_string(),
-        refresh_token: oauth
-            .get("refreshToken")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
         expires_at_ms: oauth
             .get("expiresAt")
             .and_then(|v| v.as_u64())
@@ -478,84 +458,19 @@ fn parse_oauth_blob(raw: &str) -> Option<CachedToken> {
     })
 }
 
-/// Hit the OAuth token endpoint with the refresh token to get a fresh
-/// access token. Returns the new {access, refresh, expires_at} on
-/// success; the response includes a rotated refresh token that we
-/// stash in the cache for next time.
-fn refresh_access_token(refresh_token: &str) -> Result<CachedToken, String> {
-    if refresh_token.is_empty() {
-        return Err("no refresh_token available".to_string());
-    }
-
-    // Honor the backoff window so a 429 doesn't get re-amplified by
-    // the UsagePane's polling loop.
-    let now = now_ms();
-    let backoff_until = *REFRESH_BACKOFF_UNTIL_MS.lock().unwrap();
-    if now < backoff_until {
-        let wait_min = (backoff_until - now) / 60_000;
-        return Err(format!(
-            "refresh in cooldown ({wait_min} min remaining after recent 429)"
-        ));
-    }
-
-    let body = serde_json::json!({
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token,
-        "client_id": CLAUDE_CODE_CLIENT_ID,
-    })
-    .to_string();
-
-    let (status_num, resp_body) = https_request(
-        reqwest::Method::POST,
-        "https://console.anthropic.com/v1/oauth/token",
-        &[],
-        Some(body),
-    )?;
-    let status = status_num.to_string();
-    if !(200..300).contains(&status_num) {
-        // 429 → arm the backoff so we stop hammering and let the bucket
-        // recover. Anything else (4xx auth, 5xx server) we still log
-        // but don't backoff — an invalid refresh_token won't fix itself
-        // by waiting.
-        if status_num == 429 {
-            *REFRESH_BACKOFF_UNTIL_MS.lock().unwrap() = now_ms() + REFRESH_BACKOFF_MS;
-            tracing::warn!(
-                target: "deepthix::commands",
-                "refresh 429 — backing off for {} min",
-                REFRESH_BACKOFF_MS / 60_000,
-            );
-        }
-        return Err(format!("refresh HTTP {status} — {}", resp_body.chars().take(200).collect::<String>()));
-    }
-
-    #[derive(Deserialize)]
-    struct RefreshResponse {
-        access_token: String,
-        #[serde(default)]
-        refresh_token: Option<String>,
-        #[serde(default)]
-        expires_in: Option<u64>,
-    }
-    let parsed: RefreshResponse = serde_json::from_str(&resp_body)
-        .map_err(|e| format!("parse refresh response: {e} (body={resp_body})"))?;
-    let expires_at_ms =
-        now_ms() + parsed.expires_in.unwrap_or(3600).saturating_mul(1000);
-    Ok(CachedToken {
-        access_token: parsed.access_token,
-        // Refresh tokens may rotate; keep the new one if returned, else
-        // re-use the existing one for the next refresh.
-        refresh_token: parsed.refresh_token.unwrap_or_else(|| refresh_token.to_string()),
-        expires_at_ms,
-    })
-}
-
 /// Get a valid (non-expired) access token. Tries in order:
 ///   1. RAM cache, if not expired.
-///   2. Keychain, if not expired (and update RAM cache).
-///   3. Refresh via the keychain's refresh_token; cache result.
+///   2. Claude Code's credential store (macOS Keychain, or
+///      `~/.claude/.credentials.json` elsewhere), if not expired.
+///
+/// NEVER refresh from here: the OAuth refresh rotates the refresh token,
+/// which invalidates the one Claude Code keeps in its credential store and
+/// logs the CLI out (on macOS this signed the user out several times a
+/// day). Claude Code refreshes the store itself whenever it runs, so an
+/// expired token just means "no reading until the next refresh".
 ///
 /// We treat tokens as expired 60s BEFORE their stated expiry to avoid
-/// the boundary case where claude rotates the keychain entry between
+/// the boundary case where claude rotates the credentials between
 /// our read and the API call.
 fn current_access_token() -> Result<String, String> {
     let cushion_ms: u64 = 60_000;
@@ -567,50 +482,18 @@ fn current_access_token() -> Result<String, String> {
         }
     }
 
-    // Windows / Linux: read Claude Code's credentials file. NEVER refresh
-    // from here: the OAuth refresh rotates the refresh token, which would
-    // invalidate the one Claude Code keeps in that file and log the CLI
-    // out. Claude Code refreshes the file itself whenever it runs, so an
-    // expired token just means "no reading until the next refresh".
+    #[cfg(target_os = "macos")]
+    let stored = read_keychain_tokens().ok_or_else(|| "no claude credentials in keychain".to_string())?;
     #[cfg(not(target_os = "macos"))]
-    {
-        let file = read_credentials_file()
-            .ok_or_else(|| "no claude credentials in ~/.claude/.credentials.json".to_string())?;
-        if file.expires_at_ms > now + cushion_ms {
-            let token = file.access_token.clone();
-            *TOKEN_CACHE.lock().unwrap() = Some(file);
-            return Ok(token);
-        }
-        return Err("claude oauth token expired — waiting for Claude Code to refresh it".to_string());
-    }
+    let stored = read_credentials_file()
+        .ok_or_else(|| "no claude credentials in ~/.claude/.credentials.json".to_string())?;
 
-    #[allow(unreachable_code)]
-    let keychain = read_keychain_tokens().ok_or_else(|| "no claude credentials in keychain".to_string())?;
-    if keychain.expires_at_ms > now + cushion_ms {
-        // Keychain token is fresh — cache + use it.
-        let token = keychain.access_token.clone();
-        *TOKEN_CACHE.lock().unwrap() = Some(keychain);
+    if stored.expires_at_ms > now + cushion_ms {
+        let token = stored.access_token.clone();
+        *TOKEN_CACHE.lock().unwrap() = Some(stored);
         return Ok(token);
     }
-
-    // Keychain stale → refresh.
-    tracing::info!(
-        target: "deepthix::commands",
-        keychain_age_min = (now.saturating_sub(keychain.expires_at_ms)) / 60_000,
-        "claude oauth token expired; refreshing",
-    );
-    match refresh_access_token(&keychain.refresh_token) {
-        Ok(fresh) => {
-            let token = fresh.access_token.clone();
-            *TOKEN_CACHE.lock().unwrap() = Some(fresh);
-            tracing::info!(target: "deepthix::commands", "claude oauth refresh ok");
-            Ok(token)
-        }
-        Err(e) => {
-            tracing::warn!(target: "deepthix::commands", error = %e, "claude oauth refresh failed");
-            Err(e)
-        }
-    }
+    Err("claude oauth token expired — waiting for Claude Code to refresh it".to_string())
 }
 
 /// HTTPS request done in-process (reqwest, SChannel on Windows).
@@ -686,7 +569,8 @@ fn read_claude_usage_limits_blocking() -> Result<ClaudeUsageLimits, String> {
     };
 
     // 401 → cached token went stale between cache check and fetch (or
-    // anthropic invalidated it). Force a refresh and retry exactly once.
+    // anthropic invalidated it). Drop the cache, re-read the credential
+    // store (Claude Code may have rotated it) and retry exactly once.
     let (status, body) = if status == 401 {
         tracing::info!(target: "deepthix::commands", "usage 401 — invalidating cache + retrying");
         *TOKEN_CACHE.lock().unwrap() = None;
@@ -700,7 +584,7 @@ fn read_claude_usage_limits_blocking() -> Result<ClaudeUsageLimits, String> {
             },
             Err(e) => {
                 return Ok(ClaudeUsageLimits {
-                    error: Some(format!("refresh after 401: {e}")),
+                    error: Some(format!("re-read after 401: {e}")),
                     ..Default::default()
                 });
             }
@@ -927,7 +811,6 @@ mod tests {
         let raw = r#"{"mcpOAuth":{},"claudeAiOauth":{"accessToken":"a","refreshToken":"r","expiresAt":123,"scopes":[]}}"#;
         let t = parse_oauth_blob(raw).expect("parsed");
         assert_eq!(t.access_token, "a");
-        assert_eq!(t.refresh_token, "r");
         assert_eq!(t.expires_at_ms, 123);
         assert!(parse_oauth_blob("{}").is_none());
         assert!(parse_oauth_blob("not json").is_none());

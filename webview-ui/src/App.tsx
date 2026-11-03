@@ -394,11 +394,10 @@ function App(): React.JSX.Element {
               />
             </ModeOverlay>
           )}
-          {mode !== 'sessions' &&
-            mode !== 'overview' &&
-            mode !== 'settings' &&
-            mode !== 'tasks' &&
-            !hasProjects && (
+          {/* No project yet (fresh install): SESSIONS has nothing to mount
+              either, so it gets the Welcome screen too instead of a blank pane.
+              TASKS lists every project's tasks, so it stays reachable. */}
+          {mode !== 'overview' && mode !== 'settings' && mode !== 'tasks' && !hasProjects && (
             <ModeOverlay>
               <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
             </ModeOverlay>

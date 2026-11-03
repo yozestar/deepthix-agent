@@ -37,6 +37,8 @@ import {
 } from '../hooks/useGlobalConfig';
 import { isRemoteRuntime } from '../runtime';
 import {
+  clientModeGet,
+  clientModeSet,
   getAutostart,
   importFromDeepthix,
   type ImportReport,
@@ -465,6 +467,10 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
 
       {/* REMOTE ACCESS section — iPhone / other PCs via Cloudflare Tunnel. */}
       {!isRemoteRuntime && <RemoteAccessSection />}
+
+      {/* REMOTE MAC section — another Mac's agent (over Tailscale) in a
+          second window. */}
+      {!isRemoteRuntime && <ClientModeSection />}
 
       {/* UPDATES section — shows current version + update status, with a
           manual Check button. The UpdaterBanner at the top of the window
@@ -1018,7 +1024,7 @@ function RemoteAccessSection(): React.JSX.Element {
                 .catch((err) => setError(String(err)));
             }}
           />
-          Lancer l&apos;agent à l&apos;ouverture de la session Windows
+          Lancer l&apos;agent à l&apos;ouverture de la session
         </label>
       </Row>
       {status?.enabled && !cfComplete && (
@@ -1080,6 +1086,71 @@ function RemoteAccessSection(): React.JSX.Element {
         >
           Enregistrer
         </button>
+      </Row>
+      {error && (
+        <div style={{ fontSize: '0.8125rem', color: 'var(--color-danger)' }}>Échec : {error}</div>
+      )}
+    </Section>
+  );
+}
+
+/** Another Mac (over Tailscale) whose agent opens in a second window,
+ *  next to this local one. macOS: also in the "Connexion" menu (⇧⌘M). */
+function ClientModeSection(): React.JSX.Element {
+  const [url, setUrl] = useState('');
+  const [saved, setSaved] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    clientModeGet()
+      .then((u) => {
+        setSaved(u);
+        setUrl(u);
+      })
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  const save = async (next: string): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      await clientModeSet(next);
+      const u = await clientModeGet();
+      setSaved(u);
+      setUrl(u);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Section
+      title="MAC DISTANT"
+      subtitle="Ouvrir l'agent d'un autre Mac (via Tailscale) dans une deuxième fenêtre. Cette fenêtre-ci reste ton agent local."
+    >
+      <Row label="Adresse du Mac">
+        <input
+          style={REMOTE_INPUT_STYLE}
+          value={url}
+          placeholder="mac-mini-de-ia.tail47dd5e.ts.net"
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <button
+          type="button"
+          className="dt-btn dt-btn--primary"
+          disabled={busy || url.trim() === ''}
+          onClick={() => void save(url)}
+        >
+          Ouvrir
+        </button>
+        {saved !== '' && (
+          <button type="button" className="dt-btn" disabled={busy} onClick={() => void save('')}>
+            Oublier
+          </button>
+        )}
       </Row>
       {error && (
         <div style={{ fontSize: '0.8125rem', color: 'var(--color-danger)' }}>Échec : {error}</div>

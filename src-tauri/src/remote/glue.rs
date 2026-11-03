@@ -150,12 +150,32 @@ impl RemoteState {
         let mut last_err = String::new();
         for _ in 0..RESTART_ATTEMPTS {
             match self.hub.start(port).await {
-                Ok(_) => return Ok(()),
+                Ok(_) => {
+                    self.start_tailnet_listener().await;
+                    return Ok(());
+                }
                 Err(e) => last_err = e.to_string(),
             }
             tokio::time::sleep(RESTART_DELAY).await;
         }
         Err(format!("cannot listen on 127.0.0.1:{port}: {last_err}"))
+    }
+
+    /// Optional: a failure only costs the tailnet path, Cloudflare keeps working.
+    async fn start_tailnet_listener(&self) {
+        let port = self.hub.config().tailnet_port;
+        if port == 0 {
+            return;
+        }
+        let mut last_err = String::new();
+        for _ in 0..RESTART_ATTEMPTS {
+            match self.hub.start_tailnet(port).await {
+                Ok(_) => return,
+                Err(e) => last_err = e.to_string(),
+            }
+            tokio::time::sleep(RESTART_DELAY).await;
+        }
+        tracing::error!(target: "deepthix::remote", port, error = %last_err, "tailnet listener failed to start");
     }
 
     pub fn status(&self) -> RemoteStatus {
@@ -204,6 +224,7 @@ mod tests {
     fn state_with_file(app: &tauri::App<tauri::test::MockRuntime>, path: &std::path::Path) -> RemoteState {
         let mut cfg = RemoteConfig::default();
         cfg.port = 0;
+        cfg.tailnet_port = 0;
         cfg.save(path).unwrap();
         RemoteState::new(app.handle(), Some(path.to_path_buf()), Box::new(|_, _| {}))
     }

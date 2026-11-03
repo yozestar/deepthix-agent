@@ -1221,3 +1221,15 @@ export async function revealPath(path: string): Promise<void> {
   log('revealPath', { path });
   return await invoke<void>('reveal_path', { path });
 }
+
+/** Remote Mac opened in a second window ('' = none). */
+export async function clientModeGet(): Promise<string> {
+  log('clientModeGet');
+  return await invoke<string>('client_mode_get');
+}
+
+/** Saves the remote Mac and opens its window ('' = forget it). */
+export async function clientModeSet(url: string): Promise<void> {
+  log('clientModeSet', { url });
+  await invoke('client_mode_set', { url });
+}

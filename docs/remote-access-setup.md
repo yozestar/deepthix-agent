@@ -64,7 +64,7 @@ authentification) puis l'appairage de chaque appareil dans l'agent.
    - Domaine d'équipe : `<équipe>.cloudflareaccess.com`
    - AUD de l'application : valeur de l'étape 2.6
    - Email autorisé : `johann@elyone.com` → **Enregistrer**
-   - Cocher **Lancer l'agent à l'ouverture de la session Windows**
+   - Cocher **Lancer l'agent à l'ouverture de la session** (Windows ou macOS)
    - Activer l'accès à distance
 
 ## 4. Vérifications
