@@ -126,8 +126,30 @@ fn project_hash(path: &Path) -> u64 {
 /// Public form of the project-id computation. Same input → same id, so
 /// pty.rs can derive the dashboard path from the spawn cwd without having
 /// to plumb the id through every call site.
+///
+/// The id of a project already in projects.json wins: ids are only hashed
+/// once, when the project is added, so a list moved from another machine
+/// (Windows → Mac) keeps its old ids while the paths changed. Hashing the
+/// new path would give conversations an id no project has (their tasks
+/// and dashboard would land under an unknown project).
 pub fn project_id_for_path(path: &Path) -> String {
-    format!("{:x}", project_hash(path))
+    storage::deepthix_dir()
+        .ok()
+        .and_then(|d| storage::read_json::<ProjectsFile>(&d.join("projects.json")).ok().flatten())
+        .and_then(|f| stored_project_id(&f.projects, path))
+        .unwrap_or_else(|| format!("{:x}", project_hash(path)))
+}
+
+/// The project whose folder is `path`, else the deepest one containing it.
+fn stored_project_id(projects: &[Project], path: &Path) -> Option<String> {
+    if let Some(p) = projects.iter().find(|p| p.path == path) {
+        return Some(p.id.clone());
+    }
+    projects
+        .iter()
+        .filter(|p| !p.path.as_os_str().is_empty() && path.starts_with(&p.path))
+        .max_by_key(|p| p.path.components().count())
+        .map(|p| p.id.clone())
 }
 
 fn now_unix_ms() -> u64 {
@@ -141,6 +163,30 @@ fn now_unix_ms() -> u64 {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    fn proj(id: &str, path: &str) -> Project {
+        Project { id: id.into(), path: PathBuf::from(path), name: id.into(), last_opened_unix_ms: 0 }
+    }
+
+    #[test]
+    fn stored_id_wins_over_the_path_hash() {
+        // Ids hashed on Windows, paths later rewritten for the Mac.
+        let list = vec![proj("b6d2", "/Users/ia/Dev/claude_agent"), proj("9d8d", "/Users/ia/Dev/bee2link")];
+        assert_eq!(stored_project_id(&list, Path::new("/Users/ia/Dev/bee2link")).as_deref(), Some("9d8d"));
+        assert_eq!(
+            stored_project_id(&list, Path::new("/Users/ia/Dev/claude_agent/webview-ui")).as_deref(),
+            Some("b6d2"),
+            "a sub-folder belongs to its project"
+        );
+        assert_eq!(stored_project_id(&list, Path::new("/Users/ia/Dev/claude")), None, "prefix of a name is not a sub-folder");
+        assert_eq!(stored_project_id(&list, Path::new("/tmp/x")), None);
+    }
+
+    #[test]
+    fn deepest_containing_project_wins() {
+        let list = vec![proj("dev", "/Users/ia/Dev"), proj("app", "/Users/ia/Dev/app")];
+        assert_eq!(stored_project_id(&list, Path::new("/Users/ia/Dev/app/src")).as_deref(), Some("app"));
+    }
 
     fn fixture() -> (tempfile::TempDir, AppState) {
         let dir = tempdir().unwrap();
