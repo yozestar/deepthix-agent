@@ -10,6 +10,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { TASKS_FILTER_KEY } from '../constants';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { UseProjectsResult } from '../hooks/useProjects';
 import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
@@ -18,6 +19,7 @@ import {
   ptyWrite,
   readSessionDashboard,
 } from '../tauri/commands';
+import { ProjectTasksPanel } from './ProjectTasksPanel';
 import { StatusDot } from './StatusDot';
 import type { Mode } from './TopTabs';
 
@@ -26,6 +28,8 @@ interface Props {
   projects: UseProjectsResult;
   /** Switch the top mode tab — invoked when the user picks a session card. */
   onChangeMode: (m: Mode) => void;
+  /** Jump to the conversation a task came from. */
+  onOpenConversation: (projectId: string, sessionId: string, label: string) => void;
 }
 
 interface ProjectGroup {
@@ -35,7 +39,12 @@ interface ProjectGroup {
   sessions: TerminalEntry[];
 }
 
-export function OverviewPane({ terminals, projects, onChangeMode }: Props): React.JSX.Element {
+export function OverviewPane({
+  terminals,
+  projects,
+  onChangeMode,
+  onOpenConversation,
+}: Props): React.JSX.Element {
   const agentStatus = useAgentStatus();
 
   // Only show the ACTIVE project's sessions (per user request: clicking
@@ -118,6 +127,18 @@ export function OverviewPane({ terminals, projects, onChangeMode }: Props): Reac
         </div>
       </div>
 
+      {projects.activeProjectId && (
+        <ProjectTasksPanel
+          projectId={projects.activeProjectId}
+          terminals={terminals.terminals}
+          onOpenConversation={onOpenConversation}
+          onOpenTasks={() => {
+            // Same key TasksPane reads: open it filtered on this project.
+            localStorage.setItem(TASKS_FILTER_KEY, projects.activeProjectId ?? '__all__');
+            onChangeMode('tasks');
+          }}
+        />
+      )}
       {totalSessions === 0 ? (
         <div
           style={{

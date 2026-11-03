@@ -1167,6 +1167,8 @@ export interface Task {
   /** Who is waiting on it (client, colleague). */
   waiting_on: string | null;
   session_label: string;
+  /** Claude session id of the conversation it came from. */
+  session_id: string | null;
   source: 'user' | 'agent' | string;
   created_ms: number;
   updated_ms: number;
@@ -1182,6 +1184,7 @@ export interface TaskInput {
   due?: string | null;
   waiting_on?: string | null;
   session_label?: string;
+  session_id?: string | null;
   source?: string;
 }
 

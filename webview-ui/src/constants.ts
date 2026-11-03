@@ -271,3 +271,5 @@ export const TASKS_POLL_MS = 10_000;
 /** Remote "Télécharger": the file travels base64 in one WebSocket message
  *  (64 MB cap server-side), so stay well below. */
 export const REMOTE_DOWNLOAD_MAX_BYTES = 40 * 1_048_576;
+/** localStorage key: project filter of the Tâches tab (ALL = '__all__'). */
+export const TASKS_FILTER_KEY = 'elyone.tasks.filter';

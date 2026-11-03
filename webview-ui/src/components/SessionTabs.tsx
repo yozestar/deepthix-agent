@@ -18,8 +18,10 @@ import { TAB_ORDER_POLL_MS } from '../constants';
 import { avatarColor, formatWhen, initials, matches, tabOrderKey } from '../conversationUtils';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import { useFormFactor } from '../hooks/useFormFactor';
+import { openTasksOf, useTasks } from '../hooks/useTasks';
 import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
 import { startPolling } from '../remote/polling';
+import { urgentCount } from '../tasks';
 import {
   listResumableSessions,
   type ResumableSession,
@@ -72,6 +74,22 @@ export function SessionTabs({
   onMoveToProject,
 }: Props): React.JSX.Element {
   const agentStatus = useAgentStatus();
+  const { tasks } = useTasks();
+  const [mountedAt] = useState(() => Date.now());
+  /** "· 3 à faire" on a conversation tab; red when one is urgent. */
+  const tasksBadge = (t: TerminalEntry): React.JSX.Element | null => {
+    const mine = openTasksOf(tasks, t.sessionId);
+    if (mine.length === 0) return null;
+    const urgent = urgentCount(mine, mountedAt) > 0;
+    return (
+      <span
+        className={`dt-tab-tasks${urgent ? ' is-urgent' : ''}`}
+        title={`${mine.length} chose(s) à faire dans cette conversation${urgent ? ', dont une urgente' : ''}`}
+      >
+        {` · ${mine.length} à faire`}
+      </span>
+    );
+  };
   // Phone (folded / narrow): one "current session ▾" button opening a list
   // instead of a row of tabs that mostly scrolls out of sight.
   const compact = useFormFactor() === 'phone';
@@ -216,6 +234,7 @@ export function SessionTabs({
                       {statusText(current).text}
                     </span>
                     {` · ${ordered.length} session${ordered.length > 1 ? 's' : ''}`}
+                    {tasksBadge(current)}
                   </span>
                 </span>
               </>
@@ -248,6 +267,7 @@ export function SessionTabs({
                         <span className="dt-tab-sub">
                           <span className={st.working ? 'dt-conv-status is-working' : undefined}>{st.text}</span>
                           {when ? ` · ${when}` : ''}
+                          {tasksBadge(t)}
                         </span>
                       </span>
                       <button
@@ -337,6 +357,7 @@ export function SessionTabs({
                 <span className="dt-tab-sub">
                   <span className={st.working ? 'dt-conv-status is-working' : undefined}>{st.text}</span>
                   {when ? ` · ${when}` : ''}
+                  {tasksBadge(t)}
                 </span>
               </span>
               <button

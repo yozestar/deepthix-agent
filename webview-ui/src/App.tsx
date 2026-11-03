@@ -193,6 +193,26 @@ function App(): React.JSX.Element {
     [projects.projects, projects.activeProjectId, projects.switchProject, terminals.open, terminals.setActive],
   );
 
+  // Task → the conversation it came from: same tab if open, else reopened
+  // from the closed list, else opened from its transcript.
+  const onOpenConversation = useCallback(
+    async (projectId: string, sessionId: string, label: string): Promise<void> => {
+      const project = projects.projects.find((p) => p.id === projectId);
+      if (!project) return;
+      if (projectId !== projects.activeProjectId) await projects.switchProject(projectId);
+      setMode('sessions');
+      // Load the project's tabs first, so an open tab is focused, not doubled.
+      await terminals.resumeProject(projectId);
+      if (terminals.closedForProject(projectId).some((c) => c.session_id === sessionId)) {
+        terminals.reopen(projectId, sessionId);
+      } else {
+        terminals.openTranscript(projectId, project.path, sessionId, label || 'Conversation');
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projects.projects, projects.activeProjectId, projects.switchProject, terminals],
+  );
+
   // Tab "Déplacer vers…": move the conversation to another project, then
   // follow it there so the user keeps working on it.
   const onMoveToProject = useCallback(
@@ -356,12 +376,22 @@ function App(): React.JSX.Element {
           )}
           {mode === 'overview' && (
             <ModeOverlay>
-              <OverviewPane terminals={terminals} projects={projects} onChangeMode={setMode} />
+              <OverviewPane
+                terminals={terminals}
+                projects={projects}
+                onChangeMode={setMode}
+                onOpenConversation={(pid, sid, label) => void onOpenConversation(pid, sid, label)}
+              />
             </ModeOverlay>
           )}
           {mode === 'tasks' && (
             <ModeOverlay>
-              <TasksPane projects={projects} onChangeMode={setMode} />
+              <TasksPane
+                projects={projects}
+                onChangeMode={setMode}
+                onOpenConversation={(pid, sid, label) => void onOpenConversation(pid, sid, label)}
+                conversationLabel={(sid) => terminals.terminals.find((t) => t.sessionId === sid)?.label ?? null}
+              />
             </ModeOverlay>
           )}
           {mode !== 'sessions' &&

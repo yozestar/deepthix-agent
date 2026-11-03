@@ -29,6 +29,7 @@ const SERVER_NAME: &str = "deepthix";
 const SERVER_VERSION: &str = "0.1.0";
 
 #[path = "../tasks_store.rs"]
+#[allow(dead_code)] // delete() is only used by the app
 mod tasks_store;
 
 #[derive(Deserialize)]
@@ -384,7 +385,58 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn tool_task_add(args: &Value) -> Result<Value, String> {
+/// Claude passes `_meta["claudecode/toolUseId"]` with each tool call, and
+/// writes that id into the conversation's transcript. Finding the transcript
+/// that contains it tells us which conversation the task comes from.
+fn session_for_tool_use(meta: Option<&Value>) -> Option<String> {
+    let tool_use = meta?.get("claudecode/toolUseId")?.as_str()?.to_string();
+    if tool_use.len() < 8 {
+        return None;
+    }
+    let root = dirs::home_dir()?.join(".claude").join("projects");
+    let own_dir = std::env::current_dir().ok().map(|c| {
+        let hash: String = c
+            .to_string_lossy()
+            .chars()
+            .map(|ch| if ch.is_ascii_alphanumeric() || ch == '-' { ch } else { '-' })
+            .collect();
+        root.join(hash)
+    });
+    let recent = |dir: &Path| -> Vec<PathBuf> {
+        let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+        rd.flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
+            .filter(|p| {
+                std::fs::metadata(p)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|m| m.elapsed().ok())
+                    .is_some_and(|age| age.as_secs() < 15 * 60)
+            })
+            .collect()
+    };
+    // The assistant line holding the tool_use may land a moment after the call.
+    for _ in 0..10 {
+        let mut candidates: Vec<PathBuf> = own_dir.as_deref().map(recent).unwrap_or_default();
+        if candidates.is_empty() {
+            if let Ok(rd) = std::fs::read_dir(&root) {
+                for d in rd.flatten() {
+                    candidates.extend(recent(&d.path()));
+                }
+            }
+        }
+        for f in candidates {
+            if std::fs::read_to_string(&f).is_ok_and(|s| s.contains(&tool_use)) {
+                return f.file_stem().map(|s| s.to_string_lossy().into_owned());
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    None
+}
+
+fn tool_task_add(args: &Value, meta: Option<&Value>) -> Result<Value, String> {
     let input = tasks_store::TaskInput {
         id: None,
         project_id: task_project(args)?,
@@ -393,10 +445,11 @@ fn tool_task_add(args: &Value) -> Result<Value, String> {
         due: str_arg(args, "due"),
         waiting_on: str_arg(args, "waiting_on"),
         session_label: str_arg(args, "session_label"),
+        session_id: str_arg(args, "session_id").or_else(|| session_for_tool_use(meta)),
         source: Some("agent".into()),
     };
     let t = tasks_store::upsert(&tasks_file()?, input, now_ms())?;
-    Ok(json!({ "ok": true, "id": t.id, "title": t.title }))
+    Ok(json!({ "ok": true, "id": t.id, "title": t.title, "session_id": t.session_id }))
 }
 
 fn tool_task_list(args: &Value) -> Result<Value, String> {
@@ -766,7 +819,7 @@ fn handle_tools_call(params: &Value) -> Result<Value, String> {
         "read_session_transcript" => tool_read_transcript(&args),
         "read_session_notes" => tool_read_notes(&args),
         "notify_user" => tool_notify_user(&args),
-        "task_add" => tool_task_add(&args),
+        "task_add" => tool_task_add(&args, params.get("_meta")),
         "task_list" => tool_task_list(&args),
         "task_done" => tool_task_done(&args),
         "run_subtask" => tool_run_subtask(&args),

@@ -29,6 +29,9 @@ pub struct Task {
     /// Conversation it came from, when known (session label).
     #[serde(default)]
     pub session_label: String,
+    /// Claude session id of that conversation (transcript file stem).
+    #[serde(default)]
+    pub session_id: Option<String>,
     /// "user" or "agent".
     #[serde(default)]
     pub source: String,
@@ -57,6 +60,8 @@ pub struct TaskInput {
     pub waiting_on: Option<String>,
     #[serde(default)]
     pub session_label: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
     #[serde(default)]
     pub source: Option<String>,
 }
@@ -110,6 +115,9 @@ pub fn upsert(path: &Path, input: TaskInput, now_ms: u64) -> Result<Task, String
             if let Some(l) = input.session_label {
                 t.session_label = l;
             }
+            if input.session_id.is_some() {
+                t.session_id = clean(input.session_id);
+            }
             t.updated_ms = now_ms;
             t.clone()
         }
@@ -123,6 +131,7 @@ pub fn upsert(path: &Path, input: TaskInput, now_ms: u64) -> Result<Task, String
                 due: clean(input.due),
                 waiting_on: clean(input.waiting_on),
                 session_label: input.session_label.unwrap_or_default(),
+                session_id: clean(input.session_id),
                 source: input.source.unwrap_or_else(|| "user".into()),
                 created_ms: now_ms,
                 updated_ms: now_ms,
@@ -187,6 +196,7 @@ mod tests {
         let p = dir.path().join(TASKS_FILE);
         let mut i = input("bee2link", "Relancer EY");
         i.waiting_on = Some("EY".into());
+        i.session_id = Some("sid-1".into());
         let t = upsert(&p, i, 100).unwrap();
         let mut edit = input("bee2link", "Relancer EY sur Sage 1000");
         edit.id = Some(t.id.clone());
@@ -195,6 +205,7 @@ mod tests {
         assert_eq!(u.updated_ms, 200);
         assert_eq!(u.title, "Relancer EY sur Sage 1000");
         assert_eq!(u.waiting_on.as_deref(), Some("EY"), "not erased by an edit that omits it");
+        assert_eq!(u.session_id.as_deref(), Some("sid-1"), "conversation link kept too");
         assert_eq!(load(&p).unwrap().len(), 1);
     }
 
@@ -224,6 +235,15 @@ mod tests {
         let b = upsert(&p, input("p", "b"), 1).unwrap();
         delete(&p, &a.id).unwrap();
         assert_eq!(load(&p).unwrap(), vec![b]);
+    }
+
+    #[test]
+    fn older_files_without_session_id_still_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join(TASKS_FILE);
+        std::fs::write(&p, r#"[{"id":"a","project_id":"p","title":"x","created_ms":1,"updated_ms":1}]"#).unwrap();
+        let t = &load(&p).unwrap()[0];
+        assert_eq!((t.status.as_str(), t.session_id.as_deref()), (STATUS_TODO, None));
     }
 
     #[test]

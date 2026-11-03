@@ -19,6 +19,17 @@ export const BUCKET_LABEL: Record<Bucket, string> = {
   done: 'Terminées',
 };
 
+/** Left border / heading colour of each bucket. */
+export const BUCKET_COLOR: Record<Bucket, string> = {
+  overdue: 'var(--color-danger)',
+  waiting: 'var(--color-warning)',
+  today: 'var(--color-accent)',
+  stale: 'var(--color-text-muted)',
+  week: 'var(--color-text)',
+  later: 'var(--color-text-muted)',
+  done: 'var(--color-status-success)',
+};
+
 /** Local calendar date as YYYY-MM-DD. */
 export function localDay(ms: number): string {
   const d = new Date(ms);

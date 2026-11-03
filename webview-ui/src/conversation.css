@@ -568,6 +568,13 @@
   border-radius: 0 10px 10px 0;
   border-left: 1px solid color-mix(in srgb, var(--color-on-accent) 35%, transparent);
 }
+.dt-tab-tasks {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.dt-tab-tasks.is-urgent {
+  color: var(--color-danger);
+}
 .dt-tabs-badge {
   min-width: 18px;
   padding: 0 5px;

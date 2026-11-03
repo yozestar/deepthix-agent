@@ -6,12 +6,13 @@
 import { Check, ChevronDown, ChevronRight, Clock, Plus, Trash2, User } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { TASKS_POLL_MS } from '../constants';
+import { TASKS_FILTER_KEY } from '../constants';
 import { useFormFactor } from '../hooks/useFormFactor';
 import type { useProjects } from '../hooks/useProjects';
-import { startPolling } from '../remote/polling';
+import { refreshTasks, useTasks } from '../hooks/useTasks';
 import {
   type Bucket,
+  BUCKET_COLOR,
   BUCKET_LABEL,
   BUCKETS,
   classifyTasks,
@@ -24,34 +25,33 @@ import {
   taskDelete,
   taskSave,
   taskSetDone,
-  tasksList,
 } from '../tauri/commands';
 import type { Mode } from './TopTabs';
 
 const ALL = '__all__';
-const FILTER_KEY = 'elyone.tasks.filter';
-
-const BUCKET_COLOR: Record<Bucket, string> = {
-  overdue: 'var(--color-danger)',
-  waiting: 'var(--color-warning)',
-  today: 'var(--color-accent)',
-  stale: 'var(--color-text-muted)',
-  week: 'var(--color-text)',
-  later: 'var(--color-text-muted)',
-  done: 'var(--color-status-success)',
-};
 
 interface Props {
   projects: ReturnType<typeof useProjects>;
   onChangeMode: (m: Mode) => void;
+  /** Jump to the conversation a task came from. */
+  onOpenConversation: (projectId: string, sessionId: string, label: string) => void;
+  /** Current tab name of a conversation, when it is a tab. */
+  conversationLabel?: (sessionId: string) => string | null;
 }
 
-export function TasksPane({ projects, onChangeMode }: Props): React.JSX.Element {
+const NOW_TICK_MS = 60_000;
+
+export function TasksPane({
+  projects,
+  onChangeMode,
+  onOpenConversation,
+  conversationLabel,
+}: Props): React.JSX.Element {
   const touch = useFormFactor() !== 'desktop';
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [filter, setFilter] = useState<string>(() => localStorage.getItem(FILTER_KEY) ?? ALL);
+  const { tasks, loaded, error: loadError } = useTasks();
+  const [opError, setError] = useState<string | null>(null);
+  const error = opError ?? loadError;
+  const [filter, setFilter] = useState<string>(() => localStorage.getItem(TASKS_FILTER_KEY) ?? ALL);
   const [draft, setDraft] = useState('');
   const [draftProject, setDraftProject] = useState<string>('');
   const [openId, setOpenId] = useState<string | null>(null);
@@ -63,24 +63,13 @@ export function TasksPane({ projects, onChangeMode }: Props): React.JSX.Element 
     return (id: string): string => m.get(id) ?? 'Projet inconnu';
   }, [projects.projects]);
 
-  const refresh = useCallback(async (): Promise<void> => {
-    try {
-      setTasks(await tasksList(null));
-      setNow(Date.now());
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoaded(true);
-    }
+  // "Today" / "N days ago" move with the clock, not only with the data.
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), NOW_TICK_MS);
+    return () => window.clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    void refresh();
-    return startPolling(() => void refresh(), TASKS_POLL_MS);
-  }, [refresh]);
-
-  useEffect(() => localStorage.setItem(FILTER_KEY, filter), [filter]);
+  useEffect(() => localStorage.setItem(TASKS_FILTER_KEY, filter), [filter]);
 
   // Quick add goes to the filtered project, else the active one.
   const targetProject =
@@ -90,12 +79,14 @@ export function TasksPane({ projects, onChangeMode }: Props): React.JSX.Element 
     async (op: () => Promise<unknown>): Promise<void> => {
       try {
         await op();
-        await refresh();
+        setError(null);
+        setNow(Date.now());
+        await refreshTasks();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [refresh],
+    [],
   );
 
   const onAdd = (): void => {
@@ -260,6 +251,13 @@ export function TasksPane({ projects, onChangeMode }: Props): React.JSX.Element 
                     onSave={(patch) =>
                       void run(() => taskSave({ id: t.id, project_id: t.project_id, ...patch }))
                     }
+                    conversation={
+                      t.session_id ? (conversationLabel?.(t.session_id) ?? (t.session_label || 'Conversation')) : null
+                    }
+                    onOpenConversation={() =>
+                      t.session_id &&
+                      onOpenConversation(t.project_id, t.session_id, conversationLabel?.(t.session_id) ?? t.session_label)
+                    }
                     onOpenProject={() => {
                       void projects.switchProject(t.project_id);
                       onChangeMode('sessions');
@@ -287,6 +285,9 @@ interface RowProps {
   onDelete: () => void;
   onSave: (patch: { title: string; notes: string; due: string | null; waiting_on: string | null }) => void;
   onOpenProject: () => void;
+  /** Name of the conversation it came from (null: none known). */
+  conversation: string | null;
+  onOpenConversation: () => void;
 }
 
 function TaskRow(p: RowProps): React.JSX.Element {
@@ -298,6 +299,7 @@ function TaskRow(p: RowProps): React.JSX.Element {
   if (t.waiting_on) facts.push(`${t.waiting_on} attend depuis ${daysSince(t.created_ms, now)} j`);
   if (bucket === 'stale') facts.push(`sans mouvement depuis ${daysSince(t.updated_ms, now)} j`);
   if (t.source === 'agent') facts.push('noté par l’agent');
+  if (p.conversation) facts.push(`💬 ${p.conversation}`);
 
   return (
     <div
@@ -365,6 +367,7 @@ function TaskRow(p: RowProps): React.JSX.Element {
           onDelete={() => (confirmDelete ? p.onDelete() : setConfirmDelete(true))}
           onSave={p.onSave}
           onOpenProject={p.onOpenProject}
+          onOpenConversation={p.conversation ? p.onOpenConversation : null}
         />
       )}
     </div>
@@ -378,6 +381,7 @@ function TaskEditor(p: {
   onDelete: () => void;
   onSave: RowProps['onSave'];
   onOpenProject: () => void;
+  onOpenConversation: (() => void) | null;
 }): React.JSX.Element {
   const { task: t, touch } = p;
   const [title, setTitle] = useState(t.title);
@@ -413,7 +417,6 @@ function TaskEditor(p: {
         rows={3}
         style={{ ...inputStyle(touch), resize: 'vertical' }}
       />
-      {t.session_label && <div style={{ fontSize: '0.6875rem', opacity: 0.6 }}>Conversation : {t.session_label}</div>}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         <button
           type="button"
@@ -423,9 +426,15 @@ function TaskEditor(p: {
         >
           Enregistrer
         </button>
-        <button type="button" onClick={p.onOpenProject} style={secondaryBtn(touch)}>
-          Ouvrir le projet
-        </button>
+        {p.onOpenConversation ? (
+          <button type="button" onClick={p.onOpenConversation} style={secondaryBtn(touch)}>
+            Ouvrir la conversation
+          </button>
+        ) : (
+          <button type="button" onClick={p.onOpenProject} style={secondaryBtn(touch)}>
+            Ouvrir le projet
+          </button>
+        )}
         <span style={{ flex: 1 }} />
         <button
           type="button"

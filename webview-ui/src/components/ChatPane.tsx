@@ -26,6 +26,7 @@ import {
   type TurnInfo,
 } from '../conversationUtils';
 import { useFormFactor } from '../hooks/useFormFactor';
+import { refreshTasks } from '../hooks/useTasks';
 import { startPolling } from '../remote/polling';
 import { uploadToChat } from "../remote/upload";
 import { isRemoteRuntime } from "../runtime";
@@ -55,6 +56,7 @@ import {
   tasksList,
 } from '../tauri/commands';
 import { onChatEvent, onChatExit } from '../tauri/events';
+import { ConversationTasksBar } from './ConversationTasksBar';
 
 /** What /point sends to the agent. */
 const POINT_PROMPT =
@@ -1475,6 +1477,7 @@ function ChatPaneImpl({
             due: q.due,
             waiting_on: q.waiting_on,
             session_label: sessionLabel ?? '',
+            session_id: sessionId,
           })
             .then((t) => {
               const extra = [
@@ -1482,6 +1485,7 @@ function ChatPaneImpl({
                 t.waiting_on ? `${t.waiting_on} attend` : '',
               ].filter(Boolean);
               dropMessage(`✓ Tâche ajoutée : ${t.title}${extra.length ? ` (${extra.join(', ')})` : ''}`);
+              void refreshTasks();
             })
             .catch((e) => dropMessage(`Tâche non enregistrée : ${e instanceof Error ? e.message : String(e)}`));
           return true;
@@ -1510,17 +1514,19 @@ function ChatPaneImpl({
     // we want this callback stable across re-renders that just bump
     // termId from null → real id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lastTurn, projectId, sessionLabel],
+    [lastTurn, projectId, sessionLabel, sessionId],
   );
 
-  const send = useCallback(async (): Promise<void> => {
-    let text = input.trim();
-    const attachments = pendingAttachments;
+  /** `override`: send this text instead of the composer's (the composer
+   *  draft and attachments are left untouched). */
+  const send = useCallback(async (override?: string): Promise<void> => {
+    let text = override ?? input.trim();
+    const attachments = override ? [] : pendingAttachments;
     // Allow sending attachments-only (no text) — useful for "look at
     // this screenshot" flows. Block only when both are empty.
     if (!termId) return;
     if (!text && attachments.length === 0) return;
-    setInput('');
+    if (!override) setInput('');
 
     // Auto-respawn if the session has exited (idle reaper, crash,
     // intentional kill). Spawn a fresh claude with --resume on the
@@ -1594,7 +1600,7 @@ function ChatPaneImpl({
       ...prev,
       { kind: 'user', uid: uid(), ts: Date.now(), text: bubbleText },
     ]);
-    setPendingAttachments([]);
+    if (!override) setPendingAttachments([]);
     try {
       if (attachments.length === 0) {
         await chatSendUserText(activeTermId, text);
@@ -1611,7 +1617,7 @@ function ChatPaneImpl({
       setError(msg);
       setBusy(false);
       // On failure, restore attachments so the user can retry.
-      setPendingAttachments(attachments);
+      if (!override) setPendingAttachments(attachments);
     }
   }, [
     input,
@@ -1938,6 +1944,12 @@ function ChatPaneImpl({
           )}
         </span>
       </div>
+
+      <ConversationTasksBar
+        sessionId={sessionId}
+        busy={busy}
+        onPoint={() => void send(POINT_PROMPT)}
+      />
 
       {showModelPicker && termId && (
         <ModelPicker

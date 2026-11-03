@@ -17,6 +17,7 @@ const task = (over: Partial<Task> = {}): Task => ({
   due: null,
   waiting_on: null,
   session_label: '',
+  session_id: null,
   source: 'user',
   created_ms: NOW - DAY,
   updated_ms: NOW - DAY,
