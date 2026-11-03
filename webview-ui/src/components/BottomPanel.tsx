@@ -270,6 +270,7 @@ export function SessionsPane({
                 }
                 bindTermId={t.id}
                 sessionLabel={t.label}
+                projectId={t.projectId}
                 agentId={t.agentId}
                 maxMessages={globalConfig.maxMessagesPerSession}
                 onSessionReady={({ termId, sessionId }) => {

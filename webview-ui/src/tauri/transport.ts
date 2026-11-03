@@ -147,6 +147,7 @@ const READ_PREFIXES = [
   'dashboard_mtime_ms',
   'variables_path',
   'workflows_path',
+  'tasks_list',
   'coach_workspace_path',
 ];
 

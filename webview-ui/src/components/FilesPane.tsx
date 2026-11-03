@@ -31,6 +31,7 @@ import {
   writeFile as cmdWriteFile,
 } from '../tauri/commands';
 import { CodeEditor } from './CodeEditor';
+import { FileOpenButtons } from './FileActions';
 import { FileTree } from './FileTree';
 import { PdfViewer } from './PdfViewer';
 
@@ -767,6 +768,7 @@ function FileContent({
         Binary file — {entry.size.toLocaleString()} bytes.
         <br />
         <span style={{ opacity: 0.6 }}>(unsupported preview)</span>
+        <FileOpenButtons path={path} />
       </div>
     </EmptyMessage>
   );

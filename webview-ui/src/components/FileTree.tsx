@@ -2,6 +2,7 @@ import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
 
 import type { FileTreeNode, UseFileTreeResult } from '../hooks/useFileTree';
+import { FileRowActions } from './FileActions';
 
 const COPIED_FEEDBACK_MS = 1500;
 
@@ -209,6 +210,7 @@ function Branch({
           {node.name}
           {node.loading && <span style={{ opacity: 0.5 }}> …</span>}
         </span>
+        <FileRowActions path={node.path} isDir={node.is_dir} />
         <CopyPathButton path={node.path} />
       </div>
       {node.is_dir && isExpanded && node.children && (

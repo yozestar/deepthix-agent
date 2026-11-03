@@ -1152,3 +1152,69 @@ export async function remoteSetCf(
   log('remoteSetCf', { teamDomain, aud, allowedEmail });
   return await invoke<RemoteStatus>('remote_set_cf', { teamDomain, aud, allowedEmail });
 }
+
+// ─── Tasks ("reste à faire") ─────────────────────────────────────────────
+// ~/.elyone/tasks.json, shared with the agent's task_add / task_done tools.
+
+export interface Task {
+  id: string;
+  project_id: string;
+  title: string;
+  notes: string;
+  status: 'todo' | 'done';
+  /** Deadline, YYYY-MM-DD. */
+  due: string | null;
+  /** Who is waiting on it (client, colleague). */
+  waiting_on: string | null;
+  session_label: string;
+  source: 'user' | 'agent' | string;
+  created_ms: number;
+  updated_ms: number;
+  done_ms: number | null;
+}
+
+export interface TaskInput {
+  /** Absent → create. */
+  id?: string;
+  project_id: string;
+  title: string;
+  notes?: string;
+  due?: string | null;
+  waiting_on?: string | null;
+  session_label?: string;
+  source?: string;
+}
+
+/** Every task (all projects) or one project's. */
+export async function tasksList(projectId?: string | null): Promise<Task[]> {
+  return await invoke<Task[]>('tasks_list', { projectId: projectId ?? null });
+}
+
+export async function taskSave(task: TaskInput): Promise<Task> {
+  log('taskSave', { id: task.id ?? null, project: task.project_id });
+  return await invoke<Task>('task_save', { task });
+}
+
+export async function taskSetDone(id: string, done: boolean): Promise<Task> {
+  log('taskSetDone', { id, done });
+  return await invoke<Task>('task_set_done', { id, done });
+}
+
+export async function taskDelete(id: string): Promise<void> {
+  log('taskDelete', { id });
+  return await invoke<void>('task_delete', { id });
+}
+
+// ─── Open a file with the OS (desktop only) ─────────────────────────────
+
+/** Open with the default app (Aperçu, Word, Excel…). */
+export async function openPath(path: string): Promise<void> {
+  log('openPath', { path });
+  return await invoke<void>('open_path', { path });
+}
+
+/** Show the file selected in the Finder / Explorer. */
+export async function revealPath(path: string): Promise<void> {
+  log('revealPath', { path });
+  return await invoke<void>('reveal_path', { path });
+}

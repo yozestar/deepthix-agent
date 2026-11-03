@@ -262,3 +262,12 @@ export const TOUCH_COMPOSER_MAX_PX = 140;
 export const REMOTE_POLL_FACTOR = 4;
 /** Remote devices: a list re-read within this delay is served from memory. */
 export const REMOTE_READ_CACHE_MS = 30_000;
+/** Tasks: an open task untouched for this long shows as "en sommeil". */
+export const TASK_STALE_DAYS = 14;
+/** Tasks: due within this many days → "Cette semaine". */
+export const TASK_WEEK_DAYS = 7;
+/** Tasks pane: re-read tasks.json (the agent writes it too). */
+export const TASKS_POLL_MS = 10_000;
+/** Remote "Télécharger": the file travels base64 in one WebSocket message
+ *  (64 MB cap server-side), so stay well below. */
+export const REMOTE_DOWNLOAD_MAX_BYTES = 40 * 1_048_576;

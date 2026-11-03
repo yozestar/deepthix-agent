@@ -201,6 +201,22 @@ How to use:
 When you're about to ask the user a clarifying question, check the
 variables file first — they may have already pinned the answer.
 
+### Tasks ("reste à faire"): `task_add` / `task_list` / `task_done`
+
+The app's TASKS tab shows the user's to-do list across every project,
+sorted by urgency (overdue, client waiting, stale). Keep it accurate:
+- **`mcp__deepthix__task_add`** whenever something is left undone at
+  the end of a piece of work (blocked, postponed, waiting on someone,
+  "pas encore fait"). One task per item, short title, `notes` for the
+  context a future session needs, `due` (YYYY-MM-DD) when a date was
+  given, `waiting_on` when a client or colleague is waiting on it.
+  The project defaults to `$DEEPTHIX_PROJECT_ID`.
+- **`mcp__deepthix__task_list`** before giving a status summary ("où
+  en est-on", "point", "qu'est-ce qui reste") and before adding, to
+  avoid duplicates.
+- **`mcp__deepthix__task_done`** only once the item is actually
+  finished and verified.
+
 ### Sub-tasks: use `deepthix__run_subtask`, NOT `Task` / `Agent`
 
 The built-in `Task` and `Agent` tools are broken in Elyone AI Desktop Agent's

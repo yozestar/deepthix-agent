@@ -29,6 +29,7 @@ import { useFormFactor } from '../hooks/useFormFactor';
 import { startPolling } from '../remote/polling';
 import { uploadToChat } from "../remote/upload";
 import { isRemoteRuntime } from "../runtime";
+import { dueLabel, parseQuickTask } from '../tasks';
 import {
   chatForkAtUuid,
   chatInterruptAndResume,
@@ -50,8 +51,17 @@ import {
   type ResumableSession,
   rewindSession,
   stashPasteAsAttachment,
+  taskSave,
+  tasksList,
 } from '../tauri/commands';
 import { onChatEvent, onChatExit } from '../tauri/events';
+
+/** What /point sends to the agent. */
+const POINT_PROMPT =
+  'Fais le point sur ce projet. Appelle task_list pour voir les tâches ouvertes, puis résume en quelques lignes : ' +
+  'ce qui est fait, ce qui reste (le plus urgent d’abord : en retard, quelqu’un qui attend, en sommeil) ' +
+  'et la prochaine action que tu recommandes. Si des choses restées non faites dans cette conversation ' +
+  'ne sont pas encore dans la liste, ajoute-les avec task_add.';
 
 interface Props {
   /** Stable working dir for the spawn — usually the project's path. */
@@ -82,6 +92,8 @@ interface Props {
   maxMessages?: number;
   /** Human session name (sidebar label) shown in the chat header. */
   sessionLabel?: string;
+  /** Project the conversation belongs to (tasks added with /tache). */
+  projectId?: string | null;
 }
 
 // ─── Message model ──────────────────────────────────────────────────────
@@ -589,6 +601,7 @@ function ChatPaneImpl({
   onActivateGhost,
   maxMessages,
   sessionLabel,
+  projectId,
 }: Props): React.JSX.Element {
   // Lazy-spawn flag: bindTermId === "ghost:<sid>" means the parent
   // registered this session at startup WITHOUT spawning claude (saves
@@ -1254,6 +1267,9 @@ function ChatPaneImpl({
               '  /agents — open claude.ai/agents in your browser',
               '  /privacy — open Anthropic privacy in your browser',
               '  /upgrade — open the upgrade page in your browser',
+              '  /tache <texte> — ajoute une tâche à ce projet (@client, 07/11, demain)',
+              '  /tache — liste les tâches ouvertes du projet',
+              '  /point — l’agent fait le point sur ce qui reste à faire',
               '  /help — this list',
               '',
               'Shortcuts: ⏎ send · ⇧⏎ newline · ↑/↓ history · / autocomplete · ⌘M push-to-talk',
@@ -1428,6 +1444,48 @@ function ChatPaneImpl({
             });
           return true;
         }
+        case 'tache':
+        case 'tâche': {
+          const arg = cmdLine.replace(/^\S+\s*/, '');
+          if (!projectId) {
+            dropMessage('Pas de projet associé à cette conversation.');
+            return true;
+          }
+          if (!arg.trim()) {
+            void tasksList(projectId)
+              .then((list) => {
+                const open = list.filter((t) => t.status !== 'done');
+                dropMessage(
+                  open.length === 0
+                    ? 'Aucune tâche ouverte sur ce projet.'
+                    : [`${open.length} tâche(s) ouverte(s) :`, ...open.map((t) => `  • ${t.title}`)].join('\n'),
+                );
+              })
+              .catch((e) => dropMessage(`Lecture des tâches impossible : ${e instanceof Error ? e.message : String(e)}`));
+            return true;
+          }
+          const q = parseQuickTask(arg, Date.now());
+          if (!q.title) {
+            dropMessage('Usage : /tache <texte>  (option : @client, une date 07/11 ou demain)');
+            return true;
+          }
+          void taskSave({
+            project_id: projectId,
+            title: q.title,
+            due: q.due,
+            waiting_on: q.waiting_on,
+            session_label: sessionLabel ?? '',
+          })
+            .then((t) => {
+              const extra = [
+                t.due ? `échéance ${dueLabel(t.due, Date.now())}` : '',
+                t.waiting_on ? `${t.waiting_on} attend` : '',
+              ].filter(Boolean);
+              dropMessage(`✓ Tâche ajoutée : ${t.title}${extra.length ? ` (${extra.join(', ')})` : ''}`);
+            })
+            .catch((e) => dropMessage(`Tâche non enregistrée : ${e instanceof Error ? e.message : String(e)}`));
+          return true;
+        }
         case 'context':
         case 'compact':
         case 'init':
@@ -1452,11 +1510,11 @@ function ChatPaneImpl({
     // we want this callback stable across re-renders that just bump
     // termId from null → real id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lastTurn],
+    [lastTurn, projectId, sessionLabel],
   );
 
   const send = useCallback(async (): Promise<void> => {
-    const text = input.trim();
+    let text = input.trim();
     const attachments = pendingAttachments;
     // Allow sending attachments-only (no text) — useful for "look at
     // this screenshot" flows. Block only when both are empty.
@@ -1511,6 +1569,9 @@ function ChatPaneImpl({
     if (text.startsWith('/') && handleSlashCommand(text)) {
       return;
     }
+    // /point is not handled here: it becomes a real request to the agent,
+    // which reads the task list and the conversation to summarise.
+    if (/^\/point\b/i.test(text)) text = POINT_PROMPT;
     localTurnRef.current = true;
     setBusy(true);
     setLiveUsage({ startedAt: Date.now(), outputTokens: 0, nowMs: Date.now() });
@@ -2450,6 +2511,8 @@ function ChatInput({
       'agents',
       'privacy',
       'upgrade',
+      'tache',
+      'point',
     ];
     const seen = new Set<string>();
     const out: string[] = [];

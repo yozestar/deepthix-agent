@@ -14,6 +14,7 @@ import { SchedulesPane } from './components/SchedulesPane';
 import { SettingsPane } from './components/SettingsPane';
 import { Sidebar } from './components/Sidebar';
 import { SkillsPane } from './components/SkillsPane';
+import { TasksPane } from './components/TasksPane';
 import { TerminalDropTarget } from './components/TerminalDropTarget';
 import { type Mode, TopTabs } from './components/TopTabs';
 import { UpdaterBanner } from './components/UpdaterBanner';
@@ -36,6 +37,7 @@ const MODE_STORAGE_KEY = 'deepthix.mode';
 const VALID_MODES: ReadonlyArray<Mode> = [
   'overview',
   'sessions',
+  'tasks',
   'process',
   'memory',
   'files',
@@ -357,7 +359,16 @@ function App(): React.JSX.Element {
               <OverviewPane terminals={terminals} projects={projects} onChangeMode={setMode} />
             </ModeOverlay>
           )}
-          {mode !== 'sessions' && mode !== 'overview' && mode !== 'settings' && !hasProjects && (
+          {mode === 'tasks' && (
+            <ModeOverlay>
+              <TasksPane projects={projects} onChangeMode={setMode} />
+            </ModeOverlay>
+          )}
+          {mode !== 'sessions' &&
+            mode !== 'overview' &&
+            mode !== 'settings' &&
+            mode !== 'tasks' &&
+            !hasProjects && (
             <ModeOverlay>
               <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
             </ModeOverlay>
