@@ -113,6 +113,10 @@ const REMOTE_COMMANDS: &[&str] = &[
     "list_variables",
     "set_variable",
     "delete_variable",
+    "tasks_list",
+    "task_save",
+    "task_set_done",
+    "task_delete",
 ];
 
 pub fn is_remote_allowed(cmd: &str) -> bool {
@@ -201,14 +205,14 @@ mod tests {
 
     #[test]
     fn allows_chat_and_terminal() {
-        for c in ["chat_send_user_text", "pty_write", "list_projects", "read_file", "home_dir", "chat_live_term"] {
+        for c in ["chat_send_user_text", "pty_write", "list_projects", "read_file", "home_dir", "chat_live_term", "tasks_list", "task_save", "task_set_done", "task_delete"] {
             assert!(is_remote_allowed(c), "{c}");
         }
     }
 
     #[test]
     fn denies_desktop_only() {
-        for c in ["open_folder", "stash_dropped_file", "open_chrome", "open_external_url", "install_skill_from_path"] {
+        for c in ["open_folder", "stash_dropped_file", "open_chrome", "open_external_url", "install_skill_from_path", "open_path", "reveal_path"] {
             assert!(!is_remote_allowed(c), "{c}");
         }
     }

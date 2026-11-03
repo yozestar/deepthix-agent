@@ -8,6 +8,7 @@ mod pty;
 mod remote;
 mod state;
 mod storage;
+mod tasks_store;
 
 use tauri::Manager;
 
@@ -85,6 +86,8 @@ pub fn run() {
             commands::fs::write_file,
             commands::fs::file_kind,
             commands::fs::home_dir,
+            commands::fs::open_path,
+            commands::fs::reveal_path,
             commands::fs::file_size,
             commands::fs::read_file_bytes_base64,
             commands::fs::stash_dropped_file,
@@ -181,6 +184,10 @@ pub fn run() {
             commands::variables::list_variables,
             commands::variables::set_variable,
             commands::variables::delete_variable,
+            commands::tasks::tasks_list,
+            commands::tasks::task_save,
+            commands::tasks::task_set_done,
+            commands::tasks::task_delete,
             commands::remote::remote_get_status,
             commands::remote::remote_set_enabled,
             commands::remote::remote_revoke_device,

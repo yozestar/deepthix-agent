@@ -15,6 +15,7 @@ pub mod schedules;
 pub mod scrollback;
 pub mod sessions;
 pub mod skills;
+pub mod tasks;
 pub mod terminals;
 pub mod usage;
 pub mod usage_snapshot;

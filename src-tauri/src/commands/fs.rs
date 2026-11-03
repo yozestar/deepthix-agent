@@ -401,3 +401,54 @@ mod upload_tests {
         assert!(save_upload(dir.path(), "a.png", &b64(&big)).is_err());
     }
 }
+
+/// Files tab: open a file / folder with the OS default application (PC only —
+/// never callable from a remote device, see remote::dispatch).
+#[tauri::command]
+pub async fn open_path(path: String) -> Result<(), String> {
+    run_shell_open(&path, false)
+}
+
+/// Files tab: show the item in Finder / Explorer (PC only).
+#[tauri::command]
+pub async fn reveal_path(path: String) -> Result<(), String> {
+    run_shell_open(&path, true)
+}
+
+fn run_shell_open(path: &str, reveal: bool) -> Result<(), String> {
+    let p = Path::new(path);
+    if !p.exists() {
+        return Err(format!("introuvable : {path}"));
+    }
+    tracing::info!(target: "deepthix::commands", ?p, reveal, "open_path");
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        if reveal {
+            c.arg("-R");
+        }
+        c.arg(p);
+        c
+    };
+    #[cfg(windows)]
+    let mut cmd = {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut c = std::process::Command::new("explorer");
+        if reveal {
+            c.arg(format!("/select,{}", p.display()));
+        } else {
+            c.arg(p);
+        }
+        c.creation_flags(CREATE_NO_WINDOW);
+        c
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(if reveal { p.parent().unwrap_or(p) } else { p });
+        c
+    };
+    // Explorer returns 1 even on success: only a spawn failure is an error.
+    cmd.spawn().map(|_| ()).map_err(|e| format!("ouverture impossible : {e}"))
+}
