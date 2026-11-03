@@ -28,6 +28,9 @@ const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "deepthix";
 const SERVER_VERSION: &str = "0.1.0";
 
+#[path = "../tasks_store.rs"]
+mod tasks_store;
+
 #[derive(Deserialize)]
 struct JsonRpcRequest {
     #[allow(dead_code)]
@@ -357,6 +360,63 @@ fn tool_read_notes(args: &Value) -> Result<Value, String> {
 /// The Tauri app watches this file and turns each new line into an in-app
 /// toast + macOS banner. We don't try to surface the result back to claude
 /// — the user is the destination, claude just publishes.
+// ─── Tasks ("reste à faire") ──────────────────────────────────────────────
+
+fn tasks_file() -> Result<PathBuf, String> {
+    Ok(deepthix_dir().ok_or("no home dir")?.join(tasks_store::TASKS_FILE))
+}
+
+fn str_arg(args: &Value, key: &str) -> Option<String> {
+    args.get(key).and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// Explicit `project_id` argument, else the session's DEEPTHIX_PROJECT_ID.
+fn task_project(args: &Value) -> Result<String, String> {
+    str_arg(args, "project_id")
+        .or_else(|| std::env::var("DEEPTHIX_PROJECT_ID").ok().filter(|s| !s.is_empty()))
+        .ok_or_else(|| "no project: pass project_id (value of $DEEPTHIX_PROJECT_ID)".to_string())
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn tool_task_add(args: &Value) -> Result<Value, String> {
+    let input = tasks_store::TaskInput {
+        id: None,
+        project_id: task_project(args)?,
+        title: str_arg(args, "title").ok_or("missing title")?,
+        notes: str_arg(args, "notes"),
+        due: str_arg(args, "due"),
+        waiting_on: str_arg(args, "waiting_on"),
+        session_label: str_arg(args, "session_label"),
+        source: Some("agent".into()),
+    };
+    let t = tasks_store::upsert(&tasks_file()?, input, now_ms())?;
+    Ok(json!({ "ok": true, "id": t.id, "title": t.title }))
+}
+
+fn tool_task_list(args: &Value) -> Result<Value, String> {
+    let all_projects = args.get("all_projects").and_then(|v| v.as_bool()).unwrap_or(false);
+    let include_done = args.get("include_done").and_then(|v| v.as_bool()).unwrap_or(false);
+    let project = if all_projects { None } else { Some(task_project(args)?) };
+    let tasks: Vec<_> = tasks_store::load(&tasks_file()?)?
+        .into_iter()
+        .filter(|t| project.as_deref().is_none_or(|p| t.project_id == p))
+        .filter(|t| include_done || t.status != tasks_store::STATUS_DONE)
+        .collect();
+    serde_json::to_value(tasks).map_err(|e| e.to_string())
+}
+
+fn tool_task_done(args: &Value) -> Result<Value, String> {
+    let id = str_arg(args, "id").ok_or("missing id")?;
+    let t = tasks_store::set_done(&tasks_file()?, &id, true, now_ms())?;
+    Ok(json!({ "ok": true, "id": t.id, "title": t.title, "status": t.status }))
+}
+
 fn tool_notify_user(args: &Value) -> Result<Value, String> {
     let title = args
         .get("title")
@@ -639,6 +699,43 @@ fn tools_definition() -> Value {
             }
         },
         {
+            "name": "task_add",
+            "description": "Record a task the user still has to do (\"reste à faire\") in the Elyone task list (TÂCHES tab). Call it for EACH item you report as not done yet, pending, or to do later, at the end of a piece of work — so the user does not have to remember it. One task = one concrete action. Do not record what is already done.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "Short actionable title, in the user's language (e.g. 'Relancer EY sur le connecteur Sage 1000')." },
+                    "notes": { "type": "string", "description": "Optional context: what remains, where, links/paths." },
+                    "due": { "type": "string", "description": "Optional deadline YYYY-MM-DD, only if the user gave or agreed one." },
+                    "waiting_on": { "type": "string", "description": "Optional: who is waiting on this (client or person), e.g. 'EY', 'Go formations'." },
+                    "project_id": { "type": "string", "description": "Defaults to $DEEPTHIX_PROJECT_ID (the current project)." },
+                    "session_label": { "type": "string", "description": "Optional: name of this conversation." }
+                },
+                "required": ["title"]
+            }
+        },
+        {
+            "name": "task_list",
+            "description": "List the user's open tasks (current project by default). Use it before a status summary ('où on en est') and to avoid recording a duplicate task.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "all_projects": { "type": "boolean", "description": "true = every project. Default false." },
+                    "include_done": { "type": "boolean", "description": "Include completed tasks. Default false." },
+                    "project_id": { "type": "string", "description": "Defaults to $DEEPTHIX_PROJECT_ID." }
+                }
+            }
+        },
+        {
+            "name": "task_done",
+            "description": "Mark a task as done once it has actually been completed and verified (id from task_list).",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "id": { "type": "string" } },
+                "required": ["id"]
+            }
+        },
+        {
             "name": "notify_user",
             "description": "Push a notification to the user inside the Deepthix app (in-app toast + macOS notification banner). Use sparingly for events the user actually cares about — build done, tests failed, long-running task complete, ambiguous decision needs input. The user is watching multiple sessions; a notification interrupts whatever they're looking at, so each one should be worth that interruption.",
             "inputSchema": {
@@ -669,6 +766,9 @@ fn handle_tools_call(params: &Value) -> Result<Value, String> {
         "read_session_transcript" => tool_read_transcript(&args),
         "read_session_notes" => tool_read_notes(&args),
         "notify_user" => tool_notify_user(&args),
+        "task_add" => tool_task_add(&args),
+        "task_list" => tool_task_list(&args),
+        "task_done" => tool_task_done(&args),
         "run_subtask" => tool_run_subtask(&args),
         other => return Err(format!("unknown tool: {other}")),
     };
