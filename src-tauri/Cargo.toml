@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.6.11"
+version = "0.6.12"
 description = "Standalone macOS app for running and watching Claude Code agents in a pixel art office."
 authors = ["Elyone"]
 license = "MIT"
@@ -34,15 +34,15 @@ tauri-build = { version = "2.5.6", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.10.3", features = [] }
+tauri = { version = "=2.10.3", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-autostart = "=2.5.1"
-# Auto-updater + relaunch helpers disabled on Windows ARM64 — the
-# transitive `ring` crate needs clang to build. Re-enable after
-# `winget install LLVM.LLVM` (also requires `winget install Strawberry.Perl`).
-# tauri-plugin-updater = "2"
-# tauri-plugin-process = "2"
+# In-app updates. native-tls instead of the default rustls: rustls pulls
+# `ring`, which needs clang on Windows ARM64. Tauri is pinned (=2.10.3)
+# because newer updater releases drag Tauri 2.12 (+ a new wry) in.
+tauri-plugin-updater = { version = "~2.10", default-features = false, features = ["native-tls", "zip"] }
+tauri-plugin-process = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 tracing-appender = "0.2"
@@ -68,5 +68,5 @@ tokio = { version = "1", features = ["sync", "time", "macros", "rt-multi-thread"
 
 [dev-dependencies]
 tempfile = "3"
-tauri = { version = "2.10.3", features = ["test"] }
+tauri = { version = "=2.10.3", features = ["test"] }
 tokio-tungstenite = "0.29"

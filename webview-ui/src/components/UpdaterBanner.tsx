@@ -15,9 +15,12 @@
 // are logged and swallowed — the banner stays hidden so we never paint
 // a "your app is broken" message at people who just opened Deepthix.
 
-import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import type { Update } from '@tauri-apps/plugin-updater';
 import { useCallback, useEffect, useState } from 'react';
+
+import { UPDATE_CHECK_INTERVAL_MS } from '../constants';
+import { checkForUpdate } from '../updater';
 
 type Phase =
   | { kind: 'idle' }
@@ -25,6 +28,7 @@ type Phase =
   | { kind: 'available'; update: Update }
   | { kind: 'downloading'; downloaded: number; total: number | null }
   | { kind: 'installed' }
+  | { kind: 'uptodate' }
   | { kind: 'error'; message: string };
 
 export function UpdaterBanner(): React.JSX.Element | null {
@@ -44,7 +48,7 @@ export function UpdaterBanner(): React.JSX.Element | null {
   const runCheck = useCallback(async (manual: boolean): Promise<void> => {
     setPhase({ kind: 'checking' });
     try {
-      const upd = await check();
+      const upd = await checkForUpdate();
       if (upd) {
         console.info('[Deepthix][Updater] update available', {
           version: upd.version,
@@ -57,7 +61,7 @@ export function UpdaterBanner(): React.JSX.Element | null {
         if (manual) {
           // Briefly show "no update" only when the user explicitly
           // clicked Check; the auto-check stays silent.
-          setPhase({ kind: 'installed' }); // re-use "done" copy
+          setPhase({ kind: 'uptodate' });
           setTimeout(() => setPhase({ kind: 'idle' }), 3000);
         } else {
           setPhase({ kind: 'idle' });
@@ -113,6 +117,12 @@ export function UpdaterBanner(): React.JSX.Element | null {
     }
   }, [phase]);
 
+  // Then every few hours: the app stays open for days.
+  useEffect(() => {
+    const id = setInterval(() => void runCheck(false), UPDATE_CHECK_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [runCheck]);
+
   // Expose check() to other panes via a global (for the SettingsPane
   // "Check for updates" button). Lightweight and avoids prop-drilling.
   useEffect(() => {
@@ -146,40 +156,42 @@ export function UpdaterBanner(): React.JSX.Element | null {
         justifyContent: 'space-between',
         gap: 12,
         zIndex: 200,
-        boxShadow: '0 2px 0 var(--color-border)',
+        boxShadow: 'var(--shadow-pixel)',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {phase.kind === 'available' && (
           <span>
-            ⬆ Update available: <strong>v{phase.update.version}</strong>
+            ⬆ Nouvelle version disponible : <strong>{phase.update.version}</strong>
+            {' '}(l’application redémarre, les agents en cours sont interrompus)
           </span>
         )}
         {phase.kind === 'downloading' && (
           <span>
-            ⬇ Downloading
+            ⬇ Téléchargement
             {phase.total
               ? ` ${Math.round((phase.downloaded / phase.total) * 100)}%`
               : `… ${formatBytes(phase.downloaded)}`}
           </span>
         )}
-        {phase.kind === 'installed' && <span>✓ Installed — relaunching…</span>}
-        {phase.kind === 'error' && <span>Update error: {phase.message}</span>}
+        {phase.kind === 'installed' && <span>✓ Installée — redémarrage…</span>}
+        {phase.kind === 'uptodate' && <span>✓ L’application est à jour</span>}
+        {phase.kind === 'error' && <span>Mise à jour impossible : {phase.message}</span>}
       </div>
       <div style={{ display: 'flex', gap: 6 }}>
         {phase.kind === 'available' && (
           <>
             <button type="button" onClick={() => void installAndRestart()} style={btnStyle}>
-              Install + restart
+              Installer et redémarrer
             </button>
             <button type="button" onClick={() => setHidden(true)} style={btnStyle}>
-              Later
+              Plus tard
             </button>
           </>
         )}
         {phase.kind === 'error' && (
           <button type="button" onClick={() => setHidden(true)} style={btnStyle}>
-            Dismiss
+            Fermer
           </button>
         )}
       </div>

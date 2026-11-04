@@ -64,9 +64,10 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        // Updater + process plugins disabled on Windows ARM64 (ring needs
-        // clang). Re-enable after `winget install LLVM.LLVM` — see
-        // Cargo.toml note.
+        // In-app updates (signed, from dev.elyone.com/agent/updates) and
+        // the relaunch that follows. Built on native-tls: no `ring`.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(app_state)
         .manage(crate::pty::TerminalManager::new())
         .manage(crate::commands::terminals::WatcherRegistry::default())

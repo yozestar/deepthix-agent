@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Elyone AI Desktop Agent",
-  "version": "0.6.11",
+  "version": "0.6.12",
   "identifier": "com.elyone.desktop-agent",
   "build": {
     "frontendDist": "../dist/webview",
@@ -29,7 +29,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -42,5 +42,15 @@
       "entitlements": "./Entitlements.plist"
     }
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJGMzZERjJDM0EwRkFGMzgKUldRNHJ3ODZMTjgyTDl2UWVLaFNQM1Q0SHNWdmY2a25mS0MycUpKb1hNeDg1a1ZwZjRsQTNIM0IK",
+      "endpoints": [
+        "https://dev.elyone.com/agent/updates/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }

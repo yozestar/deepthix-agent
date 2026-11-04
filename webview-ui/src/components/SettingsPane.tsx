@@ -10,7 +10,7 @@
 // reading the same `useGlobalConfig` snapshot.
 
 import { getVersion } from '@tauri-apps/api/app';
-import { check, type Update } from '@tauri-apps/plugin-updater';
+import type { Update } from '@tauri-apps/plugin-updater';
 import { useCallback, useEffect, useState } from 'react';
 
 import {
@@ -52,6 +52,7 @@ import {
   setAutostart,
 } from '../tauri/commands';
 import { resolveTheme, SYSTEM_THEME_ID, THEMES } from '../themes';
+import { checkForUpdate } from '../updater';
 
 interface BoxStyleMeta {
   id: BoxStyleId;
@@ -841,7 +842,7 @@ function UpdatesSection(): React.JSX.Element {
   const runCheck = useCallback(async (): Promise<void> => {
     setStatus({ kind: 'checking' });
     try {
-      const upd = await check();
+      const upd = await checkForUpdate();
       if (upd) setStatus({ kind: 'available', update: upd });
       else setStatus({ kind: 'up_to_date', checkedAt: Date.now() });
     } catch (e) {
@@ -863,37 +864,37 @@ function UpdatesSection(): React.JSX.Element {
       statusPill = <Pill bg="var(--color-border)" text="—" />;
       break;
     case 'checking':
-      statusPill = <Pill bg="var(--color-border)" text="checking…" />;
+      statusPill = <Pill bg="var(--color-border)" text="vérification…" />;
       break;
     case 'up_to_date':
-      statusPill = <Pill bg="#16a34a" text="UP TO DATE" />;
+      statusPill = <Pill bg="#16a34a" text="À JOUR" />;
       break;
     case 'not_configured':
-      statusPill = <Pill bg="#6b7280" text="AUTO-UPDATE NOT SET UP" />;
+      statusPill = <Pill bg="#6b7280" text="RIEN DE PUBLIÉ" />;
       break;
     case 'available':
-      statusPill = <Pill bg="#f59e0b" text={`UPDATE → v${status.update.version}`} />;
+      statusPill = <Pill bg="#f59e0b" text={`NOUVELLE VERSION → ${status.update.version}`} />;
       break;
     case 'error':
-      statusPill = <Pill bg="#ef4444" text="ERROR" />;
+      statusPill = <Pill bg="#ef4444" text="ERREUR" />;
       break;
   }
 
   return (
     <Section
-      title="UPDATES"
-      subtitle="Auto-checked on every launch. The orange banner at the top of the window appears when an update is available."
+      title="MISES À JOUR"
+      subtitle="Vérifiées au démarrage puis toutes les 6 heures. Un bandeau en haut de la fenêtre propose la nouvelle version."
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <span style={{ fontSize: '0.8125rem' }}>
-          Installed: <strong>v{version}</strong>
+          Installée : <strong>{version}</strong>
         </span>
         {statusPill}
       </div>
       {status.kind === 'available' && (
         <div style={{ fontSize: '0.75rem', opacity: 0.85, lineHeight: 1.5 }}>
-          A newer version is available. Open the orange banner at the top of the window and click
-          <strong> Install + restart</strong>. (Or run the manual install via the project README.)
+          Une nouvelle version est disponible : clique sur <strong>Installer et redémarrer</strong>
+          dans le bandeau en haut de la fenêtre.
         </div>
       )}
       {status.kind === 'error' && (
@@ -903,7 +904,7 @@ function UpdatesSection(): React.JSX.Element {
       )}
       {status.kind === 'not_configured' && (
         <div style={{ fontSize: '0.75rem', opacity: 0.7, lineHeight: 1.5 }}>
-          The repo's release pipeline ships unsigned artifacts (no `TAURI_SIGNING_PRIVATE_KEY` secret yet), so the in-app updater can't verify downloads. The app itself is fine — manual install from the GitHub release page works as before.
+          Aucune mise à jour publiée pour cet ordinateur sur le serveur pour l’instant.
         </div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>
@@ -925,7 +926,7 @@ function UpdatesSection(): React.JSX.Element {
             cursor: status.kind === 'checking' ? 'wait' : 'pointer',
           }}
         >
-          ⬆ Check now
+          ⬆ Rechercher une mise à jour
         </button>
       </div>
     </Section>

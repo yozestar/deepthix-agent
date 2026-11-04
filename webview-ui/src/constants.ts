@@ -273,3 +273,8 @@ export const TASKS_POLL_MS = 10_000;
 export const REMOTE_DOWNLOAD_MAX_BYTES = 40 * 1_048_576;
 /** localStorage key: project filter of the Tâches tab (ALL = '__all__'). */
 export const TASKS_FILTER_KEY = 'elyone.tasks.filter';
+/** Auto-update: how often the app looks for a new version (besides launch). */
+export const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/** Auto-update: the update area on dev.elyone.com sits behind the same
+ *  basic-auth as the download page (files are signature-checked anyway). */
+export const UPDATE_AUTH = 'elyone:ElyoneAgent2026';
