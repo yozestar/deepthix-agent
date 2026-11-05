@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { UseProjectsResult } from '../hooks/useProjects';
 import type { TerminalEntry } from '../hooks/useTerminals';
+import { requestMostRecentTab } from '../tabAutoPick';
 import { ConversationSidebar } from './ConversationSidebar';
 
 const MIN_WIDTH = 240;
@@ -105,6 +106,7 @@ export function Sidebar({
           activeProjectId={projects.activeProjectId}
           terminals={terminals}
           onSwitchProject={(id) => {
+            requestMostRecentTab(id);
             void projects.switchProject(id);
             onProjectPicked?.();
           }}

@@ -21,6 +21,7 @@ import { useFormFactor } from '../hooks/useFormFactor';
 import { openTasksOf, useTasks } from '../hooks/useTasks';
 import type { TerminalEntry, UseTerminalsResult } from '../hooks/useTerminals';
 import { startPolling } from '../remote/polling';
+import { MOST_RECENT_TAB_EVENT, takeMostRecentTabRequest } from '../tabAutoPick';
 import { urgentCount } from '../tasks';
 import {
   listResumableSessions,
@@ -99,6 +100,8 @@ export function SessionTabs({
   const [menuOpen, setMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [previews, setPreviews] = useState<Map<string, SessionPreview>>(new Map());
+  /** probeKey the previews were fetched for (tab order is final once equal). */
+  const [previewsFor, setPreviewsFor] = useState<string | null>(null);
 
   const closed = terminals.closedForProject(projectId);
 
@@ -121,10 +124,17 @@ export function SessionTabs({
   useEffect(() => {
     let cancelled = false;
     const probe = async (): Promise<void> => {
-      if (probeRef.current.length === 0) return;
+      const forKey = probeRef.current.map((i) => i.session_id).join('|');
+      if (probeRef.current.length === 0) {
+        setPreviewsFor(forKey);
+        return;
+      }
       try {
         const out = await sessionPreviews(probeRef.current);
-        if (!cancelled) setPreviews(new Map(out.map((p) => [p.session_id, p])));
+        if (!cancelled) {
+          setPreviews(new Map(out.map((p) => [p.session_id, p])));
+          setPreviewsFor(forKey);
+        }
       } catch (e) {
         console.error('[Elyone][SessionTabs] previews failed', e);
       }
@@ -169,6 +179,19 @@ export function SessionTabs({
       tabOrderKey(t, t.sessionId ? previews.get(t.sessionId)?.mtime_ms : undefined);
     return [...visible].sort((x, y) => key(y) - key(x));
   }, [visible, previews]);
+
+  // Back on a project from the sidebar: open its most recent tab, once the
+  // order is based on this project's last messages (see tabAutoPick.ts).
+  const [pickTick, setPickTick] = useState(0);
+  useEffect(() => {
+    const onRequest = (): void => setPickTick((n) => n + 1);
+    window.addEventListener(MOST_RECENT_TAB_EVENT, onRequest);
+    return () => window.removeEventListener(MOST_RECENT_TAB_EVENT, onRequest);
+  }, []);
+  useEffect(() => {
+    if (previewsFor !== probeKey || ordered.length === 0) return;
+    if (takeMostRecentTabRequest(projectId)) terminals.setActive(ordered[0].id);
+  }, [previewsFor, probeKey, ordered, projectId, terminals, pickTick]);
 
   // ── Right-click → move to another project ───────────────────────────
   const [moveMenu, setMoveMenu] = useState<{ termId: string; x: number; y: number } | null>(null);
