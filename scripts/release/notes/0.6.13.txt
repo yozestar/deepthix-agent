@@ -1,0 +1,1 @@
+En revenant sur un projet, l'onglet le plus récent (le premier à gauche) s'ouvre automatiquement.
