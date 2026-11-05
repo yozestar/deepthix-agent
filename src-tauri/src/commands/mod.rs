@@ -1,5 +1,6 @@
 pub mod chat;
 pub mod chrome;
+pub mod client_mode;
 pub mod config;
 pub mod conversations;
 pub mod dashboard;

@@ -357,7 +357,9 @@ function App(): React.JSX.Element {
               <OverviewPane terminals={terminals} projects={projects} onChangeMode={setMode} />
             </ModeOverlay>
           )}
-          {mode !== 'sessions' && mode !== 'overview' && mode !== 'settings' && !hasProjects && (
+          {/* No project yet (fresh install): SESSIONS has nothing to mount
+              either, so it gets the Welcome screen too instead of a blank pane. */}
+          {mode !== 'overview' && mode !== 'settings' && !hasProjects && (
             <ModeOverlay>
               <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
             </ModeOverlay>

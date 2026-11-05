@@ -167,15 +167,17 @@ export function TopTabs({
 
       {/* Right: mode tabs. Active tab gets an underline-style accent
           instead of full-fill — calmer chrome. */}
-      {/* Tabs scroll horizontally instead of squeezing the project name
-          when the window is narrow or the UI text size is large. */}
+      {/* Touch: tabs scroll horizontally instead of squeezing the project
+          name. Desktop: they wrap onto a second line — a hidden-scrollbar
+          strip left the last tabs unreachable on a 13" MacBook. */}
       <div
         style={{
           display: 'flex',
           gap: '2px',
           minWidth: 0,
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
+          ...(touch
+            ? { overflowX: 'auto', scrollbarWidth: 'none' }
+            : { flex: '1 1 0', flexWrap: 'wrap', justifyContent: 'flex-end' }),
           ...(formFactor === 'tablet' ? { order: 3, width: '100%', justifyContent: 'space-between' } : {}),
         }}
       >

@@ -71,3 +71,52 @@ cd webview-ui && npm test         # Webview tests only
 - Per-project state lives under `~/.deepthix/`.
 - Claude session JSONL files: `~/.claude/projects/<project-hash>/<session-id>.jsonl` (project hash = workspace path with `:`/`\`/`/` → `-`).
 - The office engine is documented in depth in the upstream pixel-agents `CHANGELOG.md` and source comments — refer to those for layout, asset, sprite, and rendering details.
+
+<!-- DEEPTHIX_DASHBOARD_BEGIN -->
+## Deepthix Dashboard
+
+This project is being run inside the Deepthix Agent. The OVERVIEW pane shows
+ONE shared HTML iframe per project — every session in this project writes to
+the same `dashboard.html`. Treat it as the project's status board: any session
+that does meaningful work updates it so the user (and the other sessions) get
+a glanceable snapshot.
+
+- The path is in the `DEEPTHIX_DASHBOARD_PATH` environment variable. Use the
+  Write tool with that exact path. (Same path for every session in this
+  project — last writer wins; merge thoughtfully when you change it.)
+- Self-contained HTML only (inline CSS, no external network). The iframe
+  has `sandbox="allow-scripts"` so inline `<script>` works for charts/counters
+  but `fetch` to other origins is blocked.
+- Update by overwriting the file. The OVERVIEW iframe re-renders within ~2s
+  of the file's mtime changing.
+- Show: current task, key facts the user asked you to track, blockers, what
+  you need from them next. Aim for ~100 lines max so it stays glanceable.
+
+### Custom action buttons
+
+Any element in the dashboard with a `data-deepthix-action="..."` attribute
+becomes an interactive button that, when clicked, types the action label
+into THIS session's prompt and submits it. Use this to give the user one-click
+shortcuts for things they would otherwise have to type:
+
+```html
+<button data-deepthix-action="refresh meta ads dashboard">Refresh</button>
+<button data-deepthix-action="run health check on production">Health check</button>
+<button data-deepthix-action="show last 24h errors" data-deepthix-payload="prod">Errors (prod)</button>
+```
+
+Optional `data-deepthix-payload` is appended to the action with a single space.
+The shim wiring is injected automatically — no need to write `postMessage`
+yourself. Style buttons however you like; click handling is delegated.
+
+### Notifications
+
+Use the `mcp__deepthix-mcp__notify_user` tool to push a toast (and a macOS
+banner) to the user. Reserve it for things they actually need to react to —
+build done, tests failed, ambiguous decision. The user is watching multiple
+sessions; every notification interrupts whatever they're looking at.
+
+Args: `title` (required, ~5-8 words), `body` (optional one-line detail),
+`kind` (`info` | `success` | `warn` | `error`), `source` (free-form origin tag,
+ideally the session label so the user knows who fired it).
+<!-- DEEPTHIX_DASHBOARD_END -->

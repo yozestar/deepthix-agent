@@ -1,4 +1,5 @@
 mod claude_bin;
+mod client_mode;
 mod claude_md;
 mod commands;
 mod jsonl_watcher;
@@ -188,6 +189,8 @@ pub fn run() {
             commands::remote::remote_set_cf,
             commands::remote::remote_get_autostart,
             commands::remote::remote_set_autostart,
+            commands::client_mode::client_mode_get,
+            commands::client_mode::client_mode_set,
         ])
         .setup(|app| {
             // If the main window's WebView could not be created (e.g. its
@@ -255,6 +258,11 @@ pub fn run() {
                         .start_if_enabled()
                         .await;
                 });
+            }
+            // Second window on another Mac's agent (MacBook → Mac mini over
+            // Tailscale), next to this local one.
+            if let Err(e) = crate::client_mode::install(app.handle()) {
+                tracing::warn!(target: "deepthix::boot", error = %e, "remote window setup failed");
             }
             tracing::info!(target: "deepthix::boot", "tauri setup complete");
             Ok(())

@@ -40,3 +40,11 @@ playwright-report/
 # These reference absolute filesystem paths and aren't useful for the
 # public-facing repo — keep locally only.
 /docs/superpowers/
+
+# Local artifacts (never commit)
+/.superpowers/
+/deploy/
+/*.exe
+# Compiled from TypeScript
+server/src/**/*.js
+shared/assets/*.js

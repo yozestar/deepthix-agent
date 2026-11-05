@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_PORT: u16 = 47821;
+/// Loopback port `tailscale serve` forwards to (see `Hub::start_tailnet`).
+pub const DEFAULT_TAILNET_PORT: u16 = 47822;
 pub const CONFIG_FILE: &str = "remote.json";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,6 +26,8 @@ pub struct Device {
 pub struct RemoteConfig {
     pub enabled: bool,
     pub port: u16,
+    /// 0 = no tailnet listener.
+    pub tailnet_port: u16,
     pub require_cf_access: bool,
     pub cf_team_domain: String,
     pub cf_aud: String,
@@ -39,6 +43,7 @@ impl Default for RemoteConfig {
         Self {
             enabled: false,
             port: DEFAULT_PORT,
+            tailnet_port: DEFAULT_TAILNET_PORT,
             require_cf_access: true,
             cf_team_domain: String::new(),
             cf_aud: String::new(),

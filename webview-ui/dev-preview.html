@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deepthix — dev preview (mock backend)</title>
+    <script>
+      // DEV-ONLY preview page: fakes the Tauri backend so the UI can be
+      // rendered in a plain browser for visual checks. Not shipped.
+      (function () {
+        const q = new URLSearchParams(location.search);
+        const now = Date.now();
+        const projects = [
+          { id: 'p1', path: 'C:\\Claude\\claude_agent', name: 'Deepthix Agent', last_opened_unix_ms: now },
+          { id: 'p2', path: 'C:\\Clients\\odoo-kaliop', name: 'Odoo Kaliop', last_opened_unix_ms: now - 1e6 },
+          { id: 'p3', path: 'C:\\Clients\\scentdesign', name: 'ScentDesign', last_opened_unix_ms: now - 2e6 },
+          { id: 'p4', path: 'C:\\Elyone\\cpq', name: 'ElyoneCPQ', last_opened_unix_ms: now - 3e6 },
+          { id: 'p5', path: 'C:\\Elyone\\einvoicing', name: 'E-invoicing FE02', last_opened_unix_ms: now - 4e6 },
+        ];
+        const sessionsByProject = {
+          p1: [['s-factures', 'Factures staging'], ['s-ui', 'Refonte UI'], ['s-mcp', 'Correctif MCP Windows'], ['s-old', 'Ancienne analyse']],
+          p2: [['s-kal1', 'Migration contacts'], ['s-kal2', 'Rapport mensuel']],
+          p3: [['s-scent', 'Import catalogue parfums']],
+          p5: [['s-fe02', 'Relance émissions FE02']],
+        };
+        const previewsById = {
+          's-factures': [now - 2 * 60000, "Voici ce que j'ai trouvé : 12 factures en brouillon, total 18 240 € HT."],
+          's-ui': [now - 30 * 60000, 'Les captures sont prêtes, tu veux valider le style ?'],
+          's-mcp': [now - 5 * 3600000, 'Correctif appliqué, 70 tests passent.'],
+          's-old': [now - 3 * 86400000, 'Analyse terminée.'],
+          's-kal1': [now - 50 * 60000, '412 contacts importés, 3 doublons à vérifier.'],
+          's-kal2': [now - 26 * 3600000, 'Rapport envoyé en brouillon.'],
+          's-scent': [now - 4 * 86400000, 'Catalogue importé : 1 240 articles.'],
+          's-fe02': [now - 9 * 86400000, 'Émissions suspendues comme demandé.'],
+        };
+        const ts = (m) => new Date(now - m * 60000).toISOString();
+        const history = [
+          { type: 'user', uuid: 'u1', timestamp: ts(9), message: { role: 'user', content: 'Peux-tu vérifier les factures en attente sur la staging ?' } },
+          { type: 'assistant', uuid: 'a1', timestamp: ts(8), message: { id: 'm1', model: 'claude-opus-5-5', content: [{ type: 'text', text: "Je regarde d'abord la liste des factures **en brouillon** (lecture seule)." }, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'python check_invoices.py --state draft', description: 'Liste les factures brouillon' } }], usage: { input_tokens: 4, cache_read_input_tokens: 182000, cache_creation_input_tokens: 2100, output_tokens: 420 } } },
+          { type: 'user', uuid: 'u2', timestamp: ts(8), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: '12 factures en brouillon\nTotal HT : 18 240,00 €' }] } },
+          { type: 'assistant', uuid: 'a2', timestamp: ts(7), message: { id: 'm2', model: 'claude-opus-5-5', content: [{ type: 'text', text: "Voici ce que j'ai trouvé :\n\n- **12 factures** en brouillon\n- Total HT : **18 240,00 €**\n- La plus ancienne date du 3 septembre\n\n```python\nfor inv in drafts:\n    print(inv.name, inv.amount_untaxed)\n```\n\nVeux-tu que je te liste les 3 plus anciennes ?" }], usage: { input_tokens: 3, cache_read_input_tokens: 184500, cache_creation_input_tokens: 900, output_tokens: 210 } } },
+          { type: 'user', uuid: 'u3', timestamp: ts(2), message: { role: 'user', content: 'Oui, et dis-moi pour chacune le client.' } },
+        ].map((r) => JSON.stringify(r));
+        const config = {
+          terminal_font_size: 13,
+          terminal_font_family: 'Menlo, monospace',
+          terminal_line_height: 1.0,
+          theme_id: q.get('theme') || 'elyone-clair',
+          box_style: q.get('box') || 'modern',
+          ui_font: q.get('font') || 'inter',
+          ui_text_scale: Number(q.get('scale') || 1),
+        };
+        const handlers = {
+          list_projects: () => ({ projects, active_project_id: 'p1' }),
+          switch_project: () => ({ ok: true }),
+          load_sessions: (a) => (sessionsByProject[a.projectId] || []).map(([id, label]) => ({ session_id: id, label, cwd: projects.find((p) => p.id === a.projectId).path, skip_permissions: false, created_at_ms: now })),
+          session_previews: (a) => a.items.map((it, i) => ({ session_id: it.session_id, mtime_ms: previewsById[it.session_id]?.[0] ?? now - i * 3e6, last_role: 'assistant', last_text: previewsById[it.session_id]?.[1] ?? 'Terminé.' })),
+          chat_load_history: () => history,
+          load_closed_sessions: (a) => a.projectId === 'p1' ? [
+            { session_id: 's-closed1', label: 'Audit factures août', cwd: projects[0].path, skip_permissions: false, notes: null, closed_at_ms: now - 26 * 3600000 },
+            { session_id: 's-closed2', label: 'Migration HubSpot', cwd: projects[0].path, skip_permissions: false, notes: null, closed_at_ms: now - 4 * 86400000 },
+          ] : [],
+          list_resumable_sessions: () => [
+            { session_id: 'old-a', jsonl_path: '', modified_ms: now - 12 * 86400000, size_bytes: 1, first_user_text: 'Prépare le devis pour la refonte du portail client', user_turn_count: 14 },
+            { session_id: 'old-b', jsonl_path: '', modified_ms: now - 30 * 86400000, size_bytes: 1, first_user_text: 'Analyse les logs du connecteur Sage', user_turn_count: 6 },
+          ],
+          search_conversations: (a) => [
+            { project_id: 'p5', session_id: 's-fe02', mtime_ms: now - 9 * 86400000, role: 'assistant', snippet: '…les émissions FE02 sont suspendues comme demandé, reprise possible dès validation.' },
+            { project_id: 'p1', session_id: 's-factures', mtime_ms: now - 2 * 60000, role: 'user', snippet: 'Peux-tu vérifier les factures et les émissions en attente sur la staging ?' },
+            { project_id: 'p2', session_id: 'old-123', mtime_ms: now - 20 * 86400000, role: 'assistant', snippet: 'Aucune émission bloquée côté Kaliop, le connecteur est à jour.' },
+          ],
+          read_global_config: () => config,
+          read_claude_usage_snapshot: () => ({
+            body: JSON.stringify({ rate_limits: {
+              five_hour: { used_percentage: Number(q.get('u5') || 42), resets_at: Math.floor(now / 1000) + 2 * 3600 + 600 },
+              seven_day: { used_percentage: Number(q.get('u7') || 71), resets_at: Math.floor(now / 1000) + 3 * 86400 },
+            } }),
+            mtime_ms: now,
+          }),
+          jsonl_mtime_ms: () => ({ mtime_ms: now, size: 1 }),
+          'plugin:app|version': () => '0.5.8-preview',
+          'plugin:updater|check': () => null,
+          'plugin:event|listen': () => 1,
+        };
+        let cbId = 1;
+        window.__TAURI_INTERNALS__ = {
+          metadata: { currentWindow: { label: 'main' }, currentWebview: { windowLabel: 'main', label: 'main' } },
+          transformCallback: () => cbId++,
+          unregisterCallback: () => {},
+          convertFileSrc: (p) => p,
+          invoke: async (cmd, args) => {
+            const h = handlers[cmd];
+            if (h) return h(args || {});
+            if (/^(list_|load_|read_.*s$)/.test(cmd)) return [];
+            return null;
+          },
+        };
+        if (q.get('search')) {
+          setTimeout(() => {
+            const el = document.querySelector('input[aria-label="Rechercher une conversation"]');
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+            setter.call(el, q.get('search'));
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+          }, 2500);
+        }
+        if (q.get('recent')) previewsById[q.get('recent')][0] = now - 10000;
+        if (q.get('ctxtest')) {
+          // Simulated right-click on the 2nd tab → "Déplacer vers…" menu.
+          setTimeout(() => {
+            const tabs = [...document.querySelectorAll('[role="tab"]')];
+            const r = tabs[1].getBoundingClientRect();
+            tabs[1].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 30, clientY: r.bottom + 4, button: 2 }));
+          }, 5000);
+        }
+        if (q.get('dragtest')) {
+          // Simulated mouse: press tab 1, drag past tab 3, optionally release.
+          const fail = (msg) => {
+            const r = document.createElement('pre');
+            r.id = 'dragtest-report'; r.style.cssText = 'position:fixed;left:0;bottom:0;z-index:99999;background:#ffcb01;color:#000;font:13px monospace;padding:6px;max-width:100vw;white-space:pre-wrap';
+            r.textContent = 'ERROR ' + msg + ' tabs=' + document.querySelectorAll('[role="tab"]').length;
+            document.body.appendChild(r);
+          };
+          window.addEventListener('error', (e) => fail(e.message));
+          setTimeout(() => {
+            const tabs = [...document.querySelectorAll('[role="tab"]')];
+            if (tabs.length < 3) return fail('not enough tabs');
+            const a = tabs[0].getBoundingClientRect();
+            const c = tabs[2].getBoundingClientRect();
+            const opts = (x) => ({ bubbles: true, clientX: x, clientY: a.top + a.height / 2, button: 0, pointerId: 1, pointerType: 'mouse' });
+            tabs[0].dispatchEvent(new PointerEvent('pointerdown', opts(a.left + 20)));
+            window.dispatchEvent(new PointerEvent('pointermove', opts(a.left + 40)));
+            window.dispatchEvent(new PointerEvent('pointermove', opts(c.right - 10)));
+            if (q.get('dragtest') === 'done') {
+              window.dispatchEvent(new PointerEvent('pointerup', opts(c.right - 10)));
+            }
+            setTimeout(() => {
+              const now = [...document.querySelectorAll('[role="tab"]')];
+              const report = document.createElement('pre');
+              report.id = 'dragtest-report'; report.style.cssText = 'position:fixed;left:0;bottom:0;z-index:99999;background:#ffcb01;color:#000;font:13px monospace;padding:6px;max-width:100vw;white-space:pre-wrap';
+              report.textContent = JSON.stringify({ found: tabs.length, classes: now.map((t) => t.className), labels: now.map((t) => t.textContent.slice(0, 20)) });
+              document.body.appendChild(report);
+            }, 500);
+          }, 5000);
+        }
+        if (q.get('click')) {
+          setTimeout(() => {
+            const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes(q.get('click')));
+            if (b) b.click();
+            if (q.get('scroll')) setTimeout(() => document.querySelectorAll('*').forEach((el) => { if (el.scrollHeight > el.clientHeight + 50 && getComputedStyle(el).overflowY === 'auto') el.scrollTop = Number(q.get('scroll')); }), 400);
+          }, 2500);
+        }
+        window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
