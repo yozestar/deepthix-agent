@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { EquipePane } from './components/agents/EquipePane';
+import { MissionsPane } from './components/agents/MissionsPane';
 import { ProcessPane, SessionsPane } from './components/BottomPanel';
 import { FilesPane } from './components/FilesPane';
 import { MemoryPane } from './components/MemoryPane';
@@ -443,6 +445,16 @@ function App(): React.JSX.Element {
                 projects={projects}
                 onChangeMode={setMode}
               />
+            </ModeOverlay>
+          )}
+          {mode === 'equipe' && (
+            <ModeOverlay>
+              <EquipePane />
+            </ModeOverlay>
+          )}
+          {mode === 'missions' && (
+            <ModeOverlay>
+              <MissionsPane />
             </ModeOverlay>
           )}
           {mode === 'variables' && (

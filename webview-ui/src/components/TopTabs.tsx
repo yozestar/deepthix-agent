@@ -14,11 +14,13 @@ import {
   FolderOpen,
   FolderTree,
   Gauge,
+  KanbanSquare,
   LayoutDashboard,
   ListTodo,
   Menu,
   MessagesSquare,
   Sparkles,
+  Users,
   Variable,
   Workflow,
 } from 'lucide-react';
@@ -38,6 +40,8 @@ export type Mode =
   | 'schedule'
   | 'workflow'
   | 'variables'
+  | 'equipe'
+  | 'missions'
   | 'settings';
 
 interface Props {
@@ -55,6 +59,8 @@ interface Props {
 const VISIBLE_MODES: ReadonlyArray<Mode> = [
   'overview',
   'sessions',
+  'equipe',
+  'missions',
   'tasks',
   'files',
   'usage',
@@ -82,6 +88,8 @@ const MODE_META: Record<Exclude<Mode, 'settings'>, { label: string; Icon: Lucide
   schedule: { label: 'Schedule', Icon: CalendarClock },
   workflow: { label: 'Workflows', Icon: Workflow },
   variables: { label: 'Variables', Icon: Variable },
+  equipe: { label: 'Équipe', Icon: Users },
+  missions: { label: 'Missions', Icon: KanbanSquare },
 };
 
 export function TopTabs({

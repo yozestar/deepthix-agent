@@ -1238,3 +1238,20 @@ export async function clientModeSet(url: string): Promise<void> {
   log('clientModeSet', { url });
   await invoke('client_mode_set', { url });
 }
+
+// ── Agents (ÉQUIPE / MISSIONS) ─────────────────────────────────────────────
+// Thin client of the agent engine on the Mac mini (~/.elyone/agents/moteur/api.py).
+
+/** Calls the agent engine; throws with the engine's French error message. */
+export async function agentsApi<T>(action: string, args: string[] = [], input?: unknown): Promise<T> {
+  const raw = await invoke<string>('agents_api', {
+    action,
+    args,
+    input: input === undefined ? null : JSON.stringify(input),
+  });
+  const parsed = JSON.parse(raw) as T & { erreur?: string };
+  if (parsed && typeof parsed === 'object' && 'erreur' in parsed && parsed.erreur) {
+    throw new Error(parsed.erreur);
+  }
+  return parsed;
+}

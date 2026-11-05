@@ -1,0 +1,1 @@
+Agents : nouveaux onglets Équipe (organigramme, fiches des agents, règles « qui valide quoi », accès, compétences, comptes Claude, création d'agent, historique avec retour arrière) et Missions (tableau de suivi et validations en attente).

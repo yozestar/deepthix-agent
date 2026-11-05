@@ -1,0 +1,1 @@
+Mise à jour automatique (bandeau en haut de la fenêtre). Onglet Tâches, « Reste à faire » par projet et par conversation, compteur sur les onglets, bouton « Où j'en suis ? », /tache et /point. Fichiers : Ouvrir, Afficher dans le Finder, Télécharger depuis le téléphone. Tableaux de bord de l'agent rangés dans le bon projet.

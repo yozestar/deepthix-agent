@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod chat;
 pub mod chrome;
 pub mod client_mode;
