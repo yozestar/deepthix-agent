@@ -44,6 +44,11 @@ export async function renameProject(id: string, name: string): Promise<boolean> 
   return await invoke<boolean>('rename_project', { id, name });
 }
 
+export async function setProjectPinned(id: string, pinned: boolean): Promise<boolean> {
+  log('setProjectPinned', { id, pinned });
+  return await invoke<boolean>('set_project_pinned', { id, pinned });
+}
+
 export async function listDir(path: string): Promise<FileEntry[]> {
   log('listDir', { path });
   return await invoke<FileEntry[]>('list_dir', { path });

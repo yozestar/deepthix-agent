@@ -70,6 +70,12 @@ pub fn remove_project(state: State<'_, AppState>, id: String) -> Result<bool, St
 }
 
 #[tauri::command]
+pub fn set_project_pinned(state: State<'_, AppState>, id: String, pinned: bool) -> Result<bool, String> {
+    tracing::info!(target: "deepthix::commands", %id, pinned, "set_project_pinned");
+    state.set_pinned(&id, pinned).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn rename_project(
     state: State<'_, AppState>,
     id: String,

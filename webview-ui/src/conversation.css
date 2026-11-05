@@ -295,6 +295,43 @@
 .dt-conv-row.is-active .dt-conv-kbd {
   opacity: 1;
 }
+.dt-conv-subsection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-sidebar-muted);
+}
+/* Desktop: takes no room until the row is hovered (names stay readable). */
+.dt-conv-pin {
+  display: none;
+  border: none;
+  background: transparent;
+  color: var(--color-sidebar-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 6px;
+}
+.dt-conv-row:hover .dt-conv-pin,
+.dt-conv-pin:focus-visible {
+  display: inline-flex;
+}
+.dt-conv-pin:hover {
+  color: var(--color-sidebar-text);
+}
+/* Touch: no hover — the pin stays reachable on every row. */
+html.touch-layout .dt-conv-pin {
+  display: inline-flex;
+  opacity: 0.7;
+  min-width: 36px;
+  min-height: 36px;
+  justify-content: center;
+  align-items: center;
+}
 .dt-conv-remove {
   display: inline-flex;
   border: none;

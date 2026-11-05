@@ -11,7 +11,7 @@
 // sessions' JSONL via `session_previews` (polled every
 // SIDEBAR_PREVIEW_POLL_MS). Ctrl+1…9 jumps to the Nth listed project.
 
-import { Menu, Plus, Search, Settings, X } from 'lucide-react';
+import { Menu, Pin, PinOff, Plus, Search, Settings, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -19,7 +19,7 @@ import {
   CONTENT_SEARCH_MIN_CHARS,
   SIDEBAR_PREVIEW_POLL_MS,
 } from '../constants';
-import { avatarColor, formatWhen, initials, matches, splitOnMatch } from '../conversationUtils';
+import { avatarColor, formatWhen, initials, matches, splitOnMatch, splitPinned } from '../conversationUtils';
 import { useAgentStatus } from '../hooks/useAgentStatus';
 import type { TerminalEntry } from '../hooks/useTerminals';
 import { startPolling } from '../remote/polling';
@@ -41,6 +41,7 @@ interface Props {
   onResumeSession: (projectId: string, sessionId: string) => void;
   onRemoveProject: (id: string) => void;
   onRenameProject: (id: string, name: string) => void;
+  onTogglePin: (id: string, pinned: boolean) => void;
   onAddProject: () => void;
   onNewSession: () => void;
   onOpenSettings: () => void;
@@ -72,6 +73,7 @@ export function ConversationSidebar({
   onResumeSession,
   onRemoveProject,
   onRenameProject,
+  onTogglePin,
   onAddProject,
   onNewSession,
   onOpenSettings,
@@ -184,8 +186,12 @@ export function ConversationSidebar({
         out.push({ project, sessions: projectHit ? all : hitSessions, lastMs, projectHit });
       }
     }
-    return out.sort((a, b) => b.lastMs - a.lastMs);
+    // Pinned first (fixed order, so their Ctrl+N stays the same), then the
+    // others, most recent activity first.
+    const { pinned, others } = splitPinned(out.sort((a, b) => b.lastMs - a.lastMs));
+    return [...pinned, ...others];
   }, [projects, claudeSessions, previews, query]);
+  const pinnedCount = groups.filter((g) => g.project.pinned_at_ms).length;
 
   // Projects in display order → Ctrl+1…9 targets.
   const visibleRef = useRef(groups);
@@ -326,8 +332,15 @@ export function ConversationSidebar({
           const newest = g.sessions[0];
           const working = isWorking(g);
           const shortcut = index < 9 ? index + 1 : null;
+          const isPinned = !!p.pinned_at_ms;
           return (
             <div key={p.id} className="dt-conv-group">
+              {pinnedCount > 0 && index === 0 && (
+                <div className="dt-conv-subsection">
+                  <Pin size="0.85em" strokeWidth={2} aria-hidden /> Épinglés
+                </div>
+              )}
+              {pinnedCount > 0 && index === pinnedCount && <div className="dt-conv-subsection">Récents</div>}
               <div
                 role="button"
                 tabIndex={0}
@@ -378,6 +391,22 @@ export function ConversationSidebar({
                       (g.sessions.length === 0 ? 'Aucune session' : newest?.term.label)}
                   </span>
                 </span>
+                <button
+                  type="button"
+                  className={`dt-conv-pin${isPinned ? ' is-pinned' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTogglePin(p.id, !isPinned);
+                  }}
+                  aria-label={isPinned ? `Désépingler ${p.name}` : `Épingler ${p.name}`}
+                  title={isPinned ? 'Désépingler' : 'Épingler en haut de la liste'}
+                >
+                  {isPinned ? (
+                    <PinOff size="0.9em" strokeWidth={2} aria-hidden />
+                  ) : (
+                    <Pin size="0.9em" strokeWidth={2} aria-hidden />
+                  )}
+                </button>
                 <button
                   type="button"
                   className="dt-conv-remove"

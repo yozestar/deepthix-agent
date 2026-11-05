@@ -6,6 +6,7 @@ import {
   openFolder as cmdOpenFolder,
   removeProject as cmdRemoveProject,
   renameProject as cmdRenameProject,
+  setProjectPinned as cmdSetProjectPinned,
   switchProject as cmdSwitchProject,
 } from '../tauri/commands';
 import { onProjectSwitched } from '../tauri/events';
@@ -22,6 +23,7 @@ export interface UseProjectsResult {
   switchProject: (id: string) => Promise<void>;
   removeProject: (id: string) => Promise<void>;
   renameProject: (id: string, name: string) => Promise<void>;
+  setPinned: (id: string, pinned: boolean) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -131,6 +133,23 @@ export function useProjects(): UseProjectsResult {
     }
   }, [refresh]);
 
+  const setPinned = useCallback(async (id: string, pinned: boolean): Promise<void> => {
+    setError(null);
+    // Optimistic: the row moves at once, the file follows.
+    setProjects((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, pinned_at_ms: pinned ? (p.pinned_at_ms ?? Date.now()) : null } : p)),
+    );
+    try {
+      await cmdSetProjectPinned(id, pinned);
+      await refresh();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[Elyone][useProjects] setPinned failed', msg);
+      setError(msg);
+      await refresh();
+    }
+  }, [refresh]);
+
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
 
   return {
@@ -143,6 +162,7 @@ export function useProjects(): UseProjectsResult {
     switchProject,
     removeProject,
     renameProject,
+    setPinned,
     refresh,
   };
 }

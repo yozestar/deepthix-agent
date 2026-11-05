@@ -164,6 +164,17 @@ export function splitOnMatch(text: string, query: string): [string, string, stri
  * does not exist yet → first) or a paused tab whose transcript is gone
  * (`ghost:…`, e.g. not carried over by a migration → last). Shells last.
  */
+/** Pinned projects first, in pin order; the others keep their order
+ *  (most recent activity first). */
+export function splitPinned<T extends { project: { pinned_at_ms?: number | null } }>(
+  groups: T[],
+): { pinned: T[]; others: T[] } {
+  const pinned = groups
+    .filter((g) => g.project.pinned_at_ms)
+    .sort((a, b) => (a.project.pinned_at_ms ?? 0) - (b.project.pinned_at_ms ?? 0));
+  return { pinned, others: groups.filter((g) => !g.project.pinned_at_ms) };
+}
+
 export function tabOrderKey(
   tab: { id: string; kind: string; sessionId?: string | null },
   lastMessageMs: number | undefined,

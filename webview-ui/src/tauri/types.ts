@@ -6,6 +6,8 @@ export interface Project {
   path: string;
   name: string;
   last_opened_unix_ms: number;
+  /** Pinned at the top of the list, in pin order (absent: not pinned). */
+  pinned_at_ms?: number | null;
 }
 
 export interface ProjectsFile {

@@ -114,6 +114,7 @@ export function Sidebar({
           onResumeSession={onResumeSession}
           onRemoveProject={(id) => void projects.removeProject(id)}
           onRenameProject={(id, name) => void projects.renameProject(id, name)}
+          onTogglePin={(id, pinned) => void projects.setPinned(id, pinned)}
           onAddProject={() => void projects.openAndAddProject()}
           onNewSession={onNewSession}
           onOpenSettings={onOpenSettings}

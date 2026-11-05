@@ -16,6 +16,7 @@ const REMOTE_COMMANDS: &[&str] = &[
     "switch_project",
     "remove_project",
     "rename_project",
+    "set_project_pinned",
     "list_dir",
     "read_file",
     "write_file",

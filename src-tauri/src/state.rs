@@ -11,6 +11,9 @@ pub struct Project {
     pub path: PathBuf,
     pub name: String,
     pub last_opened_unix_ms: u64,
+    /// Pinned at the top of the project list, in pin order. None = not pinned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_at_ms: Option<u64>,
 }
 
 /// What we persist to ~/.deepthix/projects.json.
@@ -61,6 +64,7 @@ impl AppState {
             name: path.file_name().and_then(|n| n.to_str()).unwrap_or("project").to_string(),
             path,
             last_opened_unix_ms: now_unix_ms(),
+            pinned_at_ms: None,
         };
         state.projects.push(project.clone());
         state.active_project_id = Some(project.id.clone());
@@ -92,6 +96,21 @@ impl AppState {
         };
         tracing::info!(target: "deepthix::state", %id, old = %project.name, new = %name, "rename");
         project.name = name;
+        self.write_locked(&state)?;
+        Ok(true)
+    }
+
+    /// Pin (keeps its first pin date) or unpin a project. False if unknown id.
+    pub fn set_pinned(&self, id: &str, pinned: bool) -> std::io::Result<bool> {
+        let mut state = self.inner.lock().unwrap();
+        let Some(project) = state.projects.iter_mut().find(|p| p.id == id) else {
+            return Ok(false);
+        };
+        project.pinned_at_ms = match (pinned, project.pinned_at_ms) {
+            (true, Some(at)) => Some(at),
+            (true, None) => Some(now_unix_ms()),
+            (false, _) => None,
+        };
         self.write_locked(&state)?;
         Ok(true)
     }
@@ -165,7 +184,7 @@ mod tests {
     use tempfile::tempdir;
 
     fn proj(id: &str, path: &str) -> Project {
-        Project { id: id.into(), path: PathBuf::from(path), name: id.into(), last_opened_unix_ms: 0 }
+        Project { id: id.into(), path: PathBuf::from(path), name: id.into(), last_opened_unix_ms: 0, pinned_at_ms: None }
     }
 
     #[test]
@@ -186,6 +205,32 @@ mod tests {
     fn deepest_containing_project_wins() {
         let list = vec![proj("dev", "/Users/ia/Dev"), proj("app", "/Users/ia/Dev/app")];
         assert_eq!(stored_project_id(&list, Path::new("/Users/ia/Dev/app/src")).as_deref(), Some("app"));
+    }
+
+    #[test]
+    fn pin_persists_keeps_its_date_and_unpins() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("projects.json");
+        let state = AppState::load(path.clone()).unwrap();
+        let p = state.add(dir.path().join("bee2link")).unwrap();
+        assert!(state.set_pinned(&p.id, true).unwrap());
+        let first = state.snapshot().projects[0].pinned_at_ms;
+        assert!(first.is_some());
+        state.set_pinned(&p.id, true).unwrap();
+        assert_eq!(state.snapshot().projects[0].pinned_at_ms, first, "re-pinning keeps its place");
+        let reloaded = AppState::load(path.clone()).unwrap();
+        assert_eq!(reloaded.snapshot().projects[0].pinned_at_ms, first);
+        state.set_pinned(&p.id, false).unwrap();
+        assert_eq!(AppState::load(path).unwrap().snapshot().projects[0].pinned_at_ms, None);
+        assert!(!state.set_pinned("nope", true).unwrap());
+    }
+
+    #[test]
+    fn older_projects_file_without_pins_loads() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("projects.json");
+        std::fs::write(&path, r#"{"projects":[{"id":"a","path":"/x","name":"x","last_opened_unix_ms":1}],"active_project_id":null}"#).unwrap();
+        assert_eq!(AppState::load(path).unwrap().snapshot().projects[0].pinned_at_ms, None);
     }
 
     fn fixture() -> (tempfile::TempDir, AppState) {

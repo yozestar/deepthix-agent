@@ -83,6 +83,7 @@ pub fn run() {
             commands::projects::switch_project,
             commands::projects::remove_project,
             commands::projects::rename_project,
+            commands::projects::set_project_pinned,
             commands::fs::list_dir,
             commands::fs::read_file,
             commands::fs::write_file,
