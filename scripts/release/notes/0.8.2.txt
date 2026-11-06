@@ -1,0 +1,1 @@
+Serveur d'équipe : l'app d'un collègue travaille en local et va chercher ses droits et les agents sur le Mac mini (connexion Microsoft, appairage validé par un administrateur). Réglages → Serveur d'équipe.

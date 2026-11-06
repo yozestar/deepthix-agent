@@ -1,5 +1,6 @@
 import { requestFolderPick } from '../remote/folderPicker';
 import { isRemoteRuntime } from '../runtime';
+import { teamClient } from './teamClient';
 import { invoke, remoteClient } from './transport';
 import type { FileEntry, Project, ProjectsFile, SwitchResult } from './types';
 
@@ -1246,11 +1247,17 @@ export async function clientModeSet(url: string): Promise<void> {
 export async function agentsApi<T>(action: string, args: string[] = [], input?: unknown): Promise<T> {
   // Rights are enforced by the engine from the verified identity (the remote
   // server injects the Cloudflare Access email; locally = owner of the Mac).
-  const raw = await invoke<string>('agents_api', {
-    action,
-    args,
-    input: input === undefined ? null : JSON.stringify(input),
-  });
+  const payload = { action, args, input: input === undefined ? null : JSON.stringify(input) };
+  let raw: string;
+  try {
+    raw = await invoke<string>('agents_api', payload);
+  } catch (e) {
+    // No engine on this computer: a colleague's local app → ask the team server.
+    const msg = e instanceof Error ? e.message : String(e);
+    const tc = /Moteur d.agents absent/.test(msg) ? await teamClient() : null;
+    if (!tc) throw e;
+    raw = await tc.invoke<string>('agents_api', payload);
+  }
   const parsed = JSON.parse(raw) as T & { erreur?: string };
   if (parsed && typeof parsed === 'object' && 'erreur' in parsed && parsed.erreur) {
     throw new Error(parsed.erreur);

@@ -53,6 +53,7 @@ import {
 } from '../tauri/commands';
 import { resolveTheme, SYSTEM_THEME_ID, THEMES } from '../themes';
 import { checkForUpdate } from '../updater';
+import { TeamServerCard } from './TeamServerCard';
 
 interface BoxStyleMeta {
   id: BoxStyleId;
@@ -138,6 +139,7 @@ export function SettingsPane({ globalConfig }: Props): React.JSX.Element {
         fontFamily: 'var(--font-pixel)',
       }}
     >
+      <TeamServerCard />
       {/* TERMINAL section */}
       <Section title="TERMINAL" subtitle="Applies to ALL claude sessions across every project.">
         <Row label="Font size">
