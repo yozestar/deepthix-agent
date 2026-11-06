@@ -33,6 +33,7 @@ export interface AgentSummary {
 export interface Pole {
   nom: string;
   responsables: string[];
+  membres?: string[];
   agents: string[];
 }
 export interface Regle {

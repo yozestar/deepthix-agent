@@ -158,6 +158,15 @@ export function Organigramme({
           <div key={c.nom}>
             <div style={{ fontSize: 12, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 800, marginBottom: 10 }}>{c.nom}</div>
             {c.managers.map((m) => zone(c.nom, m))}
+            {(poles.find((p) => p.nom === c.nom)?.membres ?? []).length > 0 && (
+              <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {(poles.find((p) => p.nom === c.nom)?.membres ?? []).map((n) => (
+                  <span key={n} title="Collaborateur du pôle" style={{ fontSize: 12, padding: '4px 10px', borderRadius: 999, background: 'var(--color-btn-bg)' }}>
+                    🙂 {n}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         <div>

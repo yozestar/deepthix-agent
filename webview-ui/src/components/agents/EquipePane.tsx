@@ -217,6 +217,7 @@ function AgentSheet({
   const [hist, setHist] = useState<Commit[]>([]);
   const [outils, setOutils] = useState<Outil[]>([]);
   const [personnes, setPersonnes] = useState<string[]>([]);
+  const [responsables, setResponsables] = useState<{ nom: string; profil: string; pole: string }[]>([]);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (): Promise<void> => {
@@ -242,6 +243,9 @@ function AgentSheet({
       .catch(() => undefined);
     void agentsApi<string[]>('personnes')
       .then(setPersonnes)
+      .catch(() => undefined);
+    void agentsApi<{ nom: string; profil: string; pole: string }[]>('responsables')
+      .then(setResponsables)
       .catch(() => undefined);
   }, [load]);
 
@@ -327,7 +331,17 @@ function AgentSheet({
           <input style={inputStyle} value={identity.pole ?? ''} onChange={(e) => setId('pole', e.target.value)} />
         </Field>
         <Field label="Responsable humain">
-          <input style={inputStyle} value={identity.responsable ?? ''} onChange={(e) => setId('responsable', e.target.value)} />
+          <select style={inputStyle} value={identity.responsable ?? ''} onChange={(e) => setId('responsable', e.target.value)}>
+            {[...new Set([...(identity.responsable ? [identity.responsable] : []), ...responsables.map((r) => r.nom)])].map((n) => {
+              const r = responsables.find((x) => x.nom === n);
+              return (
+                <option key={n} value={n}>
+                  {n}
+                  {r ? ` — ${r.profil === 'admin' ? 'administrateur' : `responsable ${r.pole}`}` : ' (pas dans les utilisateurs)'}
+                </option>
+              );
+            })}
+          </select>
         </Field>
         <Field label="Présentation (Teams)">
           <input style={inputStyle} value={identity.presentation_teams ?? ''} onChange={(e) => setId('presentation_teams', e.target.value)} />

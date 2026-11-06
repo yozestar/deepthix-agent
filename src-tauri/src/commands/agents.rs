@@ -37,6 +37,7 @@ const ALLOWED: &[&str] = &[
     "utilisateurs",
     "maj_utilisateur",
     "suppr_utilisateur",
+    "responsables",
 ];
 
 /// Subset reachable from the REMOTE UI (collaborators): read the home page and

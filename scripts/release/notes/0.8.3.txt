@@ -1,0 +1,1 @@
+Responsables reliés aux utilisateurs : le responsable d'un agent se choisit parmi les utilisateurs (administrateurs et responsables de pôle), l'organigramme montre les vrais collègues de chaque pôle.
