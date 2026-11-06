@@ -2,7 +2,6 @@
 // in a plain browser. Tauri's invoke is replaced by a local read-only bridge
 // to the agent engine (127.0.0.1:8765). Not part of the app build.
 import '../index.css';
-import '@fontsource/inter';
 
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
