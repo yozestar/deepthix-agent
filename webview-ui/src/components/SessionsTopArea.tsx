@@ -1,4 +1,4 @@
-/* eslint-disable deepthix/no-inline-colors */
+ 
 // Top half of the SESSIONS view. Hosts the GLOBAL Coach (Sonnet
 // sub-session that watches every claude session in EVERY project and
 // proposes improvements every 10 min when ON). One coach for the whole

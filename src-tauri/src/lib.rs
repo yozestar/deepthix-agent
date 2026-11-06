@@ -1,3 +1,4 @@
+mod agents_users;
 mod claude_bin;
 mod client_mode;
 mod claude_md;

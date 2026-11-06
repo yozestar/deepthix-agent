@@ -12,6 +12,32 @@ struct Claims {
     email: String,
 }
 
+/// Like `verify_with_jwks` but accepts any email the predicate allows (the
+/// owner + active users of the team, see `agents_users`).
+pub fn verify_with_jwks_any(
+    token: &str,
+    jwks: &JwkSet,
+    team_domain: &str,
+    aud: &str,
+    allowed: &dyn Fn(&str) -> bool,
+) -> Result<String, String> {
+    if aud.is_empty() || team_domain.is_empty() {
+        return Err("cloudflare access not configured".into());
+    }
+    let header = decode_header(token).map_err(|e| format!("bad jwt header: {e}"))?;
+    let kid = header.kid.ok_or("jwt without kid")?;
+    let jwk = jwks.find(&kid).ok_or("unknown jwt key")?;
+    let key = DecodingKey::from_jwk(jwk).map_err(|e| format!("bad jwk: {e}"))?;
+    let mut validation = Validation::new(Algorithm::RS256);
+    validation.set_audience(&[aud]);
+    validation.set_issuer(&[format!("https://{team_domain}")]);
+    let data = decode::<Claims>(token, &key, &validation).map_err(|e| format!("jwt rejected: {e}"))?;
+    if !allowed(&data.claims.email) {
+        return Err("email not allowed".into());
+    }
+    Ok(data.claims.email)
+}
+
 /// Returns the authenticated email when the token is valid for this team,
 /// this application and the allowed email.
 pub fn verify_with_jwks(

@@ -22,16 +22,18 @@ import {
 import { Organigramme } from './Organigramme';
 import { ReglesEditor } from './ReglesEditor';
 import { Avatar, Btn, Card, Chip, Field } from './ui';
+import { UtilisateursView } from './UtilisateursView';
 
-export type View = 'organigramme' | 'agents' | 'comptes' | 'nouveau';
+export type View = 'organigramme' | 'agents' | 'utilisateurs' | 'comptes' | 'nouveau';
 const VIEWS: ReadonlyArray<{ id: View; label: string }> = [
   { id: 'organigramme', label: 'Organigramme' },
   { id: 'agents', label: 'Fiches des agents' },
+  { id: 'utilisateurs', label: '👥 Utilisateurs et droits' },
   { id: 'comptes', label: 'Comptes Claude' },
   { id: 'nouveau', label: '+ Nouvel agent' },
 ];
 
-export function EquipePane({ initialView = 'organigramme' }: { initialView?: View } = {}): React.JSX.Element {
+export function EquipePane({ initialView = 'organigramme', isAdmin = true }: { initialView?: View; isAdmin?: boolean } = {}): React.JSX.Element {
   const [view, setView] = useState<View>(initialView);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [poles, setPoles] = useState<Pole[]>([]);
@@ -80,7 +82,7 @@ export function EquipePane({ initialView = 'organigramme' }: { initialView?: Vie
         }}
       >
         <span style={{ color: 'var(--color-accent)', fontWeight: 700, marginRight: 12 }}>ÉQUIPE</span>
-        {VIEWS.map((v) => (
+        {VIEWS.filter((v) => isAdmin || v.id === 'organigramme' || v.id === 'agents').map((v) => (
           <Btn key={v.id} kind={view === v.id ? 'primary' : 'normal'} onClick={() => setView(v.id)}>
             {v.label}
           </Btn>
@@ -121,6 +123,7 @@ export function EquipePane({ initialView = 'organigramme' }: { initialView?: Vie
             onError={setError}
           />
         )}
+        {view === 'utilisateurs' && isAdmin && <UtilisateursView agents={agents} onChanged={notify} onError={setError} />}
         {view === 'comptes' && <ComptesView comptes={comptes} onChanged={() => void refresh()} onError={setError} />}
         {view === 'nouveau' && (
           <NouvelAgent

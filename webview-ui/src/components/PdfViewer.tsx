@@ -1,4 +1,4 @@
-/* eslint-disable deepthix/no-inline-colors */
+ 
 // PDF viewer based on react-pdf (which wraps pdfjs-dist). Replaces the
 // previous data-URL <iframe> in FilesPane:
 //   - works inside Tauri's webview without needing a custom asset
@@ -13,16 +13,16 @@
 // `read_file` Tauri command path instead of inventing a streamed
 // transport just for PDFs.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
-
 // Wire up pdfjs's worker. Vite's `?url` import gives us the bundled
 // asset URL at build time — no fetching from a CDN, fully offline.
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
+
 // Prefer the bundled worker so the Reader works offline + with strict
 // CSPs. The .mjs file exists in pdfjs-dist@4+.
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Document, Page, pdfjs } from 'react-pdf';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 

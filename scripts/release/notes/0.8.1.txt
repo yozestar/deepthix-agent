@@ -1,0 +1,1 @@
+Utilisateurs et droits : liste des collègues gérée dans Équipe (administrateur, responsable de pôle, collaborateur, agents autorisés, actif), droits vérifiés par le Mac mini à chaque action, identité via le compte Microsoft (Cloudflare Access).

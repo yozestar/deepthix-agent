@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 // Dev-only preview of the design v2 shell (rail + space header + agent panes)
 // in a plain browser. Tauri's invoke is replaced by a local read-only bridge
 // to the agent engine (127.0.0.1:8765). Not part of the app build.

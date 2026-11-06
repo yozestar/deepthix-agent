@@ -84,7 +84,7 @@ function App(): React.JSX.Element {
   }, [mode]);
 
   // Design v2: spaces (left rail) + role (administrator / collaborator).
-  const { role, canPreview, preview, setPreview } = useRole();
+  const { role, me, canPreview, preview, setPreview } = useRole();
   const allowedSpaces = spacesFor(role);
   const space = spaceOf(mode);
   const lastModeBySpace = useRef<Partial<Record<SpaceId, Mode>>>({});
@@ -92,7 +92,7 @@ function App(): React.JSX.Element {
     lastModeBySpace.current[space.id] = mode;
   }, [space.id, mode]);
   useEffect(() => {
-    if (!allowedSpaces.some((s) => s.id === space.id)) setMode('accueil');
+    if (!allowedSpaces.some((s) => s.id === space.id)) setMode(allowedSpaces[0]?.modes[0] ?? 'sessions');
   }, [allowedSpaces, space.id]);
   const pickSpace = (id: SpaceId): void => {
     const target = allowedSpaces.find((s) => s.id === id);
@@ -521,7 +521,7 @@ function App(): React.JSX.Element {
           )}
           {mode === 'accueil' && (
             <ModeOverlay>
-              <HomePane role={role} onGo={(w) => setMode(w)} />
+              <HomePane role={role} myName={me?.nom ?? null} onGo={(w) => setMode(w)} />
             </ModeOverlay>
           )}
           {mode === 'savoir' && (
@@ -531,7 +531,7 @@ function App(): React.JSX.Element {
           )}
           {mode === 'equipe' && (
             <ModeOverlay>
-              <EquipePane />
+              <EquipePane isAdmin={role === 'admin'} />
             </ModeOverlay>
           )}
           {mode === 'missions' && (

@@ -1,4 +1,4 @@
-/* eslint-disable deepthix/no-inline-colors */
+ 
 // SCHEDULE pane: declare a target session + a prompt + a cadence and let
 // the Rust scheduler thread fire it on time.
 //

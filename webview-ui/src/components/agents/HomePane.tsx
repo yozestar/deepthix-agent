@@ -97,13 +97,14 @@ function Face({ a, size = 64 }: { a: Pick<HomeAgent, 'emoji' | 'couleur' | 'en_c
   );
 }
 
-export function HomePane({ role, onGo }: { role: Role; onGo: (where: 'missions' | 'equipe') => void }): React.JSX.Element {
+export function HomePane({ role, myName, onGo }: { role: Role; myName?: string | null; onGo: (where: 'missions' | 'equipe') => void }): React.JSX.Element {
   const [home, setHome] = useState<Home | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [askTo, setAskTo] = useState('');
   const [askText, setAskText] = useState('');
-  const [name, setName] = useState(() => localStorage.getItem(NAME_KEY) ?? (role === 'admin' ? 'Johann' : ''));
+  const [name, setName] = useState(() => localStorage.getItem(NAME_KEY) ?? '');
+  const shownName = (myName ?? '').split(' ')[0] || name;
 
   const refresh = useCallback(async () => {
     try {
@@ -171,8 +172,8 @@ export function HomePane({ role, onGo }: { role: Role; onGo: (where: 'missions' 
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 20, fontWeight: 800 }}>
             {g.word}{' '}
-            {name ? (
-              `${name} !`
+            {shownName ? (
+              `${shownName} !`
             ) : (
               <input
                 placeholder="ton prénom"
@@ -206,7 +207,7 @@ export function HomePane({ role, onGo }: { role: Role; onGo: (where: 'missions' 
         )}
       </div>
 
-      <div style={h2}>{role === 'admin' ? 'Ton équipe d’agents, en direct' : 'Les agents de l’équipe'}</div>
+      <div style={h2}>{role === 'admin' || role === 'responsable' ? 'Ton équipe d’agents, en direct' : 'Les agents qui peuvent t’aider'}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
         {agents.map((a) => (
           <div key={a.id} className="v2-hover-lift" style={card}>

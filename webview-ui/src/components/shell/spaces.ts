@@ -41,7 +41,7 @@ export const MODE_LABELS: Partial<Record<Mode, string>> = {
 };
 
 export const SPACES: SpaceMeta[] = [
-  { id: 'accueil', emoji: '🏠', label: 'Accueil', title: 'Accueil', subtitle: 'Ta journée en un coup d’œil', modes: ['accueil'], roles: ['admin', 'collab'] },
+  { id: 'accueil', emoji: '🏠', label: 'Accueil', title: 'Accueil', subtitle: 'Ta journée en un coup d’œil', modes: ['accueil'], roles: ['admin', 'responsable', 'collab'] },
   {
     id: 'projets',
     emoji: '🗂️',
@@ -49,14 +49,14 @@ export const SPACES: SpaceMeta[] = [
     title: 'Projets',
     subtitle: 'Le projet ouvert : ses sessions, ses fichiers, son tableau de bord',
     modes: ['sessions', 'overview', 'files', 'memory', 'tasks'],
-    roles: ['admin', 'collab'],
+    roles: ['admin', 'responsable', 'collab', 'local'],
   },
-  { id: 'equipe', emoji: '🦊', label: 'Équipe', title: 'Équipe', subtitle: 'Humains et agents · réservé aux administrateurs', modes: ['equipe'], roles: ['admin'] },
-  { id: 'missions', emoji: '✅', label: 'Missions', title: 'Missions', subtitle: 'Décisions à prendre et travaux en cours', modes: ['missions'], roles: ['admin', 'collab'] },
-  { id: 'savoir', emoji: '🧠', label: 'Savoir', title: 'Savoir', subtitle: 'Ce qui rend les agents bons', modes: ['savoir', 'skills'], roles: ['admin'] },
+  { id: 'equipe', emoji: '🦊', label: 'Équipe', title: 'Équipe', subtitle: 'Humains et agents, droits des collègues', modes: ['equipe'], roles: ['admin', 'responsable'] },
+  { id: 'missions', emoji: '✅', label: 'Missions', title: 'Missions', subtitle: 'Décisions à prendre et travaux en cours', modes: ['missions'], roles: ['admin', 'responsable', 'collab'] },
+  { id: 'savoir', emoji: '🧠', label: 'Savoir', title: 'Savoir', subtitle: 'Ce qui rend les agents bons', modes: ['savoir', 'skills'], roles: ['admin', 'responsable'] },
   { id: 'outils', emoji: '🧰', label: 'Outils', title: 'Outils', subtitle: 'Planification, workflows, variables, processus', modes: ['schedule', 'workflow', 'variables', 'process'], roles: ['admin'] },
   { id: 'conso', emoji: '📊', label: 'Conso', title: 'Consommation', subtitle: 'Forfaits et activité', modes: ['usage'], roles: ['admin'] },
-  { id: 'reglages', emoji: '⚙️', label: 'Réglages', title: 'Réglages', subtitle: '', modes: ['settings'], roles: ['admin', 'collab'], bottom: true },
+  { id: 'reglages', emoji: '⚙️', label: 'Réglages', title: 'Réglages', subtitle: '', modes: ['settings'], roles: ['admin', 'responsable', 'collab', 'local'], bottom: true },
 ];
 
 export function spaceOf(mode: Mode): SpaceMeta {

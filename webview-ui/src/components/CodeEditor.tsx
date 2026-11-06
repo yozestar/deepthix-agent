@@ -1,4 +1,4 @@
-/* eslint-disable deepthix/no-inline-colors */
+ 
 // CodeMirror-6 wrapper used by the FILES pane in place of the plain
 // <textarea> for any file extension we recognise as code. Gives us
 // syntax highlighting, line numbers, code folding, bracket matching,
@@ -19,8 +19,8 @@ import { python } from '@codemirror/lang-python';
 import { rust } from '@codemirror/lang-rust';
 import { sql } from '@codemirror/lang-sql';
 import { yaml } from '@codemirror/lang-yaml';
-import { Prec } from '@codemirror/state';
 import type { Extension } from '@codemirror/state';
+import { Prec } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { keymap } from '@codemirror/view';
 import CodeMirror from '@uiw/react-codemirror';

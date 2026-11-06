@@ -325,10 +325,10 @@ impl Hub {
         tracing::info!(target: "deepthix::remote", reason, "remote server stopped");
     }
 
-    async fn check_cf_access(&self, headers: &HeaderMap) -> Result<(), String> {
+    async fn check_cf_access(&self, headers: &HeaderMap) -> Result<Option<String>, String> {
         let cfg = self.config();
         if !cfg.require_cf_access {
-            return Ok(());
+            return Ok(None);
         }
         let token = headers
             .get(cf_access::JWT_HEADER)
@@ -349,8 +349,17 @@ impl Hub {
                 fetched
             }
         };
-        cf_access::verify_with_jwks(token, &jwks, &cfg.cf_team_domain, &cfg.cf_aud, &cfg.cf_allowed_email)
-            .map(|_| ())
+        let owner = cfg.cf_allowed_email.clone();
+        let allowed = move |email: &str| {
+            (!owner.trim().is_empty() && email.eq_ignore_ascii_case(owner.trim())) || crate::agents_users::is_active_user(email)
+        };
+        cf_access::verify_with_jwks_any(token, &jwks, &cfg.cf_team_domain, &cfg.cf_aud, &allowed).map(Some)
+    }
+
+    /// Identity used for agent permissions on a connection: the Cloudflare
+    /// Access email, else (tailnet / local tests) the configured owner.
+    fn caller_for(&self, cf_email: Option<String>) -> String {
+        cf_email.unwrap_or_else(|| self.config().cf_allowed_email)
     }
 
     fn hello(&self, conn_id: u64, token: &str) -> Option<Device> {
@@ -409,14 +418,18 @@ async fn ws_handler(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    let checked = if tailnet.is_some() { Ok(()) } else { hub.check_cf_access(&headers).await };
-    if let Err(e) = checked {
-        tracing::warn!(target: "deepthix::remote", error = %e, "websocket refused");
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
+    let checked = if tailnet.is_some() { Ok(None) } else { hub.check_cf_access(&headers).await };
+    let cf_email = match checked {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!(target: "deepthix::remote", error = %e, "websocket refused");
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    };
+    let caller = hub.caller_for(cf_email);
     ws.max_message_size(MAX_MESSAGE_BYTES)
         .max_frame_size(MAX_MESSAGE_BYTES)
-        .on_upgrade(move |socket| handle_socket(hub, socket))
+        .on_upgrade(move |socket| handle_socket(hub, socket, caller))
 }
 
 async fn next_event(rx: &mut Option<broadcast::Receiver<ServerMsg>>) -> ServerMsg {
@@ -446,7 +459,7 @@ async fn next_pair_reply(rx: &mut Option<oneshot::Receiver<PairReply>>) -> PairR
     }
 }
 
-async fn handle_socket(hub: Arc<Hub>, socket: WebSocket) {
+async fn handle_socket(hub: Arc<Hub>, socket: WebSocket, caller: String) {
     let conn_id = hub.next_conn.fetch_add(1, Ordering::Relaxed);
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<ServerMsg>();
     hub.conns
@@ -517,7 +530,14 @@ async fn handle_socket(hub: Arc<Hub>, socket: WebSocket) {
                         });
                         let _ = out_tx.send(ServerMsg::PairPending { code: req.code });
                     }
-                    ClientMsg::Invoke { id, cmd, args } if ready => {
+                    ClientMsg::Invoke { id, cmd, mut args } if ready => {
+                        // Agent commands: the identity is the one verified on
+                        // this connection, never what the client claims.
+                        if cmd == "agents_api" || cmd == "agents_collab" {
+                            if let Some(obj) = args.as_object_mut() {
+                                obj.insert("caller".into(), serde_json::Value::String(caller.clone()));
+                            }
+                        }
                         let backend = hub.backend.clone();
                         let tx = out_tx.clone();
                         tokio::spawn(async move {

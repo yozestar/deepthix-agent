@@ -1,4 +1,4 @@
-/* eslint-disable deepthix/no-inline-colors */
+ 
 // File drag-and-drop → terminal injector.
 //
 // When the user drags a file (or several) into the Deepthix window, we

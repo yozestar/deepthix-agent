@@ -33,11 +33,15 @@ const ALLOWED: &[&str] = &[
     "personnes",
     "accueil",
     "demander",
+    "moi",
+    "utilisateurs",
+    "maj_utilisateur",
+    "suppr_utilisateur",
 ];
 
 /// Subset reachable from the REMOTE UI (collaborators): read the home page and
 /// missions, approve/refuse, ask an agent. No configuration of agents remotely.
-const COLLAB_ALLOWED: &[&str] = &["accueil", "missions", "valider", "demander", "etat"];
+const COLLAB_ALLOWED: &[&str] = &["accueil", "missions", "valider", "demander", "etat", "moi"];
 
 fn engine_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("no home dir")?;
@@ -48,7 +52,7 @@ fn engine_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn run_blocking(action: String, args: Vec<String>, input: Option<String>, allowed: &[&str]) -> Result<String, String> {
+fn run_blocking(action: String, args: Vec<String>, input: Option<String>, allowed: &[&str], caller: String) -> Result<String, String> {
     if !allowed.contains(&action.as_str()) {
         return Err(format!("action non autorisée : {action}"));
     }
@@ -61,6 +65,8 @@ fn run_blocking(action: String, args: Vec<String>, input: Option<String>, allowe
         .arg(dir.join("moteur").join("api.py"))
         .arg(&action)
         .args(&args)
+        // Who is asking: the engine applies the user's rights (utilisateurs.json).
+        .env("ELYONE_CALLER", &caller)
         .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -86,16 +92,30 @@ fn run_blocking(action: String, args: Vec<String>, input: Option<String>, allowe
 
 /// Calls the agent engine. Returns its raw JSON answer (parsed in the webview).
 #[tauri::command]
-pub async fn agents_api(action: String, args: Option<Vec<String>>, input: Option<String>) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || run_blocking(action, args.unwrap_or_default(), input, ALLOWED))
+pub async fn agents_api(
+    action: String,
+    args: Option<Vec<String>>,
+    input: Option<String>,
+    caller: Option<String>,
+) -> Result<String, String> {
+    // Local app = the owner of this Mac; remote = identity injected by the
+    // remote server from the verified Cloudflare Access token.
+    let caller = caller.filter(|c| !c.is_empty()).unwrap_or_else(crate::agents_users::owner_email);
+    tauri::async_runtime::spawn_blocking(move || run_blocking(action, args.unwrap_or_default(), input, ALLOWED, caller))
         .await
         .map_err(|e| e.to_string())?
 }
 
 /// Collaborator entry point (the only one allowed remotely): restricted actions.
 #[tauri::command]
-pub async fn agents_collab(action: String, args: Option<Vec<String>>, input: Option<String>) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || run_blocking(action, args.unwrap_or_default(), input, COLLAB_ALLOWED))
+pub async fn agents_collab(
+    action: String,
+    args: Option<Vec<String>>,
+    input: Option<String>,
+    caller: Option<String>,
+) -> Result<String, String> {
+    let caller = caller.filter(|c| !c.is_empty()).unwrap_or_else(crate::agents_users::owner_email);
+    tauri::async_runtime::spawn_blocking(move || run_blocking(action, args.unwrap_or_default(), input, COLLAB_ALLOWED, caller))
         .await
         .map_err(|e| e.to_string())?
 }
