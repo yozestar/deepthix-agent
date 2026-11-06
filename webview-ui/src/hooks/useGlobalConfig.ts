@@ -83,11 +83,11 @@ export interface GlobalConfig {
   uiTextScale: number;
 }
 
-export const BOX_STYLE_IDS = ['modern', 'pixel', 'glass', 'flat', 'soft', 'neon'] as const;
+export const BOX_STYLE_IDS = ['vivant', 'modern', 'pixel', 'glass', 'flat', 'soft', 'neon'] as const;
 export type BoxStyleId = (typeof BOX_STYLE_IDS)[number];
 // 'modern' for new installs (rounded, hairline borders, soft shadows);
 // existing configs keep whatever style they saved.
-const DEFAULT_BOX_STYLE: BoxStyleId = 'modern';
+const DEFAULT_BOX_STYLE: BoxStyleId = 'vivant';
 
 function applyBoxStyle(style: BoxStyleId): void {
   document.documentElement.setAttribute('data-box-style', style);
@@ -216,7 +216,15 @@ export function useGlobalConfig(): UseGlobalConfigResult {
     cmdReadGlobalConfig()
       .then((payload) => {
         if (cancelled) return;
-        const resolved = payloadToConfig(payload);
+        let resolved = payloadToConfig(payload);
+        // Design v2 (0.8): switch existing installs once to « Elyone Vivant ».
+        // The user can go back in Settings; the flag keeps that choice.
+        const DESIGN_V2_FLAG = 'elyone.designV2Applied';
+        if (localStorage.getItem(DESIGN_V2_FLAG) !== '1') {
+          resolved = { ...resolved, themeId: 'elyone-vivant', boxStyle: 'vivant', uiFont: 'inter' };
+          localStorage.setItem(DESIGN_V2_FLAG, '1');
+          void cmdWriteGlobalConfig(configToPayload(resolved)).catch(() => undefined);
+        }
         console.info('[Deepthix][useGlobalConfig] loaded', resolved);
         latestRef.current = resolved;
         applyTheme(resolved.themeId);

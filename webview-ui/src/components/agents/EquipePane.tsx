@@ -92,7 +92,22 @@ export function EquipePane({ initialView = 'organigramme' }: { initialView?: Vie
         <div style={{ padding: 10, background: 'var(--color-danger)', color: 'var(--color-on-accent)' }}>{error}</div>
       )}
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 16 }}>
-        {view === 'organigramme' && <Organigramme poles={poles} agents={agents} onOpen={openAgent} onNew={() => setView('nouveau')} />}
+        {view === 'organigramme' && (
+          <Organigramme
+            poles={poles}
+            agents={agents}
+            onOpen={openAgent}
+            onNew={() => setView('nouveau')}
+            onMove={(id, pole, responsable) =>
+              void agentsApi('maj_agent', [id], { agent: { pole, responsable } })
+                .then(() => {
+                  notify(`${agents.find((a) => a.id === id)?.prenom ?? id} rejoint ${responsable || pole} ✨`);
+                  return refresh();
+                })
+                .catch((e) => setError(errMsg(e)))
+            }
+          />
+        )}
         {view === 'agents' && (
           <AgentsView
             agents={agents}

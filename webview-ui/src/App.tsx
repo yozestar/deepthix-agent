@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { EquipePane } from './components/agents/EquipePane';
+import { HomePane } from './components/agents/HomePane';
 import { MissionsPane } from './components/agents/MissionsPane';
+import { SavoirPane } from './components/agents/SavoirPane';
 import { ProcessPane, SessionsPane } from './components/BottomPanel';
 import { FilesPane } from './components/FilesPane';
 import { MemoryPane } from './components/MemoryPane';
@@ -14,11 +16,14 @@ import { SchedulesPane } from './components/SchedulesPane';
 // SessionsTopArea import removed — Coach pane was unmounted from the
 // Sessions view per user request to give the chat the full height.
 import { SettingsPane } from './components/SettingsPane';
+import { Rail } from './components/shell/Rail';
+import { SpaceHeader } from './components/shell/SpaceHeader';
+import { type SpaceId, spaceOf, spacesFor } from './components/shell/spaces';
 import { Sidebar } from './components/Sidebar';
 import { SkillsPane } from './components/SkillsPane';
 import { TasksPane } from './components/TasksPane';
 import { TerminalDropTarget } from './components/TerminalDropTarget';
-import { type Mode, TopTabs } from './components/TopTabs';
+import type { Mode } from './components/TopTabs';
 import { UpdaterBanner } from './components/UpdaterBanner';
 import { UsagePane } from './components/UsagePane';
 import { VariablesPane } from './components/VariablesPane';
@@ -30,13 +35,20 @@ import { useFormFactor, useTouchViewport } from './hooks/useFormFactor';
 import { useGlobalConfig } from './hooks/useGlobalConfig';
 import { useOpenFiles } from './hooks/useOpenFiles';
 import { useProjects } from './hooks/useProjects';
+import { useRole } from './hooks/useRole';
 import { useTerminals } from './hooks/useTerminals';
 import { isRemoteRuntime, isTauriRuntime } from './runtime';
+import { agentsApi } from './tauri/commands';
 import { setActiveProjectId, setActiveProjectPath, setOnOpenTerminal } from './tauriApi';
 
 const MODE_STORAGE_KEY = 'deepthix.mode';
 
 const VALID_MODES: ReadonlyArray<Mode> = [
+  'accueil',
+  'savoir',
+  'equipe',
+  'missions',
+  'usage',
   'overview',
   'sessions',
   'tasks',
@@ -65,11 +77,44 @@ function App(): React.JSX.Element {
     if (stored && (VALID_MODES as readonly string[]).includes(stored)) {
       return stored as Mode;
     }
-    return 'sessions';
+    return 'accueil';
   });
   useEffect(() => {
     localStorage.setItem(MODE_STORAGE_KEY, mode);
   }, [mode]);
+
+  // Design v2: spaces (left rail) + role (administrator / collaborator).
+  const { role, canPreview, preview, setPreview } = useRole();
+  const allowedSpaces = spacesFor(role);
+  const space = spaceOf(mode);
+  const lastModeBySpace = useRef<Partial<Record<SpaceId, Mode>>>({});
+  useEffect(() => {
+    lastModeBySpace.current[space.id] = mode;
+  }, [space.id, mode]);
+  useEffect(() => {
+    if (!allowedSpaces.some((s) => s.id === space.id)) setMode('accueil');
+  }, [allowedSpaces, space.id]);
+  const pickSpace = (id: SpaceId): void => {
+    const target = allowedSpaces.find((s) => s.id === id);
+    if (!target) return;
+    setMode(lastModeBySpace.current[id] ?? target.modes[0]);
+  };
+  // Rail badge: decisions waiting (validations), refreshed every 15 s.
+  const [pendingValidations, setPendingValidations] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const tick = (): void => {
+      void agentsApi<{ validations: unknown[] }>('accueil')
+        .then((h) => alive && setPendingValidations(h.validations.length))
+        .catch(() => undefined);
+    };
+    tick();
+    const t = setInterval(tick, 15_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
 
   console.log('[Deepthix][App] render', {
     projectsCount: projects.projects.length,
@@ -279,7 +324,7 @@ function App(): React.JSX.Element {
               transform: 'translateY(var(--app-offset-top, 0px))',
             }
           : {}),
-        background: 'var(--color-bg)',
+        background: 'var(--app-backdrop)',
         paddingTop: 'env(safe-area-inset-top)',
         paddingBottom: 'env(safe-area-inset-bottom)',
         paddingLeft: 'env(safe-area-inset-left)',
@@ -287,7 +332,10 @@ function App(): React.JSX.Element {
         boxSizing: 'border-box',
       }}
     >
-      {!touch && sidebar}
+      {!touch && (
+        <Rail spaces={allowedSpaces} active={space.id} badges={{ missions: pendingValidations }} onPick={pickSpace} />
+      )}
+      {!touch && space.id === 'projets' && sidebar}
       {touch && drawerOpen && (
         <div
           onClick={() => setDrawerOpen(false)}
@@ -322,13 +370,37 @@ function App(): React.JSX.Element {
         {/* Top header bar: project name + mode tabs. Always present so the
             user can switch modes even when no project is open (modes that
             need a project will degrade gracefully). */}
-        <TopTabs
-          projectName={projects.activeProject?.name ?? null}
+        <SpaceHeader
+          space={space}
           mode={mode}
-          onChangeMode={setMode}
-          formFactor={formFactor}
-          onOpenMenu={() => setDrawerOpen(true)}
+          projectName={projects.activeProject?.name ?? null}
+          onMode={setMode}
+          canPreview={canPreview}
+          preview={preview}
+          onPreview={setPreview}
+          onOpenMenu={touch ? () => setDrawerOpen(true) : undefined}
         />
+        {touch && (
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '0 12px 8px' }}>
+            {allowedSpaces.map((sp) => (
+              <button
+                key={sp.id}
+                type="button"
+                onClick={() => pickSpace(sp.id)}
+                style={{
+                  border: 'none',
+                  borderRadius: 999,
+                  padding: '6px 12px',
+                  whiteSpace: 'nowrap',
+                  background: sp.id === space.id ? 'var(--gradient-accent)' : 'var(--color-btn-bg)',
+                  color: sp.id === space.id ? 'var(--color-on-accent)' : 'var(--color-text)',
+                }}
+              >
+                {sp.emoji} {sp.label}
+              </button>
+            ))}
+          </div>
+        )}
         {/* Right-pane body. The SESSIONS layout (TamagotchiView + the
             resizable terminal pane) MUST stay mounted across mode switches
             — unmounting it disposes every xterm instance and the user
@@ -399,7 +471,7 @@ function App(): React.JSX.Element {
           {/* No project yet (fresh install): SESSIONS has nothing to mount
               either, so it gets the Welcome screen too instead of a blank pane.
               TASKS lists every project's tasks, so it stays reachable. */}
-          {mode !== 'overview' && mode !== 'settings' && mode !== 'tasks' && !hasProjects && (
+          {space.id === 'projets' && mode !== 'overview' && mode !== 'tasks' && !hasProjects && (
             <ModeOverlay>
               <Welcome onOpenFolder={() => void projects.openAndAddProject()} />
             </ModeOverlay>
@@ -445,6 +517,16 @@ function App(): React.JSX.Element {
                 projects={projects}
                 onChangeMode={setMode}
               />
+            </ModeOverlay>
+          )}
+          {mode === 'accueil' && (
+            <ModeOverlay>
+              <HomePane role={role} onGo={(w) => setMode(w)} />
+            </ModeOverlay>
+          )}
+          {mode === 'savoir' && (
+            <ModeOverlay>
+              <SavoirPane />
             </ModeOverlay>
           )}
           {mode === 'equipe' && (
@@ -517,7 +599,7 @@ function ModeOverlay({ children }: { children: React.ReactNode }): React.JSX.Ele
       style={{
         position: 'absolute',
         inset: 0,
-        background: 'var(--color-bg)',
+        background: 'var(--app-backdrop)',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 10,

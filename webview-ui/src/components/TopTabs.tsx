@@ -42,6 +42,8 @@ export type Mode =
   | 'variables'
   | 'equipe'
   | 'missions'
+  | 'accueil'
+  | 'savoir'
   | 'settings';
 
 interface Props {
@@ -90,6 +92,8 @@ const MODE_META: Record<Exclude<Mode, 'settings'>, { label: string; Icon: Lucide
   variables: { label: 'Variables', Icon: Variable },
   equipe: { label: 'Équipe', Icon: Users },
   missions: { label: 'Missions', Icon: KanbanSquare },
+  accueil: { label: 'Accueil', Icon: LayoutDashboard },
+  savoir: { label: 'Compétences des agents', Icon: Sparkles },
 };
 
 export function TopTabs({

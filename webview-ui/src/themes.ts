@@ -20,6 +20,40 @@ const SYSTEM_LIGHT_ID = 'elyone-clair';
 
 export const THEMES: Theme[] = [
   {
+    // « Elyone Vivant » (design v2, 2026-11) : nuit profonde, violet → cyan,
+    // halos lumineux en fond. Défaut depuis 0.8. Pairs with the 'vivant' box style.
+    id: 'elyone-vivant',
+    name: 'Elyone Vivant',
+    colors: {
+      'color-bg': '#0f1020',
+      'color-bg-dark': '#161834',
+      'color-bg-session': '#121430',
+      'color-bg-thumb': '#22254a',
+      'color-border': 'rgba(255, 255, 255, 0.12)',
+      'color-accent': '#7c5cff',
+      'color-accent-bright': '#22d3ee',
+      'color-session-active': '#22d3ee',
+      'color-on-accent': '#ffffff',
+      'color-text': '#eef0ff',
+      'color-text-muted': 'rgba(238, 240, 255, 0.58)',
+      'color-btn-bg': 'rgba(255, 255, 255, 0.08)',
+      'color-btn-hover': 'rgba(255, 255, 255, 0.14)',
+      'color-active-bg': 'rgba(124, 92, 255, 0.28)',
+      'color-danger': '#fb7185',
+      'color-warning': '#fbbf24',
+      'color-status-success': '#34d399',
+      'color-status-active': '#22d3ee',
+      'color-sidebar-bg': 'rgba(10, 11, 26, 0.55)',
+      'color-sidebar-hover': 'rgba(255, 255, 255, 0.06)',
+      'color-sidebar-active': 'rgba(124, 92, 255, 0.28)',
+      'shadow-hard': '0 8px 26px rgba(0, 0, 0, 0.35)',
+      'gradient-accent': 'linear-gradient(135deg, #7c5cff, #22d3ee)',
+      'gradient-warm': 'linear-gradient(135deg, #f97316, #f472b6)',
+      'app-backdrop':
+        'radial-gradient(1200px 600px at 10% -10%, rgba(124, 92, 255, 0.35), transparent 60%), radial-gradient(900px 500px at 110% 10%, rgba(34, 211, 238, 0.2), transparent 60%), radial-gradient(800px 600px at 50% 120%, rgba(244, 114, 182, 0.16), transparent 60%), #0f1020',
+    },
+  },
+  {
     // Elyone brand charter (ELYONE Global Product Design System v1.0):
     // light neutral surfaces, blue dominates (#005895 structure, #0066DA
     // actions), green only validates, yellow only accents. Default theme.
@@ -366,7 +400,7 @@ export const THEMES: Theme[] = [
   },
 ];
 
-export const DEFAULT_THEME_ID = 'elyone-clair';
+export const DEFAULT_THEME_ID = 'elyone-vivant';
 
 /** Every CSS variable any theme writes — cleared before applying the next
  *  theme so a key one theme sets (e.g. status-permission) doesn't leak

@@ -110,7 +110,7 @@ const REMOTE_COMMANDS: &[&str] = &[
     "delete_workflow",
     "list_workflow_runs",
     "append_workflow_run",
-    "agents_api",
+    "agents_collab",
     "variables_path",
     "list_variables",
     "set_variable",

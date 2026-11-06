@@ -25,6 +25,8 @@ export interface AgentSummary {
   nb_competences: number;
   stats: AgentStats;
   note_compte?: string;
+  emoji?: string;
+  couleur?: string | null;
   plafonds?: Record<string, number | undefined>;
   routines?: { nom: string; cron: string; competence: string }[];
 }
@@ -123,7 +125,7 @@ export const paneStyle: CSSProperties = {
   flexDirection: 'column',
   height: '100%',
   minHeight: 0,
-  background: 'var(--color-bg)',
+  background: 'transparent',
   fontFamily: 'var(--font-pixel)',
   color: 'var(--color-text)',
 };

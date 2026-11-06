@@ -1,0 +1,1 @@
+Nouvelle ergonomie « Elyone Vivant » : barre d'espaces (Accueil, Projets, Équipe, Missions, Savoir, Outils, Conso, Réglages), accueil du jour avec les agents en direct, organigramme en glisser-déposer, demander à un agent, vue collaborateur simplifiée.

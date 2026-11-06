@@ -85,6 +85,11 @@
   /* Non-utility values */
   --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
   --btn-disabled-opacity: 0.35;
+
+  /* Design v2 helpers (themes may override). */
+  --gradient-accent: var(--color-accent);
+  --gradient-warm: var(--color-warning);
+  --app-backdrop: var(--color-bg);
 }
 
 @theme inline {
@@ -583,3 +588,74 @@ html.touch-layout .dt-tree-copy {
   min-width: 36px;
   min-height: 36px;
 }
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * « Vivant » (design v2) — verre dépoli, grands arrondis, boutons en pilule,
+ * fond lumineux (var(--app-backdrop) posé par le thème Elyone Vivant).
+ * ───────────────────────────────────────────────────────────────────────── */
+:root[data-box-style='vivant'] {
+  --surface-radius: 18px;
+  --surface-blur: 14px;
+  --shadow-pixel: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+:root[data-box-style='vivant'] .dt-card,
+:root[data-box-style='vivant'] .pixel-panel,
+:root[data-box-style='vivant'] [style*='var(--shadow-pixel)'],
+:root[data-box-style='vivant'] [style*='2px 2px 0px'] {
+  border-width: 1px !important;
+  border-radius: var(--surface-radius) !important;
+  box-shadow: var(--shadow-pixel) !important;
+}
+:root[data-box-style='vivant'] [style*='background:var(--color-bg-dark)'],
+:root[data-box-style='vivant'] [style*='background: var(--color-bg-dark)'] {
+  background: color-mix(in srgb, var(--color-bg-dark) 62%, transparent) !important;
+  -webkit-backdrop-filter: blur(var(--surface-blur));
+  backdrop-filter: blur(var(--surface-blur));
+}
+:root[data-box-style='vivant'] .dt-btn,
+:root[data-box-style='vivant'] .dt-btn--primary,
+:root[data-box-style='vivant'] .dt-btn--danger,
+:root[data-box-style='vivant'] button[style*='border: 2px'],
+:root[data-box-style='vivant'] button[style*='border:2px'] {
+  border-width: 1px !important;
+  border-radius: 12px !important;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+:root[data-box-style='vivant'] button[style*='background: var(--color-accent)'],
+:root[data-box-style='vivant'] button[style*='background:var(--color-accent)'] {
+  background: var(--gradient-accent) !important;
+  border-color: transparent !important;
+}
+:root[data-box-style='vivant'] button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+:root[data-box-style='vivant'] input,
+:root[data-box-style='vivant'] select,
+:root[data-box-style='vivant'] textarea {
+  border-width: 1px !important;
+  border-radius: 12px !important;
+}
+:root[data-box-style='vivant'] input:focus-visible,
+:root[data-box-style='vivant'] select:focus-visible,
+:root[data-box-style='vivant'] textarea:focus-visible {
+  outline: none;
+  border-color: var(--color-accent-bright) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent-bright) 22%, transparent);
+}
+
+/* Animations partagées du design v2 */
+@keyframes v2-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.v2-fade { animation: v2-fade-in 0.32s ease both; }
+@keyframes v2-spin { to { transform: rotate(360deg); } }
+@keyframes v2-float { 50% { transform: translateY(-4px); } }
+@keyframes v2-blink { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+@keyframes v2-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-warning) 60%, transparent); }
+  50% { box-shadow: 0 0 0 6px transparent; }
+}
+.v2-hover-lift { transition: transform 0.15s ease, background 0.15s ease; }
+.v2-hover-lift:hover { transform: translateY(-2px); }

@@ -60,6 +60,7 @@ interface BoxStyleMeta {
   blurb: string;
 }
 const BOX_STYLE_META: BoxStyleMeta[] = [
+  { id: 'vivant', label: 'Vivant', blurb: 'Verre dépoli, grands arrondis, dégradés et halos lumineux. Le style Elyone v2.' },
   { id: 'modern', label: 'Modern', blurb: 'Rounded corners, hairline borders, soft shadows. Calm for long reading.' },
   { id: 'pixel', label: 'Pixel', blurb: 'Hard 2px shadow, square corners. The original look.' },
   { id: 'glass', label: 'Glass', blurb: 'Frosted backdrop blur + translucent surface.' },
@@ -608,6 +609,7 @@ function BoxStylePreview({ id }: { id: BoxStyleId }): React.JSX.Element {
         boxShadow: 'var(--shadow-pixel)',
       };
       break;
+    case 'vivant':
     case 'glass':
       style = {
         ...base,

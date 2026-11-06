@@ -1244,7 +1244,8 @@ export async function clientModeSet(url: string): Promise<void> {
 
 /** Calls the agent engine; throws with the engine's French error message. */
 export async function agentsApi<T>(action: string, args: string[] = [], input?: unknown): Promise<T> {
-  const raw = await invoke<string>('agents_api', {
+  // Remote UI (collaborators) only reaches the restricted command.
+  const raw = await invoke<string>(isRemoteRuntime ? 'agents_collab' : 'agents_api', {
     action,
     args,
     input: input === undefined ? null : JSON.stringify(input),

@@ -184,6 +184,7 @@ pub fn run() {
             commands::workflows::list_workflow_runs,
             commands::workflows::append_workflow_run,
             commands::agents::agents_api,
+            commands::agents::agents_collab,
             commands::variables::variables_path,
             commands::variables::list_variables,
             commands::variables::set_variable,
