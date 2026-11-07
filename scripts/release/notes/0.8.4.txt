@@ -1,0 +1,1 @@
+Téléphone et tablette : quand le clavier est ouvert, les en-têtes se masquent pour laisser toute la place à la conversation et au champ de saisie.
