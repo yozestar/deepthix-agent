@@ -1,0 +1,1 @@
+Missions : chaque mission s'ouvre en conversation. Tu réponds à l'agent et il reprend la même discussion, avec tout le contexte. Les validations peuvent recevoir un motif (« pas avant 19 h »), et l'agent reprend aussitôt après ta décision.

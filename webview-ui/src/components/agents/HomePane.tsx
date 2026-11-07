@@ -127,7 +127,7 @@ export function HomePane({ role, myName, onGo }: { role: Role; myName?: string |
     setTimeout(() => setToast(null), 2800);
   };
   const decide = (v: HomeValidation, ok: boolean): void => {
-    void agentsApi('valider', [String(v.id), ok ? 'accorder' : 'refuser', name || 'collègue'])
+    void agentsApi('valider', [String(v.id), ok ? 'accorder' : 'refuser', 'relancer'], { motif: '' })
       .then(() => {
         notify(ok ? '✓ Validé — l’agent reprend le travail' : 'Refusé — l’agent proposera autre chose');
         return refresh();

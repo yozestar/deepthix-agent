@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { agentsApi } from '../../tauri/commands';
+import { MissionThread } from './MissionThread';
 import { errMsg, type Mission, paneStyle, type Validation } from './model';
 import { Btn, Card, Chip } from './ui';
 
@@ -39,7 +40,7 @@ export function MissionsPane(): React.JSX.Element {
   }, [refresh]);
 
   const decide = (v: Validation, d: 'accorder' | 'refuser'): void => {
-    void agentsApi('valider', [String(v.id), d, 'Johann'])
+    void agentsApi('valider', [String(v.id), d, 'relancer'], { motif: '' })
       .then(() => refresh())
       .catch((e) => setError(errMsg(e)));
   };
@@ -116,7 +117,7 @@ export function MissionsPane(): React.JSX.Element {
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => setOpen(open === m.id ? null : m.id)}
+                    onClick={() => setOpen(m.id)}
                     style={{
                       display: 'block',
                       width: '100%',
@@ -140,21 +141,7 @@ export function MissionsPane(): React.JSX.Element {
                       {m.depot && ` · ${m.depot}@${m.ref_commit ?? '?'}`}
                     </div>
                     {m.alertes && <Chip color="var(--color-warning)">⚠ travaux des autres signalés</Chip>}
-                    {open === m.id && (
-                      <pre
-                        style={{
-                          whiteSpace: 'pre-wrap',
-                          fontSize: '0.6875rem',
-                          fontFamily: 'var(--font-mono)',
-                          marginTop: 8,
-                          maxHeight: 400,
-                          overflow: 'auto',
-                        }}
-                      >
-                        {m.alertes ? `⚠ ${m.alertes}\n\n` : ''}
-                        {m.resultat ?? '(pas encore de résultat)'}
-                      </pre>
-                    )}
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--color-accent)', marginTop: 4 }}>💬 ouvrir la conversation</div>
                   </button>
                 ))}
               </div>
@@ -162,6 +149,7 @@ export function MissionsPane(): React.JSX.Element {
           })}
         </div>
       </div>
+      {open !== null && <MissionThread missionId={open} onClose={() => setOpen(null)} />}
     </div>
   );
 }
