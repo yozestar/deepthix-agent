@@ -44,6 +44,7 @@ export function ConversationTasksBar({ sessionId, busy, onPoint }: Props): React
 
   return (
     <div
+      className="dt-hide-when-keyboard"
       style={{
         flexShrink: 0,
         borderBottom: '1px solid var(--color-border)',

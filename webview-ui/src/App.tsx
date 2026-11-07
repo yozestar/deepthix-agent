@@ -381,7 +381,7 @@ function App(): React.JSX.Element {
           onOpenMenu={touch ? () => setDrawerOpen(true) : undefined}
         />
         {touch && (
-          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '0 12px 8px' }}>
+          <div className="dt-hide-when-keyboard" style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '0 12px 8px' }}>
             {allowedSpaces.map((sp) => (
               <button
                 key={sp.id}

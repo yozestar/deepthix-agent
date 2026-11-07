@@ -659,3 +659,10 @@ html.touch-layout .dt-tree-copy {
 }
 .v2-hover-lift { transition: transform 0.15s ease, background 0.15s ease; }
 .v2-hover-lift:hover { transform: translateY(-2px); }
+
+/* Touch, on-screen keyboard up: headers, space pills, session tabs and the
+   tasks bar step aside so the conversation and the composer keep the room
+   (they come back when the keyboard closes). Desktop never gets the class. */
+html.touch-layout.keyboard-open .dt-hide-when-keyboard {
+  display: none !important;
+}

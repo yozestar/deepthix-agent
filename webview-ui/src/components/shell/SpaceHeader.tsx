@@ -27,7 +27,7 @@ export function SpaceHeader({
   const title = space.id === 'projets' && projectName ? projectName : space.title;
   const subtitle = space.id === 'projets' && projectName ? 'Projet ouvert' : space.subtitle;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px 10px', flexWrap: 'wrap' }}>
+    <div className="dt-hide-when-keyboard" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px 10px', flexWrap: 'wrap' }}>
       {onOpenMenu && (
         <button
           type="button"

@@ -44,6 +44,28 @@ export function useFormFactor(): FormFactor {
  * (black screen). Instead the root is pinned to the visible area: same
  * height, moved by its offset (CSS vars read by App + index.css).
  */
+/** Room-saving mode while the on-screen keyboard is up (CSS: .dt-hide-when-keyboard). */
+const KEYBOARD_CLASS = 'keyboard-open';
+/** Visible height below this share of the tallest seen = keyboard up. */
+const KEYBOARD_HEIGHT_RATIO = 0.8;
+
+/**
+ * Is the on-screen keyboard up? A text field has focus and the visible
+ * height dropped well below the tallest height seen (iOS keeps
+ * window.innerHeight unchanged, so compare with what we observed).
+ */
+export function keyboardOpen(visibleHeight: number, tallestSeen: number, editableFocused: boolean): boolean {
+  return editableFocused && tallestSeen > 0 && visibleHeight < tallestSeen * KEYBOARD_HEIGHT_RATIO;
+}
+
+function editableFocused(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === 'TEXTAREA') return true;
+  return el.tagName === 'INPUT' && !['button', 'checkbox', 'radio', 'submit', 'file', 'range'].includes((el as HTMLInputElement).type);
+}
+
 export function useTouchViewport(ff: FormFactor): void {
   const touch = ff !== 'desktop';
   useEffect(() => {
@@ -51,17 +73,32 @@ export function useTouchViewport(ff: FormFactor): void {
     if (!touch || !vv) return;
     const root = document.documentElement;
     root.classList.add(TOUCH_CLASS);
+    let tallest = vv.height;
     const apply = (): void => {
       root.style.setProperty('--app-height', `${vv.height}px`);
       root.style.setProperty('--app-offset-top', `${vv.offsetTop}px`);
+      if (!editableFocused()) tallest = Math.max(tallest, vv.height);
+      root.classList.toggle(KEYBOARD_CLASS, keyboardOpen(vv.height, tallest, editableFocused()));
+    };
+    // Rotation / fold: the full height changes, start over.
+    const reset = (): void => {
+      tallest = 0;
+      window.setTimeout(apply, 300);
     };
     apply();
     vv.addEventListener('resize', apply);
     vv.addEventListener('scroll', apply);
+    document.addEventListener('focusin', apply);
+    document.addEventListener('focusout', apply);
+    window.addEventListener('orientationchange', reset);
     return () => {
       vv.removeEventListener('resize', apply);
       vv.removeEventListener('scroll', apply);
+      document.removeEventListener('focusin', apply);
+      document.removeEventListener('focusout', apply);
+      window.removeEventListener('orientationchange', reset);
       root.classList.remove(TOUCH_CLASS);
+      root.classList.remove(KEYBOARD_CLASS);
       root.style.removeProperty('--app-height');
       root.style.removeProperty('--app-offset-top');
     };

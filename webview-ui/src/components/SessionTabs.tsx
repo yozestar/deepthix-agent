@@ -238,7 +238,7 @@ export function SessionTabs({
   const current = ordered.find((t) => t.id === activeId) ?? ordered[0];
 
   return (
-    <div className="dt-tabs">
+    <div className="dt-tabs dt-hide-when-keyboard">
       {compact && (
         <div className="dt-tabs-picker">
           <button
