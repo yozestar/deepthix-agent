@@ -40,6 +40,11 @@ const ALLOWED: &[&str] = &[
     "responsables",
     "fil",
     "repondre",
+    "competence_lire",
+    "competence_maj",
+    "competence_creer",
+    "proposition_decider",
+    "propositions_en_attente",
 ];
 
 /// Subset reachable from the REMOTE UI (collaborators): read the home page and

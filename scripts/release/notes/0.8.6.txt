@@ -1,0 +1,1 @@
+Savoir : clique sur une compétence pour la lire, la modifier (avec l'historique des versions) et accepter ou refuser les améliorations proposées par les agents.
