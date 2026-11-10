@@ -1,0 +1,1 @@
+Correction : la fenêtre de modification d'un collègue défile désormais jusqu'en bas (domaines de données, boutons Enregistrer / Annuler toujours visibles).

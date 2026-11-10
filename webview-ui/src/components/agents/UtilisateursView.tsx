@@ -166,7 +166,7 @@ export function UtilisateursView({ agents, onChanged, onError }: { agents: Agent
           <div
             onClick={(e) => e.stopPropagation()}
             className="v2-fade"
-            style={{ width: 'min(560px, 92vw)', background: 'var(--color-bg-dark)', border: '1px solid var(--color-border)', borderRadius: 22, padding: 20, boxShadow: 'var(--shadow-pixel)' }}
+            style={{ width: 'min(620px, 92vw)', maxHeight: '90vh', overflowY: 'auto', background: 'var(--color-bg-dark)', border: '1px solid var(--color-border)', borderRadius: 22, padding: 20, boxShadow: 'var(--shadow-pixel)' }}
           >
             <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 12 }}>{edit.email ? `Modifier ${edit.nom || edit.email}` : 'Ajouter un collègue'}</div>
             <div style={{ display: 'grid', gap: 10 }}>
@@ -281,7 +281,7 @@ export function UtilisateursView({ agents, onChanged, onError }: { agents: Agent
                 })}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16, position: 'sticky', bottom: -20, padding: '12px 0', background: 'var(--color-bg-dark)' }}>
               <button type="button" onClick={() => setEdit(null)} style={{ ...field, width: 'auto', cursor: 'pointer' }}>
                 Annuler
               </button>
