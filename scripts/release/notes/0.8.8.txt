@@ -1,0 +1,1 @@
+Équipe → Connexions : donne à un agent l'accès à Odoo, HubSpot… (clé API ou identifiant), avec ses droits (lecture, écriture avec validation, écriture libre). Utilisateurs et droits : domaines de données par collègue (ex. factures de vente sans la paie) — les agents ne montrent à chacun que ce qui lui est ouvert.

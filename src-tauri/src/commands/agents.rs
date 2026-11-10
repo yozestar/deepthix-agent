@@ -47,6 +47,12 @@ const ALLOWED: &[&str] = &[
     "propositions_en_attente",
     "piece_jointe",
     "conversations",
+    "domaines_catalogue",
+    "connexions_liste",
+    "connexion_maj",
+    "connexion_suppr",
+    "connexion_tester",
+    "fiches_passbolt",
 ];
 
 /// Subset reachable from the REMOTE UI (collaborators): read the home page and

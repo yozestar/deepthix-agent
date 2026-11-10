@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { agentsApi } from '../../tauri/commands';
+import { type Catalogue, DomainesPicker } from './ConnexionsView';
 import { type AgentSummary, errMsg } from './model';
 
 interface Utilisateur {
@@ -15,6 +16,8 @@ interface Utilisateur {
   pole: string;
   agents_autorises: string[] | '*';
   actif: boolean;
+  /** Domaines de données par application ; absent = valeurs par défaut du profil. */
+  domaines?: Record<string, string[] | '*'>;
 }
 
 const PROFILS: ReadonlyArray<{ id: Utilisateur['profil']; label: string; aide: string }> = [
@@ -36,6 +39,10 @@ const field: React.CSSProperties = {
 export function UtilisateursView({ agents, onChanged, onError }: { agents: AgentSummary[]; onChanged: (m: string) => void; onError: (m: string) => void }): React.JSX.Element {
   const [users, setUsers] = useState<Utilisateur[]>([]);
   const [edit, setEdit] = useState<Utilisateur | null>(null);
+  const [cat, setCat] = useState<Catalogue | null>(null);
+  useEffect(() => {
+    void agentsApi<Catalogue>('domaines_catalogue').then(setCat).catch(() => undefined);
+  }, []);
   const poles = [...new Set([...agents.map((a) => a.pole ?? ''), ...users.map((u) => u.pole)].filter(Boolean))];
 
   const load = useCallback(async () => {
@@ -236,6 +243,44 @@ export function UtilisateursView({ agents, onChanged, onError }: { agents: Agent
                 </div>
               </div>
             </div>
+            {cat && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontWeight: 700 }}>🔐 Domaines de données (ce que les agents peuvent lui montrer)</div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '2px 0 8px' }}>
+                  Par défaut : selon le profil. « Mon travail » = uniquement ses propres tâches, temps et tickets. Comptabilité séparée par journaux.
+                </div>
+                {Object.entries(cat.apps).map(([app, doms]) => {
+                  const perso = edit.domaines?.[app];
+                  const defaut = cat.profils_par_defaut[edit.profil]?.[app] ?? [];
+                  return (
+                    <div key={app} style={{ border: '1px solid var(--color-border)', borderRadius: 10, padding: 10, marginBottom: 8 }}>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
+                        <b style={{ textTransform: 'capitalize' }}>{app}</b>
+                        <label style={{ fontSize: 12.5 }}>
+                          <input
+                            type="checkbox"
+                            checked={perso === undefined}
+                            onChange={() => {
+                              const d = { ...(edit.domaines ?? {}) };
+                              if (perso === undefined) d[app] = defaut;
+                              else delete d[app];
+                              setEdit({ ...edit, domaines: d });
+                            }}
+                          />{' '}
+                          selon le profil
+                        </label>
+                      </div>
+                      <DomainesPicker
+                        domaines={doms}
+                        value={perso ?? defaut}
+                        onChange={(v) => setEdit({ ...edit, domaines: { ...(edit.domaines ?? {}), [app]: v } })}
+                        toutLibelle="Tous les domaines"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
               <button type="button" onClick={() => setEdit(null)} style={{ ...field, width: 'auto', cursor: 'pointer' }}>
                 Annuler

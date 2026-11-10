@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { agentsApi } from '../../tauri/commands';
 import { AccesEditor, type Outil } from './AccesEditor';
+import { ConnexionsView } from './ConnexionsView';
 import {
   type AgentDetail,
   type AgentSummary,
@@ -24,11 +25,12 @@ import { ReglesEditor } from './ReglesEditor';
 import { Avatar, Btn, Card, Chip, Field } from './ui';
 import { UtilisateursView } from './UtilisateursView';
 
-export type View = 'organigramme' | 'agents' | 'utilisateurs' | 'comptes' | 'nouveau';
+export type View = 'organigramme' | 'agents' | 'utilisateurs' | 'connexions' | 'comptes' | 'nouveau';
 const VIEWS: ReadonlyArray<{ id: View; label: string }> = [
   { id: 'organigramme', label: 'Organigramme' },
   { id: 'agents', label: 'Fiches des agents' },
   { id: 'utilisateurs', label: '👥 Utilisateurs et droits' },
+  { id: 'connexions', label: '🔌 Connexions' },
   { id: 'comptes', label: 'Comptes Claude' },
   { id: 'nouveau', label: '+ Nouvel agent' },
 ];
@@ -124,6 +126,7 @@ export function EquipePane({ initialView = 'organigramme', isAdmin = true }: { i
           />
         )}
         {view === 'utilisateurs' && isAdmin && <UtilisateursView agents={agents} onChanged={notify} onError={setError} />}
+        {view === 'connexions' && isAdmin && <ConnexionsView agents={agents} onChanged={notify} onError={setError} />}
         {view === 'comptes' && <ComptesView comptes={comptes} onChanged={() => void refresh()} onError={setError} />}
         {view === 'nouveau' && (
           <NouvelAgent
