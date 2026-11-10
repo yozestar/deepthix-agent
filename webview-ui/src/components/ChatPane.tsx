@@ -2126,6 +2126,11 @@ function ChatPaneImpl({
               }
             : undefined
         }
+        onPasteFiles={(files) => {
+          const tid = termIdRef.current;
+          if (!tid) return;
+          uploadToChat(files, tid).catch((err: unknown) => setError(`Collage de l’image : ${String(err)}`));
+        }}
         onLargePaste={async (content) => {
           // Stash the pasted text as ~/.deepthix/dropped/paste_*.txt
           // and stage it like a dragged file. ChatPane already listens
@@ -2429,6 +2434,7 @@ function ChatInput({
   onInterrupt,
   onLargePaste,
   onFiles,
+  onPasteFiles,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -2453,6 +2459,8 @@ function ChatInput({
   onLargePaste: (content: string) => Promise<boolean>;
   /** Remote devices only: files pasted, dropped or picked (paperclip). */
   onFiles?: (files: File[]) => void;
+  /** Collage d'images/fichiers depuis le presse-papiers (poste local Windows/Mac, et à distance). */
+  onPasteFiles?: (files: File[]) => void;
 }): React.JSX.Element {
   // Touch screens (phone / tablet): one growing line, 16px text (no iOS
   // zoom), round 44px buttons, Return = new line, send with the button.
@@ -2663,9 +2671,10 @@ function ChatInput({
               : undefined
           }
           onPaste={(e) => {
-            if (onFiles && e.clipboardData.files.length > 0) {
+            const surColler = onFiles ?? onPasteFiles;
+            if (surColler && e.clipboardData.files.length > 0) {
               e.preventDefault();
-              onFiles(Array.from(e.clipboardData.files));
+              surColler(Array.from(e.clipboardData.files));
               return;
             }
             const text = e.clipboardData.getData('text');

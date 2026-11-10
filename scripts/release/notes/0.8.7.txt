@@ -1,0 +1,1 @@
+Nouvel espace Chat : parle aux agents comme à des collègues, avec tes conversations par agent. Images : colle une capture (Ctrl/⌘+V), glisse un fichier ou utilise le trombone, dans le Chat comme dans les sessions Claude (Windows et Mac). Correction : l'ouverture d'une mission ne plante plus.

@@ -7,6 +7,7 @@ import '../index.css';
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
+import { AgentsChat } from '../components/agents/AgentsChat';
 import { EquipePane } from '../components/agents/EquipePane';
 import { HomePane } from '../components/agents/HomePane';
 import { MissionsPane } from '../components/agents/MissionsPane';
@@ -46,6 +47,7 @@ function Shell(): React.JSX.Element {
           {mode === 'accueil' && <HomePane role={role} onGo={setMode} />}
           {mode === 'equipe' && <EquipePane />}
           {mode === 'missions' && <MissionsPane />}
+          {mode === 'chat' && <AgentsChat />}
           {mode === 'savoir' && <SavoirPane />}
         </div>
       </div>

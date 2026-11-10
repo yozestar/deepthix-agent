@@ -42,6 +42,7 @@ export type Mode =
   | 'variables'
   | 'equipe'
   | 'missions'
+  | 'chat'
   | 'accueil'
   | 'savoir'
   | 'settings';
@@ -92,6 +93,7 @@ const MODE_META: Record<Exclude<Mode, 'settings'>, { label: string; Icon: Lucide
   variables: { label: 'Variables', Icon: Variable },
   equipe: { label: 'Équipe', Icon: Users },
   missions: { label: 'Missions', Icon: KanbanSquare },
+  chat: { label: 'Chat', Icon: MessagesSquare },
   accueil: { label: 'Accueil', Icon: LayoutDashboard },
   savoir: { label: 'Compétences des agents', Icon: Sparkles },
 };

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { AgentsChat } from './components/agents/AgentsChat';
 import { EquipePane } from './components/agents/EquipePane';
 import { HomePane } from './components/agents/HomePane';
 import { MissionsPane } from './components/agents/MissionsPane';
@@ -532,6 +533,11 @@ function App(): React.JSX.Element {
           {mode === 'equipe' && (
             <ModeOverlay>
               <EquipePane isAdmin={role === 'admin'} />
+            </ModeOverlay>
+          )}
+          {mode === 'chat' && (
+            <ModeOverlay>
+              <AgentsChat />
             </ModeOverlay>
           )}
           {mode === 'missions' && (

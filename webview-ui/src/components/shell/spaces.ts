@@ -5,7 +5,7 @@
 import type { Role } from '../../hooks/useRole';
 import type { Mode } from '../TopTabs';
 
-export type SpaceId = 'accueil' | 'projets' | 'equipe' | 'missions' | 'savoir' | 'outils' | 'conso' | 'reglages';
+export type SpaceId = 'accueil' | 'projets' | 'chat' | 'equipe' | 'missions' | 'savoir' | 'outils' | 'conso' | 'reglages';
 
 export interface SpaceMeta {
   id: SpaceId;
@@ -30,6 +30,7 @@ export const MODE_LABELS: Partial<Record<Mode, string>> = {
   tasks: 'Tâches',
   equipe: 'Équipe',
   missions: 'Missions',
+  chat: 'Chat',
   savoir: 'Compétences des agents',
   skills: 'Skills Claude',
   schedule: 'Planification',
@@ -51,6 +52,7 @@ export const SPACES: SpaceMeta[] = [
     modes: ['sessions', 'overview', 'files', 'memory', 'tasks'],
     roles: ['admin', 'responsable', 'collab', 'local'],
   },
+  { id: 'chat', emoji: '💬', label: 'Chat', title: 'Chat', subtitle: 'Parler aux agents comme à des collègues', modes: ['chat'], roles: ['admin', 'responsable', 'collab'] },
   { id: 'equipe', emoji: '🦊', label: 'Équipe', title: 'Équipe', subtitle: 'Humains et agents, droits des collègues', modes: ['equipe'], roles: ['admin', 'responsable'] },
   { id: 'missions', emoji: '✅', label: 'Missions', title: 'Missions', subtitle: 'Décisions à prendre et travaux en cours', modes: ['missions'], roles: ['admin', 'responsable', 'collab'] },
   { id: 'savoir', emoji: '🧠', label: 'Savoir', title: 'Savoir', subtitle: 'Ce qui rend les agents bons', modes: ['savoir', 'skills'], roles: ['admin', 'responsable'] },

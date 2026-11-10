@@ -45,11 +45,13 @@ const ALLOWED: &[&str] = &[
     "competence_creer",
     "proposition_decider",
     "propositions_en_attente",
+    "piece_jointe",
+    "conversations",
 ];
 
 /// Subset reachable from the REMOTE UI (collaborators): read the home page and
 /// missions, approve/refuse, ask an agent. No configuration of agents remotely.
-const COLLAB_ALLOWED: &[&str] = &["accueil", "missions", "valider", "demander", "etat", "moi", "fil", "repondre"];
+const COLLAB_ALLOWED: &[&str] = &["accueil", "missions", "valider", "demander", "etat", "moi", "fil", "repondre", "piece_jointe", "conversations"];
 
 fn engine_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("no home dir")?;
